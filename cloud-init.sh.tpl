@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
+set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -43,8 +43,60 @@ ensure_ssm_agent() {
     systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || true
 }
 
+configure_local_firewall() {
+    cat > /usr/local/sbin/ai-lab-firewall <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+# Defense in depth: the AWS security group has no inbound ${open_webui_host_port} or 11434 rules,
+# and these host rules keep both services reachable only from instance-local
+# loopback clients such as SSM and SSH tunnels.
+for port in ${open_webui_host_port} 11434; do
+    iptables -C INPUT -p tcp --dport "$port" ! -i lo -j DROP 2>/dev/null || \
+        iptables -I INPUT -p tcp --dport "$port" ! -i lo -j DROP
+done
+EOF
+
+    chmod +x /usr/local/sbin/ai-lab-firewall
+
+    cat > /etc/systemd/system/ai-lab-firewall.service <<'EOF'
+[Unit]
+Description=Restrict AI lab web and model ports to loopback
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ai-lab-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now ai-lab-firewall.service
+}
+
+wait_for_open_webui() {
+    for attempt in $(seq 1 120); do
+        if curl --silent --fail "http://127.0.0.1:${open_webui_host_port}" >/dev/null; then
+            echo "Open WebUI is ready."
+            return 0
+        fi
+
+        echo "Waiting for Open WebUI... attempt $attempt"
+        sleep 5
+    done
+
+    echo "Open WebUI did not become ready in time."
+    docker ps -a || true
+    docker logs --tail 200 "${open_webui_container_name}" || true
+    return 1
+}
+
 echo "=================================================="
-echo "Starting PyGPT + Ollama AI lab installation"
+echo "Starting Open WebUI + Ollama AI lab installation"
 echo "=================================================="
 
 apt-get update
@@ -56,45 +108,16 @@ apt-get install -y \
     git \
     jq \
     ca-certificates \
-    build-essential \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
-    xfce4 \
-    xfce4-goodies \
-    xrdp \
-    xorgxrdp \
-    dbus-x11 \
-    libgl1 \
-    libegl1 \
-    libxcb-cursor0 \
-    libxcb-xinerama0 \
-    libxkbcommon-x11-0 \
-    libpulse0 \
-    libnss3 \
-    libasound2-data \
-    libasound2-plugins \
-    portaudio19-dev \
+    docker.io \
+    iptables \
     snapd
-
-# Ubuntu 24.04 uses the time64 package name. Fall back for related Ubuntu images.
-apt-get install -y libasound2t64 || apt-get install -y libasound2
 
 # Ubuntu AWS images usually include the SSM agent. This makes sure it is active.
 ensure_ssm_agent
 
-# Configure Ubuntu desktop account.
-echo "ubuntu:${desktop_password}" | chpasswd
-passwd -u ubuntu || true
-echo "startxfce4" > /home/ubuntu/.xsession
-chown ubuntu:ubuntu /home/ubuntu/.xsession
-chmod 600 /home/ubuntu/.xsession
-
-# Configure XRDP.
-usermod -aG ssl-cert xrdp
-systemctl enable xrdp
-systemctl restart xrdp
+systemctl enable --now docker
+usermod -aG docker ubuntu || true
+configure_local_firewall
 
 # Install Ollama using the official Linux installer.
 curl -fsSL https://ollama.com/install.sh | sh
@@ -115,45 +138,29 @@ wait_for_ollama
 # Pull requested model.
 sudo -H -u ubuntu env OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
 
-# Install PyGPT in a dedicated Python virtual environment.
-sudo -H -u ubuntu python3 -m venv /home/ubuntu/pygpt-venv
+docker volume create "${open_webui_docker_volume}"
+docker pull "${open_webui_container_image}"
+docker rm -f "${open_webui_container_name}" 2>/dev/null || true
 
-sudo -H -u ubuntu /home/ubuntu/pygpt-venv/bin/python \
-    -m pip install \
-    --upgrade \
-    pip \
-    setuptools \
-    wheel
+docker run -d \
+    --name "${open_webui_container_name}" \
+    --restart unless-stopped \
+    --network host \
+    -v "${open_webui_docker_volume}:/app/backend/data" \
+    -e OLLAMA_BASE_URL="${open_webui_ollama_base_url}" \
+    -e WEBUI_URL="${open_webui_url}" \
+    -e WEBUI_AUTH=true \
+    -e ENABLE_LOGIN_FORM=true \
+    -e ENABLE_PASSWORD_AUTH=true \
+    -e ENABLE_SIGNUP=false \
+    -e ENABLE_OAUTH_SIGNUP=false \
+    -e ENABLE_OPENAI_API=false \
+    -e WEBUI_ADMIN_EMAIL="${open_webui_admin_email}" \
+    -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \
+    -e WEBUI_ADMIN_PASSWORD="${open_webui_admin_password}" \
+    "${open_webui_container_image}"
 
-sudo -H -u ubuntu /home/ubuntu/pygpt-venv/bin/pip \
-    install \
-    pygpt-net
-
-# Create desktop launcher.
-mkdir -p /home/ubuntu/Desktop
-
-cat > /home/ubuntu/Desktop/PyGPT.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=PyGPT
-Comment=Local AI Assistant
-Exec=/home/ubuntu/pygpt-venv/bin/pygpt
-Icon=utilities-terminal
-Terminal=false
-Categories=Development;
-EOF
-
-chmod +x /home/ubuntu/Desktop/PyGPT.desktop
-chown -R ubuntu:ubuntu /home/ubuntu/Desktop
-chown -R ubuntu:ubuntu /home/ubuntu/pygpt-venv
-
-# Convenience command.
-cat > /usr/local/bin/pygpt <<'EOF'
-#!/bin/bash
-exec /home/ubuntu/pygpt-venv/bin/pygpt "$@"
-EOF
-
-chmod +x /usr/local/bin/pygpt
+wait_for_open_webui
 
 # Convenience diagnostic script.
 cat > /usr/local/bin/ai-lab-status <<'EOF'
@@ -175,17 +182,12 @@ echo "--- Installed models ---"
 ollama list || true
 
 echo
-echo "--- PyGPT ---"
-if [ -x /home/ubuntu/pygpt-venv/bin/pygpt ]; then
-    echo "PyGPT installed."
-    /home/ubuntu/pygpt-venv/bin/pip show pygpt-net | sed -n '1,12p' || true
-else
-    echo "PyGPT NOT FOUND."
-fi
+echo "--- Open WebUI container ---"
+docker ps --filter name=${open_webui_container_name} || true
 
 echo
-echo "--- XRDP ---"
-systemctl is-active xrdp || true
+echo "--- Open WebUI HTTP ---"
+curl -I http://127.0.0.1:${open_webui_host_port} || true
 
 echo
 echo "--- SSM Agent ---"
@@ -198,17 +200,21 @@ EOF
 chmod +x /usr/local/bin/ai-lab-status
 
 cat > /home/ubuntu/AI-LAB-README.txt <<EOF
-PyGPT + Ollama EC2 Lab
-======================
+Open WebUI + Ollama EC2 Lab
+===========================
 
 Ollama URL:
     http://127.0.0.1:11434
 
+Open WebUI URL on this instance:
+    http://127.0.0.1:${open_webui_host_port}
+
+Access Open WebUI from your workstation through SSM port forwarding or an
+optional SSH tunnel, then open:
+    http://localhost:${open_webui_host_port}
+
 Installed model:
     ${ollama_model}
-
-PyGPT executable:
-    /home/ubuntu/pygpt-venv/bin/pygpt
 
 To inspect the environment:
     ai-lab-status
@@ -219,10 +225,7 @@ To inspect Ollama models:
 To manually test the model:
     ollama run ${ollama_model}
 
-Ollama is intentionally listening only on localhost.
-
-Configure PyGPT to use the Ollama provider and select:
-    ${ollama_model}
+Ollama and Open WebUI are intentionally reachable only through private paths.
 EOF
 
 chown ubuntu:ubuntu /home/ubuntu/AI-LAB-README.txt

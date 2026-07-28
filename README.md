@@ -1,153 +1,249 @@
 # AI Cloud Lab
 
-Terraform-managed AWS lab for experimenting with a local chatbot stack on EC2.
+Terraform-managed AWS lab for running a private local-model chatbot on EC2.
 
-The initial lab creates a single Ubuntu EC2 instance with:
+The active lab provisions:
 
+- One Ubuntu EC2 instance in the selected region's default VPC
 - Ollama as the local model runtime
-- A CPU-friendly local model such as `llama3.2:3b`
-- PyGPT as the graphical chatbot interface
-- XFCE and XRDP for remote desktop access
-- AWS Systems Manager Session Manager for tunneled access
-- A security group with no inbound rules
+- A configurable bootstrap model such as `llama3.1:8b`
+- Open WebUI as the private browser-based chat interface
+- Docker for running Open WebUI with a persistent `open-webui` volume
+- AWS Systems Manager Session Manager for shell access and port forwarding
+- An IAM instance profile with `AmazonSSMManagedInstanceCore`
+- A security group with no public inbound access to Open WebUI or Ollama
+
+PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
 ## Architecture
 
 ```text
 Your workstation
       |
-      | AWS Systems Manager port-forwarding session
+      | SSM port forwarding, or optional SSH tunnel
+      v
+http://localhost:8080
+      |
       v
 EC2 Ubuntu instance
       |
       v
-XFCE desktop + PyGPT
+Open WebUI Docker container
       |
       | http://127.0.0.1:11434
       v
-Ollama
+Ollama systemd service
       |
       v
 Local model
 ```
 
-Ollama is intentionally bound to `127.0.0.1:11434`. The EC2 security group does not expose SSH, XRDP, or the Ollama API to the public internet.
-
-## Files
-
-```text
-.
-├── main.tf
-├── variables.tf
-├── outputs.tf
-├── cloud-init.sh.tpl
-├── terraform.tfvars.example
-└── README.md
-```
+Ollama listens only on `127.0.0.1:11434`. Open WebUI runs on the instance at `localhost:8080`. The Terraform security group does not expose ports `8080` or `11434` to the public internet. SSH is disabled by default; if enabled, TCP/22 is limited to `var.allowed_ssh_cidr`.
 
 ## Prerequisites
-
-On your workstation:
 
 - Terraform installed
 - AWS CLI installed and configured
 - AWS Session Manager plugin installed
 - An AWS profile with permission to create EC2, IAM, security group, and EBS resources
-- A default VPC in the selected AWS region, or modify the Terraform to use a custom VPC/subnet
+- A default VPC in the selected AWS region, or a Terraform change to use a custom VPC/subnet
 
-## Configure
+## Secure Admin Password
 
-Copy the example variables file:
+Open WebUI creates the first local admin account during container startup using:
+
+- `open_webui_admin_email`
+- `open_webui_admin_name`
+- `open_webui_admin_password`
+
+The password variable is sensitive and has no repo default. Do not hardcode a real password in committed files.
+
+PowerShell:
+
+```powershell
+$env:TF_VAR_open_webui_admin_password = "<strong-local-password>"
+```
+
+Linux/macOS:
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
+export TF_VAR_open_webui_admin_password="<strong-local-password>"
 ```
 
-Edit `terraform.tfvars` for your AWS profile, region, instance type, and model choice.
-
-Example:
-
-```hcl
-aws_region  = "us-east-1"
-aws_profile = "garrett_gspear"
-
-project_name = "pygpt-ollama-lab"
-
-instance_type    = "t3.xlarge"
-root_volume_size = 80
-ollama_model     = "llama3.2:3b"
-```
+You may also use a local `terraform.tfvars` file for secrets. It is ignored by `.gitignore`; do not commit it.
 
 ## Deploy
 
-```bash
+PowerShell example using profile `garrett_gspear`:
+
+```powershell
 terraform init
-terraform plan
-terraform apply
+terraform fmt -recursive
+terraform validate
+terraform plan `
+  -var="aws_profile=garrett_gspear" `
+  -var="aws_region=us-east-1" `
+  -var="instance_type=t3.xlarge" `
+  -var="root_volume_size=80" `
+  -var="ollama_model=llama3.1:8b"
+
+terraform apply `
+  -var="aws_profile=garrett_gspear" `
+  -var="aws_region=us-east-1" `
+  -var="instance_type=t3.xlarge" `
+  -var="root_volume_size=80" `
+  -var="ollama_model=llama3.1:8b"
 ```
 
-Get the desktop password:
+Terraform uses `user_data_replace_on_change = true`, so bootstrap template changes replace the EC2 instance on the next apply.
 
-```bash
-terraform output -raw desktop_password
+## Connect With SSM Port Forwarding
+
+This is the preferred private browser access path because it requires no inbound rules.
+
+PowerShell:
+
+```powershell
+aws ssm start-session `
+  --target <instance-id> `
+  --document-name AWS-StartPortForwardingSession `
+  --parameters portNumber="8080",localPortNumber="8080" `
+  --profile garrett_gspear `
+  --region us-east-1
 ```
 
-> The generated desktop password is stored in Terraform state. Protect your state file. Do not commit `terraform.tfstate` or `terraform.tfvars`.
-
-## Connect with RDP over SSM
-
-Start a port-forwarding session:
+Linux/macOS:
 
 ```bash
 aws ssm start-session \
   --target <instance-id> \
   --document-name AWS-StartPortForwardingSession \
-  --parameters portNumber="3389",localPortNumber="13389" \
-  --region us-east-1 \
-  --profile garrett_gspear
+  --parameters portNumber="8080",localPortNumber="8080" \
+  --profile garrett_gspear \
+  --region us-east-1
 ```
 
-Then open Remote Desktop and connect to:
+Then open:
 
 ```text
-localhost:13389
+http://localhost:8080
 ```
 
-Credentials:
+You can also use the generated output:
 
-```text
-Username: ubuntu
-Password: <terraform output desktop_password>
+```powershell
+terraform output -raw ssm_open_webui_port_forward_command
 ```
 
-## Test from the EC2 desktop
+## Optional SSH Tunnel
 
-Open a terminal in the remote desktop and run:
+SSH is disabled by default. To enable it, pass an existing EC2 key pair name and a narrow source CIDR:
+
+```powershell
+terraform apply `
+  -var="aws_profile=garrett_gspear" `
+  -var="enable_ssh=true" `
+  -var="ssh_key_name=<existing-key-pair-name>" `
+  -var="allowed_ssh_cidr=<your-ip>/32"
+```
+
+Tunnel command:
 
 ```bash
+ssh -i <path-to-key.pem> -L 8080:localhost:8080 ubuntu@<public-ip>
+```
+
+Then open `http://localhost:8080`.
+
+## Session Manager Shell
+
+```powershell
+aws ssm start-session --target <instance-id> --region us-east-1 --profile garrett_gspear
+```
+
+The equivalent Terraform output is:
+
+```powershell
+terraform output -raw ssm_shell_command
+```
+
+## Pull Another Model With SSM Run Command
+
+PowerShell multiline:
+
+```powershell
+aws ssm send-command `
+  --document-name "AWS-RunShellScript" `
+  --targets "Key=tag:Name,Values=ollama-open-webui-lab" `
+  --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' `
+  --comment "Pull selected Ollama model" `
+  --profile garrett_gspear `
+  --region us-east-1
+```
+
+PowerShell one-liner:
+
+```powershell
+aws ssm send-command --document-name "AWS-RunShellScript" --targets "Key=tag:Name,Values=ollama-open-webui-lab" --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' --comment "Pull selected Ollama model" --profile garrett_gspear --region us-east-1
+```
+
+Linux/macOS:
+
+```bash
+aws ssm send-command \
+  --document-name "AWS-RunShellScript" \
+  --targets "Key=tag:Name,Values=ollama-open-webui-lab" \
+  --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' \
+  --comment "Pull selected Ollama model" \
+  --profile garrett_gspear \
+  --region us-east-1
+```
+
+Use `terraform output -raw instance_id` or the `Name` tag value from `var.project_name` if you customize the project name.
+
+## Verify Services
+
+From an SSM shell:
+
+```bash
+systemctl status ollama
+docker ps
+curl http://127.0.0.1:11434/api/tags
+curl http://127.0.0.1:8080
 ai-lab-status
+```
+
+## Troubleshooting Open WebUI And Ollama
+
+If Open WebUI does not show Ollama models:
+
+```bash
+systemctl status ollama
+curl http://127.0.0.1:11434/api/tags
+docker logs --tail 200 open-webui
+docker inspect open-webui --format '{{range .Config.Env}}{{println .}}{{end}}' | grep OLLAMA_BASE_URL
 ollama list
-ollama run llama3.2:3b
 ```
 
-Launch PyGPT from the desktop shortcut or terminal:
+This lab runs Open WebUI with host networking so the Docker container can reach the localhost-bound Ollama service at `http://127.0.0.1:11434`. Do not change Ollama to `0.0.0.0` unless you also understand the exposure risk and add compensating controls.
 
-```bash
-pygpt
+## Stop Or Destroy
+
+Stop the instance when not in use:
+
+```powershell
+aws ec2 stop-instances --instance-ids <instance-id> --region us-east-1 --profile garrett_gspear
 ```
 
-Configure PyGPT to use Ollama and select the installed model.
+Destroy all Terraform-managed lab resources:
 
-## Stop or destroy
-
-To avoid unnecessary EC2 charges, stop the instance when not in use.
-
-To remove the lab completely:
-
-```bash
-terraform destroy
+```powershell
+terraform destroy `
+  -var="aws_profile=garrett_gspear" `
+  -var="aws_region=us-east-1" `
+  -var="instance_type=t3.xlarge" `
+  -var="root_volume_size=80" `
+  -var="ollama_model=llama3.1:8b"
 ```
 
-## Notes
-
-This is a learning and testing environment. It is not initially designed for production use, public users, regulated data, or multi-user access.
+Do not commit `.terraform/`, `terraform.tfstate`, `terraform.tfvars`, or generated private keys.

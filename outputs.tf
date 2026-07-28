@@ -18,22 +18,22 @@ output "ollama_model" {
   value       = var.ollama_model
 }
 
-output "desktop_username" {
-  description = "Username for XRDP."
-  value       = "ubuntu"
+output "open_webui_local_url" {
+  description = "Local browser URL after starting an SSH or SSM tunnel."
+  value       = "http://localhost:${var.open_webui_host_port}"
 }
 
-output "desktop_password" {
-  description = "Generated XRDP password. Stored in Terraform state."
-  value       = random_password.desktop_password.result
-  sensitive   = true
+output "ssh_tunnel_command" {
+  description = "SSH tunnel command when SSH is enabled. Otherwise use the SSM port-forwarding output."
+
+  value = var.enable_ssh ? "ssh -i <path-to-key.pem> -L ${var.open_webui_host_port}:localhost:${var.open_webui_host_port} ubuntu@${aws_instance.ai_lab.public_ip}" : "SSH is disabled. Use ssm_open_webui_port_forward_command instead."
 }
 
-output "ssm_rdp_command_windows" {
-  description = "Windows PowerShell command to create the local RDP tunnel."
+output "ssm_open_webui_port_forward_command" {
+  description = "Windows PowerShell command to create a private SSM tunnel to Open WebUI."
 
   value = <<-EOT
-    aws ssm start-session --target ${aws_instance.ai_lab.id} --document-name AWS-StartPortForwardingSession --parameters portNumber="3389",localPortNumber="13389" --region ${var.aws_region} --profile ${var.aws_profile}
+    aws ssm start-session --target ${aws_instance.ai_lab.id} --document-name AWS-StartPortForwardingSession --parameters portNumber="${var.open_webui_host_port}",localPortNumber="${var.open_webui_host_port}" --region ${var.aws_region} --profile ${var.aws_profile}
   EOT
 }
 

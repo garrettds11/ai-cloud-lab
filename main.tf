@@ -6,11 +6,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
-
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 }
 
@@ -38,19 +33,25 @@ data "aws_subnets" "default" {
   }
 }
 
-# This password is used for the Ubuntu remote desktop account.
-# It is suitable for a disposable lab, but it will be stored in Terraform state.
-resource "random_password" "desktop_password" {
-  length           = 24
-  special          = true
-  override_special = "!#$%&*+-=?@"
-}
-
 resource "aws_security_group" "ai_lab" {
   name_prefix = "${var.project_name}-"
-  description = "AI lab - outbound only; administration through SSM"
+  description = "AI lab - private access through SSM and optional SSH tunnel"
   vpc_id      = data.aws_vpc.default.id
 
+  dynamic "ingress" {
+    for_each = var.enable_ssh ? [var.allowed_ssh_cidr] : []
+
+    content {
+      description = "Optional SSH access for local tunneling only"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+    }
+  }
+
+  # Open WebUI 8080 and Ollama 11434 are intentionally not exposed.
+  # Use SSM port forwarding or the optional SSH tunnel for private access.
   egress {
     description = "Allow Internet access for package and model downloads"
     from_port   = 0
@@ -103,6 +104,7 @@ resource "aws_iam_instance_profile" "ssm" {
 resource "aws_instance" "ai_lab" {
   ami           = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type = var.instance_type
+  key_name      = var.enable_ssh ? var.ssh_key_name : null
 
   subnet_id = sort(data.aws_subnets.default.ids)[0]
 
@@ -112,8 +114,8 @@ resource "aws_instance" "ai_lab" {
 
   iam_instance_profile = aws_iam_instance_profile.ssm.name
 
-  # Needed during bootstrap for package, PyGPT, Ollama, and model downloads.
-  # The security group still has no inbound rules.
+  # Needed during bootstrap for packages, Docker image pulls, Ollama, and model downloads.
+  # Open WebUI and Ollama are not exposed by security group ingress.
   associate_public_ip_address = true
 
   metadata_options {
@@ -130,17 +132,32 @@ resource "aws_instance" "ai_lab" {
   }
 
   user_data = templatefile("${path.module}/cloud-init.sh.tpl", {
-    desktop_password = random_password.desktop_password.result
-    ollama_model     = var.ollama_model
+    ollama_model               = var.ollama_model
+    open_webui_admin_email     = var.open_webui_admin_email
+    open_webui_admin_name      = var.open_webui_admin_name
+    open_webui_admin_password  = var.open_webui_admin_password
+    open_webui_container_image = var.open_webui_container_image
+    open_webui_container_name  = var.open_webui_container_name
+    open_webui_host_port       = var.open_webui_host_port
+    open_webui_docker_volume   = var.open_webui_docker_volume
+    open_webui_ollama_base_url = "http://127.0.0.1:11434"
+    open_webui_url             = "http://localhost:${var.open_webui_host_port}"
   })
 
   user_data_replace_on_change = true
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_ssh || (var.ssh_key_name != null && var.allowed_ssh_cidr != null)
+      error_message = "When enable_ssh is true, ssh_key_name and allowed_ssh_cidr must both be set."
+    }
+  }
 
   tags = {
     Name        = var.project_name
     Project     = var.project_name
     Environment = "lab"
-    Application = "PyGPT-Ollama"
+    Application = "Open-WebUI-Ollama"
   }
 
   depends_on = [

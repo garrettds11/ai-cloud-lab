@@ -1,8 +1,20 @@
 aws_region  = "us-east-1"
 aws_profile = "CHANGEME"
 
-project_name = "pygpt-ollama-lab"
+project_name = "ollama-open-webui-lab"
 
 instance_type    = "t3.xlarge"
 root_volume_size = 80
-ollama_model     = "llama3.2:3b"
+ollama_model     = "llama3.1:8b"
+
+open_webui_admin_email = "admin@example.local"
+open_webui_admin_name  = "Lab Admin"
+
+# Do not commit a real password. Prefer TF_VAR_open_webui_admin_password
+# or a local terraform.tfvars file, which is ignored by .gitignore.
+# open_webui_admin_password = "replace-with-a-strong-local-password"
+
+# SSH is disabled by default. Prefer SSM port forwarding.
+enable_ssh       = false
+ssh_key_name     = null
+allowed_ssh_cidr = null

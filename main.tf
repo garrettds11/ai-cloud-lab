@@ -131,7 +131,7 @@ resource "aws_instance" "ai_lab" {
     delete_on_termination = true
   }
 
-  user_data = templatefile("${path.module}/cloud-init.sh.tpl", {
+  user_data = replace(templatefile("${path.module}/cloud-init.sh.tpl", {
     ollama_model               = var.ollama_model
     open_webui_admin_email     = var.open_webui_admin_email
     open_webui_admin_name      = var.open_webui_admin_name
@@ -142,7 +142,7 @@ resource "aws_instance" "ai_lab" {
     open_webui_docker_volume   = var.open_webui_docker_volume
     open_webui_ollama_base_url = "http://127.0.0.1:11434"
     open_webui_url             = "http://localhost:${var.open_webui_host_port}"
-  })
+  }), "\r\n", "\n")
 
   user_data_replace_on_change = true
 

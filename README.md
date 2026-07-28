@@ -56,7 +56,13 @@ Open WebUI creates the first local admin account during container startup using:
 - `open_webui_admin_name`
 - `open_webui_admin_password`
 
-The password variable is sensitive and has no repo default. Do not hardcode a real password in committed files.
+The password variable is sensitive and has a temporary test-lab default:
+
+```text
+ChangeMeBeforeUse123!
+```
+
+Use it only long enough to verify the private tunnel and first login, then update the Open WebUI admin password before using the lab. For a less disposable run, override it before apply. Do not commit a real password in committed files.
 
 PowerShell:
 

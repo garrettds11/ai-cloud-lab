@@ -52,8 +52,9 @@ variable "open_webui_admin_name" {
 }
 
 variable "open_webui_admin_password" {
-  description = "Password for the initial Open WebUI local admin account. Pass securely using TF_VAR_open_webui_admin_password, an ignored tfvars file, or another local secrets method."
+  description = "Password for the initial Open WebUI local admin account. The default is temporary for test labs only; change it before using Open WebUI."
   type        = string
+  default     = "ChangeMeBeforeUse123!"
   sensitive   = true
 
   validation {

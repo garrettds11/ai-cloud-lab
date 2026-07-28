@@ -10,7 +10,8 @@ ollama_model     = "llama3.1:8b"
 open_webui_admin_email = "admin@example.local"
 open_webui_admin_name  = "Lab Admin"
 
-# Do not commit a real password. Prefer TF_VAR_open_webui_admin_password
+# The Terraform variable has a temporary default: ChangeMeBeforeUse123!
+# Override it before real use with TF_VAR_open_webui_admin_password
 # or a local terraform.tfvars file, which is ignored by .gitignore.
 # open_webui_admin_password = "replace-with-a-strong-local-password"
 

@@ -19,7 +19,7 @@ variable "project_name" {
 variable "instance_type" {
   description = "EC2 instance type used by the lab."
   type        = string
-  default     = "t3.xlarge"
+  default     = "c7i.4xlarge"
 }
 
 variable "root_volume_size" {
@@ -36,7 +36,7 @@ variable "root_volume_size" {
 variable "ollama_model" {
   description = "Ollama model that will automatically be downloaded during bootstrap."
   type        = string
-  default     = "llama3.1:8b"
+  default     = "llama3.2:3b"
 }
 
 variable "open_webui_admin_email" {

@@ -6,7 +6,7 @@ The active lab provisions:
 
 - One Ubuntu EC2 instance in the selected region's default VPC
 - Ollama as the local model runtime
-- A configurable bootstrap model such as `llama3.1:8b`
+- A configurable bootstrap model such as `llama3.2:3b`
 - Open WebUI as the private browser-based chat interface
 - Docker for running Open WebUI with a persistent `open-webui` volume
 - AWS Systems Manager Session Manager for shell access and port forwarding
@@ -89,16 +89,16 @@ terraform validate
 terraform plan `
   -var="aws_profile=garrett_gspear" `
   -var="aws_region=us-east-1" `
-  -var="instance_type=t3.xlarge" `
+  -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.1:8b"
+  -var="ollama_model=llama3.2:3b"
 
 terraform apply `
   -var="aws_profile=garrett_gspear" `
   -var="aws_region=us-east-1" `
-  -var="instance_type=t3.xlarge" `
+  -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.1:8b"
+  -var="ollama_model=llama3.2:3b"
 ```
 
 Terraform uses `user_data_replace_on_change = true`, so bootstrap template changes replace the EC2 instance on the next apply.
@@ -247,9 +247,9 @@ Destroy all Terraform-managed lab resources:
 terraform destroy `
   -var="aws_profile=garrett_gspear" `
   -var="aws_region=us-east-1" `
-  -var="instance_type=t3.xlarge" `
+  -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.1:8b"
+  -var="ollama_model=llama3.2:3b"
 ```
 
 Do not commit `.terraform/`, `terraform.tfstate`, `terraform.tfvars`, or generated private keys.

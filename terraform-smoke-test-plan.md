@@ -1,6 +1,6 @@
 # Terraform Smoke Test Plan
 
-This plan deploys the AI Cloud Lab, verifies bootstrap and private access, then safely dismantles the test system.
+This plan deploys the AI Cloud Lab, verifies bootstrap and the selected access path, then safely dismantles the test system.
 
 ## 0. Open the repository directory
 
@@ -113,7 +113,8 @@ Choose exactly one access path based on `TF_VAR_enable_domain_access`.
 ### Domain-access test
 
 When `TF_VAR_enable_domain_access` is `true`, do not start an SSM port-forwarding
-session. The ALB is the public entry point.
+session. The SSM shell in section 4 is still used for readiness and troubleshooting;
+the ALB is the public entry point for browser access.
 
 Check ALB target health from PowerShell:
 
@@ -130,8 +131,14 @@ The EC2 target should report `healthy`. Then verify both:
 
 ### SSM-only test
 
-When `TF_VAR_enable_domain_access` is not set or is `false`, run this in a
-second PowerShell terminal:
+For an SSM-only run, set the mode explicitly before planning so a stale domain
+environment variable cannot select the wrong test path:
+
+```powershell
+$env:TF_VAR_enable_domain_access = "false"
+```
+
+Then run this in a second PowerShell terminal:
 
 ```powershell
 aws ssm start-session `
@@ -195,7 +202,9 @@ terraform plan -destroy
 terraform destroy
 ```
 
-After teardown, verify that the instance and security group are gone. Remove `terraform.tfvars` if it contains a real password, but keep `terraform.tfvars.example`.
+After teardown, verify that the instance, ALB, target group, security groups,
+and Route 53 alias are gone. Remove `terraform.tfvars` if it contains a real
+password, but keep `terraform.tfvars.example`.
 
 ## Likely failure points
 
@@ -205,3 +214,4 @@ After teardown, verify that the instance and security group are gone. Remove `te
 - The Session Manager plugin is not installed locally.
 - Bootstrap is still downloading packages, Ollama, the model, or the Open WebUI image.
 - Local port 8080 is already occupied; use local port 8081 for the tunnel.
+- Domain access requires a public Route 53 hosted zone and an issued ACM certificate in the selected region.

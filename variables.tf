@@ -63,10 +63,53 @@ variable "open_webui_admin_password" {
   }
 }
 
-variable "open_webui_container_image" {
-  description = "Docker image used to run Open WebUI."
+variable "open_webui_demo_users" {
+  description = "Four local Open WebUI demo accounts created after the admin account. Each object contains an email and display name."
+  type = list(object({
+    email = string
+    name  = string
+  }))
+  default = [
+    {
+      email = "demo1@example.local"
+      name  = "Demo User 1"
+    },
+    {
+      email = "demo2@example.local"
+      name  = "Demo User 2"
+    },
+    {
+      email = "demo3@example.local"
+      name  = "Demo User 3"
+    },
+    {
+      email = "demo4@example.local"
+      name  = "Demo User 4"
+    }
+  ]
+
+  validation {
+    condition     = length(var.open_webui_demo_users) == 4
+    error_message = "open_webui_demo_users must contain exactly four demo accounts for this lab scenario."
+  }
+}
+
+variable "open_webui_demo_user_password" {
+  description = "Temporary password assigned to the four local demo accounts. Users should change it from Profile after first login."
   type        = string
-  default     = "ghcr.io/open-webui/open-webui:main"
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = var.open_webui_demo_user_password == null || length(var.open_webui_demo_user_password) >= 12
+    error_message = "open_webui_demo_user_password must be at least 12 characters."
+  }
+}
+
+variable "open_webui_container_image" {
+  description = "Pinned Docker image used to run Open WebUI. Override deliberately when upgrading."
+  type        = string
+  default     = "ghcr.io/open-webui/open-webui:v0.11.4"
 }
 
 variable "open_webui_container_name" {

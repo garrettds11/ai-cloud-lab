@@ -56,18 +56,27 @@ Open WebUI creates the first local admin account during container startup using:
 - `open_webui_admin_name`
 - `open_webui_admin_password`
 
-The password variable is sensitive and has no usable default. Set it before apply; do not commit a real password in committed files. The value is used during first container initialization and is stored in Terraform state, so use an encrypted remote backend for shared or long-lived deployments.
+The bootstrap then creates four ordinary local demo accounts using:
+
+- `open_webui_demo_user_password`
+- `open_webui_demo_users` (exactly four local demo accounts by default)
+
+Both password variables are sensitive and have no usable default. Set them before apply; do not commit real passwords in committed files. The values are used during first container initialization and are stored in Terraform state, so use an encrypted remote backend for shared or long-lived deployments.
+
+The four demo accounts use local Open WebUI password authentication. They all receive the temporary demo password and should change it from Profile after first login. This MVP does not require Cognito/OIDC.
 
 PowerShell:
 
 ```powershell
 $env:TF_VAR_open_webui_admin_password = "<strong-local-password>"
+$env:TF_VAR_open_webui_demo_user_password = "<temporary-demo-password>"
 ```
 
 Linux/macOS:
 
 ```bash
 export TF_VAR_open_webui_admin_password="<strong-local-password>"
+export TF_VAR_open_webui_demo_user_password="<temporary-demo-password>"
 ```
 
 You may also use a local `terraform.tfvars` file for secrets. It is ignored by `.gitignore`; do not commit it.

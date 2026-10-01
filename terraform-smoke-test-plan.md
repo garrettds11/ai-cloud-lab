@@ -21,6 +21,7 @@ Set the AWS profile, region, and temporary Open WebUI password before running Te
 $env:TF_VAR_aws_profile = "ai-cloud-lab"
 $env:TF_VAR_aws_region = "us-east-1"
 $env:TF_VAR_open_webui_admin_password = "YourTemporaryStrongPasswordHere"
+$env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
 ```
 
 You can also pass non-secret variables directly:
@@ -128,6 +129,18 @@ Initial login credentials:
 - Email: `admin@example.local` unless you changed `open_webui_admin_email`.
 - Password: the value assigned to `$env:TF_VAR_open_webui_admin_password` before apply.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
+
+The bootstrap also creates these four local demo accounts:
+
+- `demo1@example.local`
+- `demo2@example.local`
+- `demo3@example.local`
+- `demo4@example.local`
+
+They all start with the value assigned to `$env:TF_VAR_open_webui_demo_user_password`.
+Have each user sign in, open Profile, and change that temporary password before
+using the account. These are local Open WebUI accounts; Cognito/OIDC is not
+required for this demonstrable use case.
 
 Change the temporary password immediately after confirming access.
 

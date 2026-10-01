@@ -25,6 +25,9 @@ provider "aws" {
 locals {
   aws_cli_profile_arg = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
   domain_resources    = var.enable_domain_access ? { domain = true } : {}
+  domain_certificate_arn = var.acm_certificate_arn != null ? var.acm_certificate_arn : (
+    var.enable_domain_access ? data.aws_acm_certificate.domain[0].arn : null
+  )
 }
 
 # Canonical publishes current Ubuntu AMI IDs through AWS Systems Manager Parameter Store.
@@ -213,10 +216,6 @@ resource "aws_instance" "ai_lab" {
       error_message = "open_webui_demo_user_password must be set when demo users are enabled."
     }
 
-    precondition {
-      condition     = !var.enable_domain_access || var.acm_certificate_arn != null
-      error_message = "acm_certificate_arn must be set when domain access is enabled."
-    }
   }
 
   tags = {
@@ -233,6 +232,14 @@ data "aws_route53_zone" "public" {
   count        = var.enable_domain_access ? 1 : 0
   name         = var.route53_zone_name
   private_zone = false
+}
+
+data "aws_acm_certificate" "domain" {
+  count = var.enable_domain_access && var.acm_certificate_arn == null ? 1 : 0
+
+  domain      = var.domain_name
+  statuses    = ["ISSUED"]
+  most_recent = true
 }
 
 resource "aws_lb" "domain" {
@@ -303,7 +310,7 @@ resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.domain[each.key].arn
   port              = 443
   protocol          = "HTTPS"
-  certificate_arn   = var.acm_certificate_arn
+  certificate_arn   = local.domain_certificate_arn
 
   default_action {
     type             = "forward"

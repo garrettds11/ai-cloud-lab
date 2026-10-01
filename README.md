@@ -49,6 +49,10 @@ creates an internet-facing ALB with HTTP-to-HTTPS redirect, an HTTPS listener on
 port 443, an EC2 rule allowing the app port only from the ALB, and a Route 53
 alias record for `domain_name`.
 
+Terraform automatically selects the most recent `ISSUED` ACM certificate that
+matches `domain_name`. Set `acm_certificate_arn` only when multiple matching
+certificates exist and you need to choose one explicitly.
+
 The EC2 instance does not receive a public application ingress rule. When domain
 access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 

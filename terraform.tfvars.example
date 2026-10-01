@@ -23,7 +23,8 @@ open_webui_admin_name  = "Lab Admin"
 # enable_domain_access = true
 # domain_name         = "aiwebdemo.click"
 # route53_zone_name   = "aiwebdemo.click"
-# acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/replace-me"
+# Terraform automatically selects the most recent ISSUED matching certificate.
+# Set acm_certificate_arn only when you want to select a specific certificate.
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false

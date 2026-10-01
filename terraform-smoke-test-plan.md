@@ -34,11 +34,12 @@ For the domain-access variant, set these additional values before planning:
 $env:TF_VAR_enable_domain_access = "true"
 $env:TF_VAR_domain_name = "aiwebdemo.click"
 $env:TF_VAR_route53_zone_name = "aiwebdemo.click"
-$env:TF_VAR_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/replace-me"
 ```
 
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
+Terraform selects the matching certificate automatically. Set
+`TF_VAR_acm_certificate_arn` only if you need to override that selection.
 
 ## 2. Validate and preview
 

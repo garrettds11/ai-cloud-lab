@@ -154,7 +154,7 @@ variable "route53_zone_name" {
 }
 
 variable "acm_certificate_arn" {
-  description = "Issued ACM certificate ARN in aws_region for domain_name. Required when domain access is enabled."
+  description = "Optional issued ACM certificate ARN in aws_region. When null, Terraform selects the most recent ISSUED certificate matching domain_name."
   type        = string
   default     = null
 }

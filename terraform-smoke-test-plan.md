@@ -41,7 +41,7 @@ terraform validate
 terraform plan
 ```
 
-For an exact plan/apply pair:
+Optional: save a plan when you want Terraform to apply exactly the actions you reviewed:
 
 ```powershell
 terraform plan `

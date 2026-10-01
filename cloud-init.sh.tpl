@@ -60,10 +60,16 @@ configure_local_firewall() {
 #!/bin/bash
 set -euo pipefail
 
-# Defense in depth: the AWS security group has no inbound ${open_webui_host_port} or 11434 rules,
-# and these host rules keep both services reachable only from instance-local
-# loopback clients such as SSM and SSH tunnels.
-for port in ${open_webui_host_port} 11434; do
+# Defense in depth: the AWS security group keeps the app port reachable only
+# from the ALB when domain access is enabled, or from no network source when
+# using SSM-only access. Ollama remains loopback-only in both modes.
+if [[ "${open_webui_domain_access_enabled}" == "true" ]]; then
+    protected_ports="11434"
+else
+    protected_ports="${open_webui_host_port} 11434"
+fi
+
+for port in $protected_ports; do
     iptables -C INPUT -p tcp --dport "$port" ! -i lo -j DROP 2>/dev/null || \
         iptables -I INPUT -p tcp --dport "$port" ! -i lo -j DROP
 done
@@ -105,6 +111,64 @@ wait_for_open_webui() {
     docker ps -a || true
     docker logs --tail 200 "${open_webui_container_name}" || true
     return 1
+}
+
+provision_demo_users() {
+    if [[ -z "${open_webui_demo_password_b64}" ]]; then
+        echo "No Open WebUI demo-user password supplied; skipping demo-user provisioning."
+        return 0
+    fi
+
+    local demo_users_json
+    local demo_password
+    local admin_token
+
+    demo_users_json="$(printf '%s' '${open_webui_demo_users_b64}' | base64 --decode)"
+    demo_password="$(printf '%s' '${open_webui_demo_password_b64}' | base64 --decode)"
+
+    admin_token="$(curl --silent --show-error --fail \
+        -X POST "http://127.0.0.1:${open_webui_host_port}/api/v1/auths/signin" \
+        -H 'Content-Type: application/json' \
+        --data "$(jq -n \
+            --arg email '${open_webui_admin_email}' \
+            --arg password '${open_webui_admin_password}' \
+            '{email: $email, password: $password}')" | jq -r '.token')"
+
+    if [[ -z "$admin_token" || "$admin_token" == "null" ]]; then
+        echo "Open WebUI admin sign-in did not return a token."
+        return 1
+    fi
+
+    while IFS= read -r user_json; do
+        local email
+        local response_file
+        local http_status
+        email="$(jq -r '.email' <<<"$user_json")"
+        echo "Provisioning Open WebUI demo account: $email"
+
+        response_file="$(mktemp)"
+        http_status="$(jq -n \
+            --arg name "$(jq -r '.name' <<<"$user_json")" \
+            --arg email "$email" \
+            --arg password "$demo_password" \
+            '{name: $name, email: $email, password: $password, role: "user"}' |
+            curl --silent --show-error \
+                -X POST "http://127.0.0.1:${open_webui_host_port}/api/v1/auths/add" \
+                -H "Authorization: Bearer $admin_token" \
+                -H 'Content-Type: application/json' \
+                --data-binary @- \
+                --output "$response_file" \
+                --write-out '%%{http_code}')"
+
+        if [[ "$http_status" != 2* ]]; then
+            echo "Open WebUI demo-user creation failed for $email (HTTP $http_status)."
+            cat "$response_file"
+            rm -f "$response_file"
+            return 1
+        fi
+
+        rm -f "$response_file"
+    done < <(jq -c '.[]' <<<"$demo_users_json")
 }
 
 echo "=================================================="
@@ -180,6 +244,7 @@ docker run -d \
     "${open_webui_container_image}"
 
 wait_for_open_webui
+provision_demo_users
 
 # Convenience diagnostic script.
 cat > /usr/local/bin/ai-lab-status <<'EOF'
@@ -234,6 +299,16 @@ optional SSH tunnel, then open:
 
 Installed model:
     ${ollama_model}
+
+Local demo accounts:
+    demo1@example.local
+    demo2@example.local
+    demo3@example.local
+    demo4@example.local
+
+All demo accounts receive the temporary Terraform value supplied through
+open_webui_demo_user_password. Each user should change it from Profile after
+first login. Do not use these demo credentials outside this lab.
 
 To inspect the environment:
     ai-lab-status

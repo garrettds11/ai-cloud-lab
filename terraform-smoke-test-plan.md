@@ -1,6 +1,6 @@
 # Terraform Smoke Test Plan
 
-This plan deploys the AI Cloud Lab, verifies bootstrap and private access, then safely dismantles the test system.
+This plan deploys the AI Cloud Lab, verifies bootstrap and the selected access path, then safely dismantles the test system.
 
 ## 0. Open the repository directory
 
@@ -15,21 +15,31 @@ If `Get-ChildItem *.tf` returns no files, stop and change to the correct reposit
 
 ## 1. Set the test variables
 
-Set the AWS profile, region, and temporary Open WebUI password before running Terraform. The password is required and has no default.
+Set the AWS profile and region once at the beginning. AWS CLI commands will use
+`AWS_PROFILE` and `AWS_DEFAULT_REGION`, while Terraform receives the same values
+through `TF_VAR_aws_profile` and `TF_VAR_aws_region`.
 
 ```powershell
-$env:TF_VAR_aws_profile = "ai-cloud-lab"
-$env:TF_VAR_aws_region = "us-east-1"
+$env:AWS_PROFILE = "ai-cloud-lab"
+$env:AWS_DEFAULT_REGION = "us-east-1"
+$env:TF_VAR_aws_profile = $env:AWS_PROFILE
+$env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 $env:TF_VAR_open_webui_admin_password = "YourTemporaryStrongPasswordHere"
+$env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
 ```
 
-You can also pass non-secret variables directly:
+For the domain-access variant, set these additional values before planning:
 
 ```powershell
-terraform plan `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+$env:TF_VAR_enable_domain_access = "true"
+$env:TF_VAR_domain_name = "aiwebdemo.click"
+$env:TF_VAR_route53_zone_name = "aiwebdemo.click"
 ```
+
+Confirm the certificate is `ISSUED`, belongs to the same region as
+`TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
+The project already supplies the issued `aiwebdemo.click` certificate ARN.
+Set `TF_VAR_acm_certificate_arn` only if you need to override that default.
 
 ## 2. Validate and preview
 
@@ -40,13 +50,10 @@ terraform validate
 terraform plan
 ```
 
-For an exact plan/apply pair:
+Optional: save a plan when you want Terraform to apply exactly the actions you reviewed:
 
 ```powershell
-terraform plan `
-  -out ai-lab.tfplan `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform plan -out ai-lab.tfplan
 
 terraform apply ai-lab.tfplan
 ```
@@ -60,9 +67,7 @@ Remove-Item ai-lab.tfplan
 ## 3. Deploy
 
 ```powershell
-terraform apply `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform apply
 ```
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
@@ -78,10 +83,7 @@ $env:instance_id = terraform output -raw instance_id
 Use that unique target for the SSM session:
 
 ```powershell
-aws ssm start-session `
-  --target $env:instance_id `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+aws ssm start-session --target $env:instance_id
 ```
 
 Inside the SSM shell, check bootstrap readiness:
@@ -100,21 +102,49 @@ sudo docker ps
 ai-lab-status
 ```
 
-Wait for `READY` before opening the browser tunnel. If the result is `FAILED`, inspect the bootstrap log before retrying.
+Wait for `READY` before opening Open WebUI. If the result is `FAILED`, inspect the bootstrap log before retrying.
 
 The SSM shell is a Linux shell. Run Linux commands there; run PowerShell commands such as `curl.exe` from a separate Windows PowerShell window.
 
-## 5. Open the private browser tunnel
+## 5. Open Open WebUI
 
-Run this in a second PowerShell terminal:
+Choose exactly one access path based on `TF_VAR_enable_domain_access`.
+
+### Domain-access test
+
+When `TF_VAR_enable_domain_access` is `true`, do not start an SSM port-forwarding
+session. The SSM shell in section 4 is still used for readiness and troubleshooting;
+the ALB is the public entry point for browser access.
+
+Check ALB target health from PowerShell:
+
+```powershell
+$env:alb_target_group_arn = terraform output -raw open_webui_target_group_arn
+aws elbv2 describe-target-health `
+  --target-group-arn $env:alb_target_group_arn
+```
+
+The EC2 target should report `healthy`. Then verify both:
+
+- `http://aiwebdemo.click` redirects to HTTPS.
+- `https://aiwebdemo.click` loads Open WebUI and accepts the admin and four demo accounts.
+
+### SSM-only test
+
+For an SSM-only run, set the mode explicitly before planning so a stale domain
+environment variable cannot select the wrong test path:
+
+```powershell
+$env:TF_VAR_enable_domain_access = "false"
+```
+
+Then run this in a second PowerShell terminal:
 
 ```powershell
 aws ssm start-session `
   --target $env:instance_id `
   --document-name AWS-StartPortForwardingSession `
-  --parameters portNumber="8080",localPortNumber="8080" `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+  --parameters portNumber="8080",localPortNumber="8080"
 ```
 
 Open:
@@ -123,26 +153,37 @@ Open:
 http://localhost:8080
 ```
 
+If local port 8080 is already in use, keep the remote port at 8080 and use a
+different local port:
+
+```powershell
+aws ssm start-session `
+  --target $env:instance_id `
+  --document-name AWS-StartPortForwardingSession `
+  --parameters "portNumber=8080,localPortNumber=8081"
+```
+
+Then open `http://localhost:8081`.
+
 Initial login credentials:
 
 - Email: `admin@example.local` unless you changed `open_webui_admin_email`.
 - Password: the value assigned to `$env:TF_VAR_open_webui_admin_password` before apply.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
 
+The bootstrap also creates these four local demo accounts:
+
+- `demo1@example.local`
+- `demo2@example.local`
+- `demo3@example.local`
+- `demo4@example.local`
+
+They all start with the value assigned to `$env:TF_VAR_open_webui_demo_user_password`.
+Have each user sign in, open Profile, and change that temporary password before
+using the account. These are local Open WebUI accounts; Cognito/OIDC is not
+required for this demonstrable use case.
+
 Change the temporary password immediately after confirming access.
-
-If local port 8080 is already in use, keep the remote port at 8080 and use a different local port:
-
-```powershell
-aws ssm start-session `
-  --target $env:instance_id `
-  --document-name AWS-StartPortForwardingSession `
-  --parameters "portNumber=8080,localPortNumber=8081" `
-  --region us-east-1 `
-  --profile ai-cloud-lab
-```
-
-Then open `http://localhost:8081`.
 
 ## 6. Stop or dismantle the test system
 
@@ -150,24 +191,20 @@ If you may test again later, stop the instance to avoid ongoing compute charges:
 
 ```powershell
 aws ec2 stop-instances `
-  --instance-ids $env:instance_id `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+  --instance-ids $env:instance_id
 ```
 
 For permanent cleanup, review the destroy plan and then remove all Terraform-managed resources:
 
 ```powershell
-terraform plan -destroy `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform plan -destroy
 
-terraform destroy `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform destroy
 ```
 
-After teardown, verify that the instance and security group are gone. Remove `terraform.tfvars` if it contains a real password, but keep `terraform.tfvars.example`.
+After teardown, verify that the instance, ALB, target group, security groups,
+and Route 53 alias are gone. Remove `terraform.tfvars` if it contains a real
+password, but keep `terraform.tfvars.example`.
 
 ## Likely failure points
 
@@ -177,3 +214,4 @@ After teardown, verify that the instance and security group are gone. Remove `te
 - The Session Manager plugin is not installed locally.
 - Bootstrap is still downloading packages, Ollama, the model, or the Open WebUI image.
 - Local port 8080 is already occupied; use local port 8081 for the tunnel.
+- Domain access requires a public Route 53 hosted zone and an issued ACM certificate in the selected region.

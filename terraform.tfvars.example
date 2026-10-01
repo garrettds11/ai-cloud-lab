@@ -14,6 +14,16 @@ open_webui_admin_name  = "Lab Admin"
 # Set it before apply with TF_VAR_open_webui_admin_password or a local
 # terraform.tfvars file, which is ignored by .gitignore.
 # open_webui_admin_password = "replace-with-a-strong-local-password"
+# open_webui_demo_user_password = "replace-with-a-temporary-demo-password"
+# The default configuration creates demo1@example.local through
+# demo4@example.local. Override open_webui_demo_users to change their names
+# or email addresses, while keeping exactly four entries for this demo.
+
+# Optional public HTTPS access through an ALB and Route 53 alias.
+# enable_domain_access = true
+# domain_name         = "aiwebdemo.click"
+# route53_zone_name   = "aiwebdemo.click"
+acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false

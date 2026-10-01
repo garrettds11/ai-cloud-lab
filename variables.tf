@@ -63,10 +63,53 @@ variable "open_webui_admin_password" {
   }
 }
 
-variable "open_webui_container_image" {
-  description = "Docker image used to run Open WebUI."
+variable "open_webui_demo_users" {
+  description = "Four local Open WebUI demo accounts created after the admin account. Each object contains an email and display name."
+  type = list(object({
+    email = string
+    name  = string
+  }))
+  default = [
+    {
+      email = "demo1@example.local"
+      name  = "Demo User 1"
+    },
+    {
+      email = "demo2@example.local"
+      name  = "Demo User 2"
+    },
+    {
+      email = "demo3@example.local"
+      name  = "Demo User 3"
+    },
+    {
+      email = "demo4@example.local"
+      name  = "Demo User 4"
+    }
+  ]
+
+  validation {
+    condition     = length(var.open_webui_demo_users) == 4
+    error_message = "open_webui_demo_users must contain exactly four demo accounts for this lab scenario."
+  }
+}
+
+variable "open_webui_demo_user_password" {
+  description = "Temporary password assigned to the four local demo accounts. Users should change it from Profile after first login."
   type        = string
-  default     = "ghcr.io/open-webui/open-webui:main"
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = var.open_webui_demo_user_password == null || length(var.open_webui_demo_user_password) >= 12
+    error_message = "open_webui_demo_user_password must be at least 12 characters."
+  }
+}
+
+variable "open_webui_container_image" {
+  description = "Pinned Docker image used to run Open WebUI. Override deliberately when upgrading."
+  type        = string
+  default     = "ghcr.io/open-webui/open-webui:v0.11.4"
 }
 
 variable "open_webui_container_name" {
@@ -90,6 +133,30 @@ variable "open_webui_host_port" {
     condition     = var.open_webui_host_port > 0 && var.open_webui_host_port < 65536
     error_message = "open_webui_host_port must be a valid TCP port."
   }
+}
+
+variable "enable_domain_access" {
+  description = "Whether to publish Open WebUI through an internet-facing HTTPS Application Load Balancer."
+  type        = bool
+  default     = false
+}
+
+variable "domain_name" {
+  description = "Public DNS name for Open WebUI, such as aiwebdemo.click."
+  type        = string
+  default     = "aiwebdemo.click"
+}
+
+variable "route53_zone_name" {
+  description = "Public Route 53 hosted zone containing domain_name."
+  type        = string
+  default     = "aiwebdemo.click"
+}
+
+variable "acm_certificate_arn" {
+  description = "Issued ACM certificate ARN for aiwebdemo.click in us-east-1. Override only when intentionally changing certificates."
+  type        = string
+  default     = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 }
 
 variable "enable_ssh" {

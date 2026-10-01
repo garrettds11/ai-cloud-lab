@@ -15,11 +15,15 @@ If `Get-ChildItem *.tf` returns no files, stop and change to the correct reposit
 
 ## 1. Set the test variables
 
-Set the AWS profile, region, and temporary Open WebUI password before running Terraform. The password is required and has no default.
+Set the AWS profile and region once at the beginning. AWS CLI commands will use
+`AWS_PROFILE` and `AWS_DEFAULT_REGION`, while Terraform receives the same values
+through `TF_VAR_aws_profile` and `TF_VAR_aws_region`.
 
 ```powershell
-$env:TF_VAR_aws_profile = "ai-cloud-lab"
-$env:TF_VAR_aws_region = "us-east-1"
+$env:AWS_PROFILE = "ai-cloud-lab"
+$env:AWS_DEFAULT_REGION = "us-east-1"
+$env:TF_VAR_aws_profile = $env:AWS_PROFILE
+$env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 $env:TF_VAR_open_webui_admin_password = "YourTemporaryStrongPasswordHere"
 $env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
 ```
@@ -36,14 +40,6 @@ $env:TF_VAR_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificat
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
 
-You can also pass non-secret variables directly:
-
-```powershell
-terraform plan `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
-```
-
 ## 2. Validate and preview
 
 ```powershell
@@ -56,10 +52,7 @@ terraform plan
 Optional: save a plan when you want Terraform to apply exactly the actions you reviewed:
 
 ```powershell
-terraform plan `
-  -out ai-lab.tfplan `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform plan -out ai-lab.tfplan
 
 terraform apply ai-lab.tfplan
 ```
@@ -73,9 +66,7 @@ Remove-Item ai-lab.tfplan
 ## 3. Deploy
 
 ```powershell
-terraform apply `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform apply
 ```
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
@@ -91,10 +82,7 @@ $env:instance_id = terraform output -raw instance_id
 Use that unique target for the SSM session:
 
 ```powershell
-aws ssm start-session `
-  --target $env:instance_id `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+aws ssm start-session --target $env:instance_id
 ```
 
 Inside the SSM shell, check bootstrap readiness:
@@ -131,9 +119,7 @@ Check ALB target health from PowerShell:
 ```powershell
 $env:alb_target_group_arn = terraform output -raw open_webui_target_group_arn
 aws elbv2 describe-target-health `
-  --target-group-arn $env:alb_target_group_arn `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+  --target-group-arn $env:alb_target_group_arn
 ```
 
 The EC2 target should report `healthy`. Then verify both:
@@ -150,9 +136,7 @@ second PowerShell terminal:
 aws ssm start-session `
   --target $env:instance_id `
   --document-name AWS-StartPortForwardingSession `
-  --parameters portNumber="8080",localPortNumber="8080" `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+  --parameters portNumber="8080",localPortNumber="8080"
 ```
 
 Open:
@@ -168,9 +152,7 @@ different local port:
 aws ssm start-session `
   --target $env:instance_id `
   --document-name AWS-StartPortForwardingSession `
-  --parameters "portNumber=8080,localPortNumber=8081" `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+  --parameters "portNumber=8080,localPortNumber=8081"
 ```
 
 Then open `http://localhost:8081`.
@@ -201,21 +183,15 @@ If you may test again later, stop the instance to avoid ongoing compute charges:
 
 ```powershell
 aws ec2 stop-instances `
-  --instance-ids $env:instance_id `
-  --region us-east-1 `
-  --profile ai-cloud-lab
+  --instance-ids $env:instance_id
 ```
 
 For permanent cleanup, review the destroy plan and then remove all Terraform-managed resources:
 
 ```powershell
-terraform plan -destroy `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform plan -destroy
 
-terraform destroy `
-  -var="aws_profile=ai-cloud-lab" `
-  -var="aws_region=us-east-1"
+terraform destroy
 ```
 
 After teardown, verify that the instance and security group are gone. Remove `terraform.tfvars` if it contains a real password, but keep `terraform.tfvars.example`.

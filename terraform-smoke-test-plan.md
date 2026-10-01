@@ -38,8 +38,8 @@ $env:TF_VAR_route53_zone_name = "aiwebdemo.click"
 
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
-Terraform selects the matching certificate automatically. Set
-`TF_VAR_acm_certificate_arn` only if you need to override that selection.
+The project already supplies the issued `aiwebdemo.click` certificate ARN.
+Set `TF_VAR_acm_certificate_arn` only if you need to override that default.
 
 ## 2. Validate and preview
 

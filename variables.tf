@@ -154,9 +154,9 @@ variable "route53_zone_name" {
 }
 
 variable "acm_certificate_arn" {
-  description = "Optional issued ACM certificate ARN in aws_region. When null, Terraform selects the most recent ISSUED certificate matching domain_name."
+  description = "Issued ACM certificate ARN for aiwebdemo.click in us-east-1. Override only when intentionally changing certificates."
   type        = string
-  default     = null
+  default     = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 }
 
 variable "enable_ssh" {

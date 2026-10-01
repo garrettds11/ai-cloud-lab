@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "AWS CLI profile Terraform should use."
+  description = "Optional AWS CLI profile Terraform should use. Leave null to use environment, SSO, or instance-role credentials."
   type        = string
-  default     = "CHANGEME"
+  default     = null
 }
 
 variable "project_name" {
@@ -52,13 +52,13 @@ variable "open_webui_admin_name" {
 }
 
 variable "open_webui_admin_password" {
-  description = "Password for the initial Open WebUI local admin account. The default is temporary for test labs only; change it before using Open WebUI."
+  description = "Password for the initial Open WebUI local admin account. Must be supplied before apply."
   type        = string
-  default     = "ChangeMeBeforeUse123!"
+  default     = null
   sensitive   = true
 
   validation {
-    condition     = length(var.open_webui_admin_password) >= 12
+    condition     = var.open_webui_admin_password == null || length(var.open_webui_admin_password) >= 12
     error_message = "open_webui_admin_password must be at least 12 characters."
   }
 }

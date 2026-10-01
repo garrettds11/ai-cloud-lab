@@ -12,9 +12,19 @@ terraform {
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = "lab"
+      ManagedBy   = "terraform"
+    }
+  }
 }
 
-data "aws_caller_identity" "current" {}
+locals {
+  aws_cli_profile_arg = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
+}
 
 # Canonical publishes current Ubuntu AMI IDs through AWS Systems Manager Parameter Store.
 data "aws_ssm_parameter" "ubuntu_ami" {
@@ -61,9 +71,7 @@ resource "aws_security_group" "ai_lab" {
   }
 
   tags = {
-    Name        = "${var.project_name}-sg"
-    Project     = var.project_name
-    Environment = "lab"
+    Name = "${var.project_name}-sg"
   }
 }
 
@@ -87,7 +95,7 @@ resource "aws_iam_role" "ssm" {
   })
 
   tags = {
-    Project = var.project_name
+    Name = "${var.project_name}-ssm-role"
   }
 }
 
@@ -135,7 +143,7 @@ resource "aws_instance" "ai_lab" {
     ollama_model               = var.ollama_model
     open_webui_admin_email     = var.open_webui_admin_email
     open_webui_admin_name      = var.open_webui_admin_name
-    open_webui_admin_password  = var.open_webui_admin_password
+    open_webui_admin_password  = var.open_webui_admin_password == null ? "" : var.open_webui_admin_password
     open_webui_container_image = var.open_webui_container_image
     open_webui_container_name  = var.open_webui_container_name
     open_webui_host_port       = var.open_webui_host_port
@@ -151,12 +159,15 @@ resource "aws_instance" "ai_lab" {
       condition     = !var.enable_ssh || (var.ssh_key_name != null && var.allowed_ssh_cidr != null)
       error_message = "When enable_ssh is true, ssh_key_name and allowed_ssh_cidr must both be set."
     }
+
+    precondition {
+      condition     = var.open_webui_admin_password != null
+      error_message = "open_webui_admin_password must be set before applying the lab."
+    }
   }
 
   tags = {
     Name        = var.project_name
-    Project     = var.project_name
-    Environment = "lab"
     Application = "Open-WebUI-Ollama"
   }
 

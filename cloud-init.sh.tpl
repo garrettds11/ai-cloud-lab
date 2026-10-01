@@ -6,6 +6,18 @@ export DEBIAN_FRONTEND=noninteractive
 
 LOG_FILE="/var/log/ai-lab-bootstrap.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
+STATE_DIR="/var/lib/ai-lab"
+READY_FILE="$STATE_DIR/ready"
+FAILED_FILE="$STATE_DIR/failed"
+mkdir -p "$STATE_DIR"
+rm -f "$READY_FILE" "$FAILED_FILE"
+
+mark_failed() {
+    touch "$FAILED_FILE"
+    echo "AI lab bootstrap failed. See $LOG_FILE."
+}
+
+trap mark_failed ERR
 
 wait_for_ollama() {
     for attempt in $(seq 1 60); do
@@ -26,12 +38,12 @@ wait_for_ollama() {
 
 ensure_ssm_agent() {
     if systemctl list-unit-files --type=service | grep -q '^amazon-ssm-agent.service'; then
-        systemctl enable --now amazon-ssm-agent.service || true
+        systemctl enable --now amazon-ssm-agent.service
         return 0
     fi
 
     if systemctl list-unit-files --type=service | grep -q '^snap.amazon-ssm-agent.amazon-ssm-agent.service'; then
-        systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+        systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service
         return 0
     fi
 
@@ -39,8 +51,8 @@ ensure_ssm_agent() {
         apt-get install -y snapd
     fi
 
-    snap install amazon-ssm-agent --classic || true
-    systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+    snap install amazon-ssm-agent --classic
+    systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service
 }
 
 configure_local_firewall() {
@@ -100,7 +112,6 @@ echo "Starting Open WebUI + Ollama AI lab installation"
 echo "=================================================="
 
 apt-get update
-apt-get upgrade -y
 
 apt-get install -y \
     curl \
@@ -115,8 +126,16 @@ apt-get install -y \
 # Ubuntu AWS images usually include the SSM agent. This makes sure it is active.
 ensure_ssm_agent
 
+if systemctl is-active --quiet amazon-ssm-agent.service || \
+   systemctl is-active --quiet snap.amazon-ssm-agent.amazon-ssm-agent.service; then
+    echo "SSM agent is active."
+else
+    echo "SSM agent is not active; bootstrap cannot continue."
+    systemctl --no-pager --full status amazon-ssm-agent.service snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+    exit 1
+fi
+
 systemctl enable --now docker
-usermod -aG docker ubuntu || true
 configure_local_firewall
 
 # Install Ollama using the official Linux installer.
@@ -136,7 +155,7 @@ systemctl restart ollama
 wait_for_ollama
 
 # Pull requested model.
-sudo -H -u ubuntu env OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
+HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
 
 docker volume create "${open_webui_docker_volume}"
 docker pull "${open_webui_container_image}"
@@ -183,7 +202,7 @@ ollama list || true
 
 echo
 echo "--- Open WebUI container ---"
-docker ps --filter name=${open_webui_container_name} || true
+sudo docker ps --filter name=${open_webui_container_name} || true
 
 echo
 echo "--- Open WebUI HTTP ---"
@@ -233,3 +252,5 @@ chown ubuntu:ubuntu /home/ubuntu/AI-LAB-README.txt
 echo "=================================================="
 echo "AI lab installation complete"
 echo "=================================================="
+touch "$READY_FILE"
+rm -f "$FAILED_FILE"

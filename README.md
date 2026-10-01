@@ -11,7 +11,7 @@ The active lab provisions:
 - Docker for running Open WebUI with a persistent `open-webui` volume
 - AWS Systems Manager Session Manager for shell access and port forwarding
 - An IAM instance profile with `AmazonSSMManagedInstanceCore`
-- A security group with no public inbound access to Open WebUI or Ollama
+- A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic)
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
@@ -56,13 +56,7 @@ Open WebUI creates the first local admin account during container startup using:
 - `open_webui_admin_name`
 - `open_webui_admin_password`
 
-The password variable is sensitive and has a temporary test-lab default:
-
-```text
-ChangeMeBeforeUse123!
-```
-
-Use it only long enough to verify the private tunnel and first login, then update the Open WebUI admin password before using the lab. For a less disposable run, override it before apply. Do not commit a real password in committed files.
+The password variable is sensitive and has no usable default. Set it before apply; do not commit a real password in committed files. The value is used during first container initialization and is stored in Terraform state, so use an encrypted remote backend for shared or long-lived deployments.
 
 PowerShell:
 
@@ -78,23 +72,40 @@ export TF_VAR_open_webui_admin_password="<strong-local-password>"
 
 You may also use a local `terraform.tfvars` file for secrets. It is ignored by `.gitignore`; do not commit it.
 
+## Quick Start
+
+Copy the example variables file, set the password locally, and deploy:
+
+```powershell
+Set-Location C:\GitHub\ai-cloud-lab
+Copy-Item terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars and set your region, model, and other values.
+$env:TF_VAR_open_webui_admin_password = "<strong-local-password>"
+terraform init
+terraform fmt -recursive
+terraform validate
+terraform apply
+```
+
+`aws_profile = null` is the default, so Terraform uses environment credentials, SSO, or an instance/CI role. Set `aws_profile` in `terraform.tfvars` only when you intentionally want a named local profile.
+
 ## Deploy
 
-PowerShell example using profile `garrett_gspear`:
+PowerShell example using an explicit profile:
 
 ```powershell
 terraform init
 terraform fmt -recursive
 terraform validate
 terraform plan `
-  -var="aws_profile=garrett_gspear" `
+  -var="aws_profile=<your-profile>" `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
   -var="ollama_model=llama3.2:3b"
 
 terraform apply `
-  -var="aws_profile=garrett_gspear" `
+  -var="aws_profile=<your-profile>" `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
@@ -102,6 +113,18 @@ terraform apply `
 ```
 
 Terraform uses `user_data_replace_on_change = true`, so bootstrap template changes replace the EC2 instance on the next apply.
+
+## Wait For Bootstrap
+
+`terraform apply` completes when EC2 reports the instance running; package, model, and container setup continues afterward and can take several minutes. From an SSM shell, run:
+
+```bash
+if test -f /var/lib/ai-lab/ready; then echo READY; elif test -f /var/lib/ai-lab/failed; then echo FAILED; else echo NOT_READY; fi
+tail -n 100 /var/log/ai-lab-bootstrap.log
+ai-lab-status
+```
+
+The bootstrap writes `ready` only after Ollama and Open WebUI respond successfully, and writes `failed` when a command aborts.
 
 ## Connect With SSM Port Forwarding
 
@@ -114,7 +137,7 @@ aws ssm start-session `
   --target <instance-id> `
   --document-name AWS-StartPortForwardingSession `
   --parameters portNumber="8080",localPortNumber="8080" `
-  --profile garrett_gspear `
+  --profile <your-profile> `
   --region us-east-1
 ```
 
@@ -125,7 +148,7 @@ aws ssm start-session \
   --target <instance-id> \
   --document-name AWS-StartPortForwardingSession \
   --parameters portNumber="8080",localPortNumber="8080" \
-  --profile garrett_gspear \
+  --profile <your-profile> \
   --region us-east-1
 ```
 
@@ -147,7 +170,7 @@ SSH is disabled by default. To enable it, pass an existing EC2 key pair name and
 
 ```powershell
 terraform apply `
-  -var="aws_profile=garrett_gspear" `
+  -var="aws_profile=<your-profile>" `
   -var="enable_ssh=true" `
   -var="ssh_key_name=<existing-key-pair-name>" `
   -var="allowed_ssh_cidr=<your-ip>/32"
@@ -164,7 +187,7 @@ Then open `http://localhost:8080`.
 ## Session Manager Shell
 
 ```powershell
-aws ssm start-session --target <instance-id> --region us-east-1 --profile garrett_gspear
+aws ssm start-session --target <instance-id> --region us-east-1 --profile <your-profile>
 ```
 
 The equivalent Terraform output is:
@@ -183,14 +206,14 @@ aws ssm send-command `
   --targets "Key=tag:Name,Values=ollama-open-webui-lab" `
   --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' `
   --comment "Pull selected Ollama model" `
-  --profile garrett_gspear `
+  --profile <your-profile> `
   --region us-east-1
 ```
 
 PowerShell one-liner:
 
 ```powershell
-aws ssm send-command --document-name "AWS-RunShellScript" --targets "Key=tag:Name,Values=ollama-open-webui-lab" --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' --comment "Pull selected Ollama model" --profile garrett_gspear --region us-east-1
+aws ssm send-command --document-name "AWS-RunShellScript" --targets "Key=tag:Name,Values=ollama-open-webui-lab" --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' --comment "Pull selected Ollama model" --profile <your-profile> --region us-east-1
 ```
 
 Linux/macOS:
@@ -201,7 +224,7 @@ aws ssm send-command \
   --targets "Key=tag:Name,Values=ollama-open-webui-lab" \
   --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' \
   --comment "Pull selected Ollama model" \
-  --profile garrett_gspear \
+  --profile <your-profile> \
   --region us-east-1
 ```
 
@@ -213,7 +236,7 @@ From an SSM shell:
 
 ```bash
 systemctl status ollama
-docker ps
+sudo docker ps
 curl http://127.0.0.1:11434/api/tags
 curl http://127.0.0.1:8080
 ai-lab-status
@@ -226,8 +249,8 @@ If Open WebUI does not show Ollama models:
 ```bash
 systemctl status ollama
 curl http://127.0.0.1:11434/api/tags
-docker logs --tail 200 open-webui
-docker inspect open-webui --format '{{range .Config.Env}}{{println .}}{{end}}' | grep OLLAMA_BASE_URL
+sudo docker logs --tail 200 open-webui
+sudo docker inspect open-webui --format '{{range .Config.Env}}{{println .}}{{end}}' | grep OLLAMA_BASE_URL
 ollama list
 ```
 
@@ -238,14 +261,14 @@ This lab runs Open WebUI with host networking so the Docker container can reach 
 Stop the instance when not in use:
 
 ```powershell
-aws ec2 stop-instances --instance-ids <instance-id> --region us-east-1 --profile garrett_gspear
+aws ec2 stop-instances --instance-ids <instance-id> --region us-east-1 --profile <your-profile>
 ```
 
 Destroy all Terraform-managed lab resources:
 
 ```powershell
 terraform destroy `
-  -var="aws_profile=garrett_gspear" `
+  -var="aws_profile=<your-profile>" `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `

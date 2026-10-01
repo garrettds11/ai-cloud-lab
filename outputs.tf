@@ -33,7 +33,7 @@ output "ssm_open_webui_port_forward_command" {
   description = "Windows PowerShell command to create a private SSM tunnel to Open WebUI."
 
   value = <<-EOT
-    aws ssm start-session --target ${aws_instance.ai_lab.id} --document-name AWS-StartPortForwardingSession --parameters portNumber="${var.open_webui_host_port}",localPortNumber="${var.open_webui_host_port}" --region ${var.aws_region} --profile ${var.aws_profile}
+    aws ssm start-session --target ${aws_instance.ai_lab.id} --document-name AWS-StartPortForwardingSession --parameters portNumber="${var.open_webui_host_port}",localPortNumber="${var.open_webui_host_port}" --region ${var.aws_region}${local.aws_cli_profile_arg}
   EOT
 }
 
@@ -41,6 +41,6 @@ output "ssm_shell_command" {
   description = "Open a command-line SSM session."
 
   value = <<-EOT
-    aws ssm start-session --target ${aws_instance.ai_lab.id} --region ${var.aws_region} --profile ${var.aws_profile}
+    aws ssm start-session --target ${aws_instance.ai_lab.id} --region ${var.aws_region}${local.aws_cli_profile_arg}
   EOT
 }

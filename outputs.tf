@@ -38,6 +38,11 @@ output "open_webui_target_group_arn" {
   value       = var.enable_domain_access ? aws_lb_target_group.domain["domain"].arn : null
 }
 
+output "auto_stop_schedule" {
+  description = "EventBridge Scheduler name when automatic stopping is enabled."
+  value       = var.enable_auto_stop ? aws_scheduler_schedule.auto_stop["auto_stop"].name : null
+}
+
 output "ssh_tunnel_command" {
   description = "SSH tunnel command when SSH is enabled. Otherwise use the SSM port-forwarding output."
 

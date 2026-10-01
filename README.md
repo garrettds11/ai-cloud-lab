@@ -53,6 +53,15 @@ The project defaults to the issued `aiwebdemo.click` certificate ARN in
 `us-east-1`. Set `acm_certificate_arn` only when intentionally changing the
 certificate.
 
+## Optional Cost Guardrail
+
+Set `enable_auto_stop = true` to create an EventBridge Scheduler schedule that
+calls `ec2:StopInstances` every `auto_stop_after_minutes` minutes. The default
+interval is 60 minutes when enabled. This is a recurring schedule, so a later
+manual restart will also be stopped at the next scheduled run. The Terraform
+identity applying the stack needs permission to create the Scheduler IAM role
+and pass it to EventBridge Scheduler.
+
 The EC2 instance does not receive a public application ingress rule. When domain
 access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 

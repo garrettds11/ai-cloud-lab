@@ -25,6 +25,7 @@ provider "aws" {
 locals {
   aws_cli_profile_arg = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
   domain_resources    = var.enable_domain_access ? { domain = true } : {}
+  auto_stop_resources = var.enable_auto_stop ? { auto_stop = true } : {}
   domain_certificate_arn = var.acm_certificate_arn != null ? var.acm_certificate_arn : (
     var.enable_domain_access ? data.aws_acm_certificate.domain[0].arn : null
   )
@@ -226,6 +227,65 @@ resource "aws_instance" "ai_lab" {
   depends_on = [
     aws_iam_role_policy_attachment.ssm
   ]
+}
+
+resource "aws_iam_role" "auto_stop" {
+  for_each    = local.auto_stop_resources
+  name_prefix = "${var.project_name}-stop-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "scheduler.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.project_name}-auto-stop-role"
+  }
+}
+
+resource "aws_iam_role_policy" "auto_stop" {
+  for_each = local.auto_stop_resources
+  name     = "${var.project_name}-stop"
+  role     = aws_iam_role.auto_stop[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "ec2:StopInstances"
+        Resource = aws_instance.ai_lab.arn
+      }
+    ]
+  })
+}
+
+resource "aws_scheduler_schedule" "auto_stop" {
+  for_each                     = local.auto_stop_resources
+  name                         = "${var.project_name}-auto-stop"
+  schedule_expression          = "rate(${var.auto_stop_after_minutes} minutes)"
+  schedule_expression_timezone = "UTC"
+  state                        = "ENABLED"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
+    role_arn = aws_iam_role.auto_stop[each.key].arn
+    input = jsonencode({
+      InstanceIds = [aws_instance.ai_lab.id]
+    })
+  }
 }
 
 data "aws_route53_zone" "public" {

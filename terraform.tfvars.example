@@ -25,6 +25,11 @@ open_webui_admin_name  = "Lab Admin"
 # route53_zone_name   = "aiwebdemo.click"
 acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 
+# Optional cost guardrail. With these values, the instance is stopped every
+# hour after the schedule begins, including after a later manual restart.
+# enable_auto_stop       = true
+# auto_stop_after_minutes = 60
+
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

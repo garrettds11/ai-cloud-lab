@@ -159,6 +159,23 @@ variable "acm_certificate_arn" {
   default     = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 }
 
+variable "enable_auto_stop" {
+  description = "Whether EventBridge Scheduler should stop the lab instance on a recurring schedule."
+  type        = bool
+  default     = false
+}
+
+variable "auto_stop_after_minutes" {
+  description = "Recurring EventBridge Scheduler interval for stopping the instance. Set to 60 for the one-hour demo guardrail."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.auto_stop_after_minutes >= 1 && var.auto_stop_after_minutes <= 10080 && floor(var.auto_stop_after_minutes) == var.auto_stop_after_minutes
+    error_message = "auto_stop_after_minutes must be a whole number from 1 through 10080."
+  }
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

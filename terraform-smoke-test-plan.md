@@ -26,6 +26,8 @@ $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 $env:TF_VAR_open_webui_admin_password = "YourTemporaryStrongPasswordHere"
 $env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
+$env:TF_VAR_enable_auto_stop = "true"
+$env:TF_VAR_auto_stop_after_minutes = "60"
 ```
 
 For the domain-access variant, set these additional values before planning:
@@ -71,6 +73,9 @@ terraform apply
 ```
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
+With auto-stop enabled, the instance is stopped by EventBridge Scheduler at the
+first hourly run after the schedule begins. Do not manually restart it unless
+you intend to complete the smoke test before the next scheduled stop.
 
 ## 4. Set the unique SSM target
 
@@ -203,7 +208,7 @@ terraform destroy
 ```
 
 After teardown, verify that the instance, ALB, target group, security groups,
-and Route 53 alias are gone. Remove `terraform.tfvars` if it contains a real
+Route 53 alias, and auto-stop schedule are gone. Remove `terraform.tfvars` if it contains a real
 password, but keep `terraform.tfvars.example`.
 
 ## Likely failure points

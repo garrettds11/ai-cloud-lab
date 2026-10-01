@@ -24,6 +24,18 @@ $env:TF_VAR_open_webui_admin_password = "YourTemporaryStrongPasswordHere"
 $env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
 ```
 
+For the domain-access variant, set these additional values before planning:
+
+```powershell
+$env:TF_VAR_enable_domain_access = "true"
+$env:TF_VAR_domain_name = "aiwebdemo.click"
+$env:TF_VAR_route53_zone_name = "aiwebdemo.click"
+$env:TF_VAR_acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/replace-me"
+```
+
+Confirm the certificate is `ISSUED`, belongs to the same region as
+`TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
+
 You can also pass non-secret variables directly:
 
 ```powershell
@@ -123,6 +135,10 @@ Open:
 ```text
 http://localhost:8080
 ```
+
+When `TF_VAR_enable_domain_access` is `true`, wait for the Route 53 alias to
+resolve and open `https://aiwebdemo.click` instead. Do not run the SSM port
+forwarding session for the domain-access test; the ALB is the public entry point.
 
 Initial login credentials:
 

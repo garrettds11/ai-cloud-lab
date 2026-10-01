@@ -19,6 +19,12 @@ open_webui_admin_name  = "Lab Admin"
 # demo4@example.local. Override open_webui_demo_users to change their names
 # or email addresses, while keeping exactly four entries for this demo.
 
+# Optional public HTTPS access through an ALB and Route 53 alias.
+# enable_domain_access = true
+# domain_name         = "aiwebdemo.click"
+# route53_zone_name   = "aiwebdemo.click"
+# acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/replace-me"
+
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

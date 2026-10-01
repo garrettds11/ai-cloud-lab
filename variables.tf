@@ -135,6 +135,30 @@ variable "open_webui_host_port" {
   }
 }
 
+variable "enable_domain_access" {
+  description = "Whether to publish Open WebUI through an internet-facing HTTPS Application Load Balancer."
+  type        = bool
+  default     = false
+}
+
+variable "domain_name" {
+  description = "Public DNS name for Open WebUI, such as aiwebdemo.click."
+  type        = string
+  default     = "aiwebdemo.click"
+}
+
+variable "route53_zone_name" {
+  description = "Public Route 53 hosted zone containing domain_name."
+  type        = string
+  default     = "aiwebdemo.click"
+}
+
+variable "acm_certificate_arn" {
+  description = "Issued ACM certificate ARN in aws_region for domain_name. Required when domain access is enabled."
+  type        = string
+  default     = null
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

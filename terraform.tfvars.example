@@ -14,6 +14,10 @@ open_webui_admin_name  = "Lab Admin"
 # Set it before apply with TF_VAR_open_webui_admin_password or a local
 # terraform.tfvars file, which is ignored by .gitignore.
 # open_webui_admin_password = "replace-with-a-strong-local-password"
+# open_webui_demo_user_password = "replace-with-a-temporary-demo-password"
+# The default configuration creates demo1@example.local through
+# demo4@example.local. Override open_webui_demo_users to change their names
+# or email addresses, while keeping exactly four entries for this demo.
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false

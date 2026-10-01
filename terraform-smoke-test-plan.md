@@ -140,6 +140,21 @@ When `TF_VAR_enable_domain_access` is `true`, wait for the Route 53 alias to
 resolve and open `https://aiwebdemo.click` instead. Do not run the SSM port
 forwarding session for the domain-access test; the ALB is the public entry point.
 
+Check ALB target health from PowerShell:
+
+```powershell
+$env:alb_target_group_arn = terraform output -raw open_webui_target_group_arn
+aws elbv2 describe-target-health `
+  --target-group-arn $env:alb_target_group_arn `
+  --region us-east-1 `
+  --profile ai-cloud-lab
+```
+
+The EC2 target should report `healthy`. Then verify both:
+
+- `http://aiwebdemo.click` redirects to HTTPS.
+- `https://aiwebdemo.click` loads Open WebUI and accepts the admin and four demo accounts.
+
 Initial login credentials:
 
 - Email: `admin@example.local` unless you changed `open_webui_admin_email`.

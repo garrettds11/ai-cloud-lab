@@ -28,6 +28,16 @@ output "open_webui_domain_url" {
   value       = var.enable_domain_access ? "https://${var.domain_name}" : null
 }
 
+output "open_webui_alb_dns_name" {
+  description = "ALB DNS name when domain access is enabled."
+  value       = var.enable_domain_access ? aws_lb.domain["domain"].dns_name : null
+}
+
+output "open_webui_target_group_arn" {
+  description = "ALB target group ARN for health checks when domain access is enabled."
+  value       = var.enable_domain_access ? aws_lb_target_group.domain["domain"].arn : null
+}
+
 output "ssh_tunnel_command" {
   description = "SSH tunnel command when SSH is enabled. Otherwise use the SSM port-forwarding output."
 

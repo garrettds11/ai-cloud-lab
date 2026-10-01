@@ -60,10 +60,16 @@ configure_local_firewall() {
 #!/bin/bash
 set -euo pipefail
 
-# Defense in depth: the AWS security group has no inbound ${open_webui_host_port} or 11434 rules,
-# and these host rules keep both services reachable only from instance-local
-# loopback clients such as SSM and SSH tunnels.
-for port in ${open_webui_host_port} 11434; do
+# Defense in depth: the AWS security group keeps the app port reachable only
+# from the ALB when domain access is enabled, or from no network source when
+# using SSM-only access. Ollama remains loopback-only in both modes.
+if [[ "${open_webui_domain_access_enabled}" == "true" ]]; then
+    protected_ports="11434"
+else
+    protected_ports="${open_webui_host_port} 11434"
+fi
+
+for port in $protected_ports; do
     iptables -C INPUT -p tcp --dport "$port" ! -i lo -j DROP 2>/dev/null || \
         iptables -I INPUT -p tcp --dport "$port" ! -i lo -j DROP
 done

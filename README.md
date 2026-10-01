@@ -12,6 +12,7 @@ The active lab provisions:
 - AWS Systems Manager Session Manager for shell access and port forwarding
 - An IAM instance profile with `AmazonSSMManagedInstanceCore`
 - A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic)
+- Optional public HTTPS access through an Application Load Balancer, ACM, and Route 53
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
@@ -39,6 +40,21 @@ Local model
 ```
 
 Ollama listens only on `127.0.0.1:11434`. Open WebUI runs on the instance at `localhost:8080`. The Terraform security group does not expose ports `8080` or `11434` to the public internet. SSH is disabled by default; if enabled, TCP/22 is limited to `var.allowed_ssh_cidr`.
+
+## Optional Domain Access
+
+Set `enable_domain_access = true` only after the public Route 53 hosted zone
+exists and the ACM certificate is issued in the same AWS region. Terraform then
+creates an internet-facing ALB with HTTP-to-HTTPS redirect, an HTTPS listener on
+port 443, an EC2 rule allowing the app port only from the ALB, and a Route 53
+alias record for `domain_name`.
+
+The project defaults to the issued `aiwebdemo.click` certificate ARN in
+`us-east-1`. Set `acm_certificate_arn` only when intentionally changing the
+certificate.
+
+The EC2 instance does not receive a public application ingress rule. When domain
+access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 
 ## Prerequisites
 

@@ -13,6 +13,25 @@ Get-ChildItem *.tf
 
 If `Get-ChildItem *.tf` returns no files, stop and change to the correct repository directory before continuing.
 
+Create the local variables file once:
+
+```powershell
+Copy-Item terraform.tfvars.example terraform.tfvars
+notepad terraform.tfvars
+```
+
+For the Cloudflare domain smoke test, uncomment or confirm these settings in
+`terraform.tfvars`:
+
+```hcl
+enable_domain_access   = true
+enable_cloudflare_access = true
+```
+
+Replace the deployment-specific values in that file when cloning the project.
+The example contains identifiers and ARNs, not secret values. Do not add the
+Cloudflare token or Open WebUI passwords to the file.
+
 ## 1. Set the test variables
 
 Set the AWS profile and region once at the beginning. AWS CLI commands will use
@@ -24,15 +43,7 @@ $env:AWS_PROFILE = "ai-cloud-lab"
 $env:AWS_DEFAULT_REGION = "us-east-1"
 $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
-$env:TF_VAR_open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
 $env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
-$env:TF_VAR_domain_name = "aiwebdemo.click"
-$env:TF_VAR_route53_zone_name = "aiwebdemo.click"
-$env:TF_VAR_acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
-$env:TF_VAR_cloudflare_account_id = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
-$env:TF_VAR_cloudflare_api_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
-$env:TF_VAR_cloudflare_access_allowed_emails = '["garrettds11@gmail.com"]'
-$env:TF_VAR_enable_cloudflare_access = "true"
 ```
 
 The Secrets Manager secret must already exist and contain the desired admin
@@ -89,16 +100,10 @@ Invoke-TerraformWithCloudflareToken @("apply")
 The wrapper also supports teardown with
 `Invoke-TerraformWithCloudflareToken @("destroy")`.
 
-For the domain-access variant, set these additional values before planning:
-
-```powershell
-$env:TF_VAR_enable_domain_access = "true"
-```
-
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
-The project already supplies the issued `aiwebdemo.click` certificate ARN.
-Set `TF_VAR_acm_certificate_arn` only if you need to override that default.
+The current demo values are in `terraform.tfvars`; replace them there when
+using another account, domain, zone, certificate, or Cloudflare account.
 
 ## 2. Validate and preview
 

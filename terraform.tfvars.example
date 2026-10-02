@@ -26,11 +26,11 @@ open_webui_admin_name  = "Lab Admin"
 # route53_zone_name   = "aiwebdemo.click"
 acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 
-# Cloudflare values are deployment-specific. Set these when enabling the
-# Cloudflare DNS/Access integration; do not store the API token itself here.
-# cloudflare_account_id             = "replace-with-cloudflare-account-id"
-# cloudflare_api_token_secret_arn   = "arn:aws:secretsmanager:region:account:secret:CLOUDFLARE_API_TOKEN-suffix"
-# cloudflare_access_allowed_emails  = ["you@example.com"]
+# Cloudflare deployment values. Replace this block when cloning the repo; do
+# not store the API token itself here.
+cloudflare_account_id            = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
+cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
+cloudflare_access_allowed_emails = ["garrettds11@gmail.com"]
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false

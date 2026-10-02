@@ -20,6 +20,22 @@ Copy-Item terraform.tfvars.example terraform.tfvars
 notepad terraform.tfvars
 ```
 
+Stop after opening Notepad. Before running any Terraform command, replace each
+deployment-specific example value in `terraform.tfvars`, then save and close
+Notepad. At minimum, review:
+
+- `aws_region` and `aws_profile`
+- `open_webui_admin_password_secret_arn`
+- `domain_name`, `route53_zone_name`, and `acm_certificate_arn`
+- `cloudflare_account_id`
+- `cloudflare_api_token_secret_arn`
+- `cloudflare_access_allowed_emails`
+- `instance_type`, `root_volume_size`, and `ollama_model` for the intended test
+
+For the current demo, the shipped values are already populated. A user cloning
+the repository should replace them in this one file rather than edit Terraform
+source files or repeat them on every command.
+
 For the Cloudflare domain smoke test, uncomment or confirm these settings in
 `terraform.tfvars`:
 
@@ -34,9 +50,11 @@ Cloudflare token or Open WebUI passwords to the file.
 
 ## 1. Set the test variables
 
-Set the AWS profile and region once at the beginning. AWS CLI commands will use
-`AWS_PROFILE` and `AWS_DEFAULT_REGION`, while Terraform receives the same values
-through `TF_VAR_aws_profile` and `TF_VAR_aws_region`.
+Set only the runtime and credential-selection values in the environment. The
+deployment configuration is loaded from `terraform.tfvars` by Terraform.
+AWS CLI commands will use `AWS_PROFILE` and `AWS_DEFAULT_REGION`, while
+Terraform receives the same values through `TF_VAR_aws_profile` and
+`TF_VAR_aws_region`.
 
 ```powershell
 $env:AWS_PROFILE = "ai-cloud-lab"

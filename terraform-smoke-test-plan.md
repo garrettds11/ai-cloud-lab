@@ -51,8 +51,11 @@ Cloudflare token or Open WebUI passwords to the file.
 
 ## 1. Set the test variables
 
-Set only the runtime and credential-selection values in the environment. The
-deployment configuration is loaded from `terraform.tfvars` by Terraform.
+Set only the runtime and credential-selection values in the environment. Change
+the `AWS_PROFILE` value below to the profile you intend to use, then leave it
+unchanged for the rest of the test. Do not assign `AWS_PROFILE` again later;
+Terraform's profile variable and all AWS CLI commands must use the same value.
+The deployment configuration is loaded from `terraform.tfvars` by Terraform.
 AWS CLI commands will use `AWS_PROFILE` and `AWS_DEFAULT_REGION`, while
 Terraform receives the same values through `TF_VAR_aws_profile` and
 `TF_VAR_aws_region`.

@@ -153,18 +153,10 @@ using another account, domain, zone, certificate, or Cloudflare account.
 ## 2. Validate and preview
 
 ```powershell
-terraform init
-terraform fmt -check -recursive
-terraform validate
-terraform plan
-```
-
-Optional: save a plan when you want Terraform to apply exactly the actions you reviewed:
-
-```powershell
-terraform plan -out ai-lab.tfplan
-
-terraform apply ai-lab.tfplan
+Invoke-TerraformWithCloudflareToken -Arguments @("init")
+Invoke-TerraformWithCloudflareToken -Arguments @("fmt", "-check", "-recursive")
+Invoke-TerraformWithCloudflareToken -Arguments @("validate")
+Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-out=ai-lab.tfplan")
 ```
 
 The plan file can contain sensitive values. Do not commit it; remove it after use:
@@ -176,7 +168,7 @@ Remove-Item ai-lab.tfplan
 ## 3. Deploy
 
 ```powershell
-terraform apply
+Invoke-TerraformWithCloudflareToken -Arguments @("apply", "ai-lab.tfplan")
 ```
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.

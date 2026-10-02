@@ -131,7 +131,7 @@ provision_demo_users() {
         -H 'Content-Type: application/json' \
         --data "$(jq -n \
             --arg email '${open_webui_admin_email}' \
-            --arg password '${open_webui_admin_password}' \
+            --arg password "$open_webui_admin_password" \
             '{email: $email, password: $password}')" | jq -r '.token')"
 
     if [[ -z "$admin_token" || "$admin_token" == "null" ]]; then
@@ -178,6 +178,7 @@ echo "=================================================="
 apt-get update
 
 apt-get install -y \
+    awscli \
     curl \
     wget \
     git \
@@ -201,6 +202,19 @@ fi
 
 systemctl enable --now docker
 configure_local_firewall
+
+# Retrieve the password at boot through the instance role. The secret ARN is
+# safe to include in user-data; the password itself is not.
+open_webui_admin_password="$(aws secretsmanager get-secret-value \
+    --secret-id '${open_webui_admin_password_secret_arn}' \
+    --query SecretString \
+    --output text \
+    --region '${aws_region}')"
+
+if [[ -z "$open_webui_admin_password" || "$open_webui_admin_password" == "None" ]]; then
+    echo "Open WebUI admin password secret was empty."
+    exit 1
+fi
 
 # Install Ollama using the official Linux installer.
 curl -fsSL https://ollama.com/install.sh | sh
@@ -240,7 +254,7 @@ docker run -d \
     -e ENABLE_OPENAI_API=false \
     -e WEBUI_ADMIN_EMAIL="${open_webui_admin_email}" \
     -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \
-    -e WEBUI_ADMIN_PASSWORD="${open_webui_admin_password}" \
+    -e WEBUI_ADMIN_PASSWORD="$open_webui_admin_password" \
     "${open_webui_container_image}"
 
 wait_for_open_webui

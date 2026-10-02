@@ -11,9 +11,10 @@ ollama_model     = "llama3.2:3b"
 open_webui_admin_email = "admin@example.local"
 open_webui_admin_name  = "Lab Admin"
 
-# Set it before apply with TF_VAR_open_webui_admin_password or a local
+# Create this secret in AWS Secrets Manager before apply, then set its ARN
+# with TF_VAR_open_webui_admin_password_secret_arn or in a local
 # terraform.tfvars file, which is ignored by .gitignore.
-# open_webui_admin_password = "replace-with-a-strong-local-password"
+# open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:region:account:secret:name-suffix"
 # open_webui_demo_user_password = "replace-with-a-temporary-demo-password"
 # The default configuration creates demo1@example.local through
 # demo4@example.local. Override open_webui_demo_users to change their names

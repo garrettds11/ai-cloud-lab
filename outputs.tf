@@ -23,6 +23,11 @@ output "open_webui_local_url" {
   value       = "http://localhost:${var.open_webui_host_port}"
 }
 
+output "open_webui_admin_password_secret_arn" {
+  description = "Pre-created Secrets Manager ARN used by Open WebUI bootstrap."
+  value       = var.open_webui_admin_password_secret_arn
+}
+
 output "open_webui_domain_url" {
   description = "Public HTTPS URL when domain access is enabled."
   value       = var.enable_domain_access ? "https://${var.domain_name}" : null

@@ -24,9 +24,15 @@ $env:AWS_PROFILE = "ai-cloud-lab"
 $env:AWS_DEFAULT_REGION = "us-east-1"
 $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
-$env:TF_VAR_open_webui_admin_password = "YourTemporaryStrongPasswordHere"
+$env:TF_VAR_open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
 $env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
 ```
+
+The Secrets Manager secret must already exist and contain the desired admin
+password. Terraform only grants the instance role read access and retrieves the
+password during bootstrap. Terraform does not create, update, or destroy this
+secret. To rotate an existing lab, change the password in Open WebUI first,
+then update the matching value in the AWS console.
 
 For the domain-access variant, set these additional values before planning:
 
@@ -168,7 +174,7 @@ Then open `http://localhost:8081`.
 Initial login credentials:
 
 - Email: `admin@example.local` unless you changed `open_webui_admin_email`.
-- Password: the value assigned to `$env:TF_VAR_open_webui_admin_password` before apply.
+- Password: the current value in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
 
 The bootstrap also creates these four local demo accounts:

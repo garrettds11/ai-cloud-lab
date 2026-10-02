@@ -147,6 +147,24 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+data "aws_secretsmanager_secret" "open_webui_admin_password" {
+  arn = var.open_webui_admin_password_secret_arn
+}
+
+resource "aws_iam_role_policy" "open_webui_admin_password" {
+  name = "${var.project_name}-admin-password"
+  role = aws_iam_role.ssm.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "secretsmanager:GetSecretValue"
+      Resource = data.aws_secretsmanager_secret.open_webui_admin_password.arn
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "ssm" {
   name_prefix = "${var.project_name}-"
   role        = aws_iam_role.ssm.name
@@ -183,19 +201,20 @@ resource "aws_instance" "ai_lab" {
   }
 
   user_data = replace(templatefile("${path.module}/cloud-init.sh.tpl", {
-    ollama_model                     = var.ollama_model
-    open_webui_admin_email           = var.open_webui_admin_email
-    open_webui_admin_name            = var.open_webui_admin_name
-    open_webui_admin_password        = var.open_webui_admin_password == null ? "" : var.open_webui_admin_password
-    open_webui_demo_users_b64        = base64encode(jsonencode(var.open_webui_demo_users))
-    open_webui_demo_password_b64     = var.open_webui_demo_user_password == null ? "" : base64encode(var.open_webui_demo_user_password)
-    open_webui_container_image       = var.open_webui_container_image
-    open_webui_container_name        = var.open_webui_container_name
-    open_webui_host_port             = var.open_webui_host_port
-    open_webui_docker_volume         = var.open_webui_docker_volume
-    open_webui_domain_access_enabled = var.enable_domain_access ? "true" : "false"
-    open_webui_ollama_base_url       = "http://127.0.0.1:11434"
-    open_webui_url                   = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
+    ollama_model                         = var.ollama_model
+    open_webui_admin_email               = var.open_webui_admin_email
+    open_webui_admin_name                = var.open_webui_admin_name
+    open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
+    open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
+    open_webui_demo_password_b64         = var.open_webui_demo_user_password == null ? "" : base64encode(var.open_webui_demo_user_password)
+    open_webui_container_image           = var.open_webui_container_image
+    open_webui_container_name            = var.open_webui_container_name
+    open_webui_host_port                 = var.open_webui_host_port
+    open_webui_docker_volume             = var.open_webui_docker_volume
+    open_webui_domain_access_enabled     = var.enable_domain_access ? "true" : "false"
+    open_webui_ollama_base_url           = "http://127.0.0.1:11434"
+    open_webui_url                       = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
+    aws_region                           = var.aws_region
   }), "\r\n", "\n")
 
   user_data_replace_on_change = true
@@ -207,8 +226,8 @@ resource "aws_instance" "ai_lab" {
     }
 
     precondition {
-      condition     = var.open_webui_admin_password != null
-      error_message = "open_webui_admin_password must be set before applying the lab."
+      condition     = var.open_webui_admin_password_secret_arn != null
+      error_message = "open_webui_admin_password_secret_arn must reference a pre-created Secrets Manager secret before applying the lab."
     }
 
     precondition {
@@ -224,7 +243,8 @@ resource "aws_instance" "ai_lab" {
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.ssm
+    aws_iam_role_policy_attachment.ssm,
+    aws_iam_role_policy.open_webui_admin_password
   ]
 }
 

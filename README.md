@@ -70,28 +70,38 @@ Open WebUI creates the first local admin account during container startup using:
 
 - `open_webui_admin_email`
 - `open_webui_admin_name`
-- `open_webui_admin_password`
+- the password in `open_webui_admin_password_secret_arn`
+
+Create the Secrets Manager secret before running Terraform and store the desired
+admin password in it. Terraform only validates and references the existing
+secret, grants the EC2 instance role permission to read it, and retrieves the
+value at runtime. Terraform does not create, update, or destroy this secret, and
+the password is not embedded in EC2 user-data.
+
+To rotate an existing lab, change the password in Open WebUI first, then update
+the matching value in the AWS console. Changing the secret alone does not change
+the already-initialized Open WebUI account.
 
 The bootstrap then creates four ordinary local demo accounts using:
 
 - `open_webui_demo_user_password`
 - `open_webui_demo_users` (exactly four local demo accounts by default)
 
-Both password variables are sensitive and have no usable default. Set them before apply; do not commit real passwords in committed files. The values are used during first container initialization and are stored in Terraform state, so use an encrypted remote backend for shared or long-lived deployments.
+The demo-user password remains a Terraform-sensitive input and should not be
+committed. The admin password is kept in Secrets Manager rather than Terraform
+variables or state.
 
 The four demo accounts use local Open WebUI password authentication. They all receive the temporary demo password and should change it from Profile after first login. This MVP does not require Cognito/OIDC.
 
 PowerShell:
 
 ```powershell
-$env:TF_VAR_open_webui_admin_password = "<strong-local-password>"
 $env:TF_VAR_open_webui_demo_user_password = "<temporary-demo-password>"
 ```
 
 Linux/macOS:
 
 ```bash
-export TF_VAR_open_webui_admin_password="<strong-local-password>"
 export TF_VAR_open_webui_demo_user_password="<temporary-demo-password>"
 ```
 
@@ -99,13 +109,15 @@ You may also use a local `terraform.tfvars` file for secrets. It is ignored by `
 
 ## Quick Start
 
-Copy the example variables file, set the password locally, and deploy:
+Copy the example variables file, set the pre-created secret ARN and demo
+password locally, and deploy:
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab
 Copy-Item terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars and set your region, model, and other values.
-$env:TF_VAR_open_webui_admin_password = "<strong-local-password>"
+$env:TF_VAR_open_webui_admin_password_secret_arn = "<secret-arn>"
+$env:TF_VAR_open_webui_demo_user_password = "<temporary-demo-password>"
 terraform init
 terraform fmt -recursive
 terraform validate

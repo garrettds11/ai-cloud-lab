@@ -51,15 +51,14 @@ variable "open_webui_admin_name" {
   default     = "Lab Admin"
 }
 
-variable "open_webui_admin_password" {
-  description = "Password for the initial Open WebUI local admin account. Must be supplied before apply."
+variable "open_webui_admin_password_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret containing the Open WebUI admin password. Terraform does not create, update, or destroy this secret."
   type        = string
   default     = null
-  sensitive   = true
 
   validation {
-    condition     = var.open_webui_admin_password == null || length(var.open_webui_admin_password) >= 12
-    error_message = "open_webui_admin_password must be at least 12 characters."
+    condition     = var.open_webui_admin_password_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.open_webui_admin_password_secret_arn))
+    error_message = "open_webui_admin_password_secret_arn must be a valid Secrets Manager ARN."
   }
 }
 

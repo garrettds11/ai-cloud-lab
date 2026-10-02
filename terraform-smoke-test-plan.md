@@ -109,15 +109,25 @@ $env:CLOUDFLARE_TOKEN_SECRET_ARN = "arn:aws:secretsmanager:us-east-1:39456673327
 function Invoke-TerraformWithCloudflareToken {
   param([Parameter(Mandatory)][string[]]$Arguments)
 
-  $env:CLOUDFLARE_API_TOKEN = aws secretsmanager get-secret-value `
+  $retrievedCloudflareToken = aws secretsmanager get-secret-value `
     --secret-id $env:CLOUDFLARE_TOKEN_SECRET_ARN `
     --query SecretString `
     --output text `
     --region $env:AWS_DEFAULT_REGION `
-    --profile $env:AWS_PROFILE
+    --profile $env:AWS_PROFILE | Out-String
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Cloudflare API token could not be retrieved from Secrets Manager."
+  }
+
+  $env:CLOUDFLARE_API_TOKEN = $retrievedCloudflareToken.Trim()
 
   if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) {
     throw "Cloudflare API token could not be retrieved from Secrets Manager."
+  }
+
+  if ($env:CLOUDFLARE_API_TOKEN -match '^\s*[\{\[]') {
+    throw "Cloudflare Secrets Manager value must be the raw API token, not JSON."
   }
 
   try {

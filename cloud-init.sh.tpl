@@ -187,7 +187,6 @@ echo "=================================================="
 apt-get update
 
 apt-get install -y \
-    awscli \
     curl \
     wget \
     git \
@@ -195,7 +194,23 @@ apt-get install -y \
     ca-certificates \
     docker.io \
     iptables \
-    snapd
+    snapd \
+    unzip
+
+# Ubuntu 24.04 does not provide the AWS CLI package in every enabled APT
+# source. Install AWS CLI v2 from AWS so bootstrap can retrieve Secrets Manager
+# values through the instance role.
+if ! command -v aws >/dev/null 2>&1; then
+    aws_cli_tmp_dir="$(mktemp -d)"
+    curl --fail --silent --show-error --location \
+        "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+        --output "$aws_cli_tmp_dir/awscliv2.zip"
+    unzip -q "$aws_cli_tmp_dir/awscliv2.zip" -d "$aws_cli_tmp_dir"
+    "$aws_cli_tmp_dir/aws/install" --update
+    rm -rf "$aws_cli_tmp_dir"
+fi
+
+aws --version
 
 # Ubuntu AWS images usually include the SSM agent. This makes sure it is active.
 ensure_ssm_agent

@@ -140,6 +140,12 @@ variable "enable_domain_access" {
   default     = false
 }
 
+variable "enable_cloudflare_access" {
+  description = "Whether to manage the public domain record and Cloudflare Access policy for Open WebUI. Requires enable_domain_access."
+  type        = bool
+  default     = false
+}
+
 variable "domain_name" {
   description = "Public DNS name for Open WebUI, such as aiwebdemo.click."
   type        = string

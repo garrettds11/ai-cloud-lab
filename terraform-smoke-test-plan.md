@@ -32,6 +32,7 @@ $env:TF_VAR_acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificat
 $env:TF_VAR_cloudflare_account_id = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
 $env:TF_VAR_cloudflare_api_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
 $env:TF_VAR_cloudflare_access_allowed_emails = '["garrettds11@gmail.com"]'
+$env:TF_VAR_enable_cloudflare_access = "true"
 ```
 
 The Secrets Manager secret must already exist and contain the desired admin

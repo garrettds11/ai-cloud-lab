@@ -22,6 +22,7 @@ open_webui_admin_name  = "Lab Admin"
 
 # Optional public HTTPS access through an ALB and Route 53 alias.
 # enable_domain_access = true
+# enable_cloudflare_access = true
 # domain_name         = "aiwebdemo.click"
 # route53_zone_name   = "aiwebdemo.click"
 acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"

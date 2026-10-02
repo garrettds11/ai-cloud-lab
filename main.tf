@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
   }
 }
 
@@ -22,9 +26,13 @@ provider "aws" {
   }
 }
 
+provider "cloudflare" {}
+
 locals {
-  aws_cli_profile_arg = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
-  domain_resources    = var.enable_domain_access ? { domain = true } : {}
+  aws_cli_profile_arg  = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
+  domain_resources     = var.enable_domain_access ? { domain = true } : {}
+  route53_resources    = var.enable_domain_access && !var.enable_cloudflare_access ? { domain = true } : {}
+  cloudflare_resources = var.enable_cloudflare_access ? { domain = true } : {}
   domain_certificate_arn = var.acm_certificate_arn != null ? var.acm_certificate_arn : (
     var.enable_domain_access ? data.aws_acm_certificate.domain[0].arn : null
   )
@@ -231,6 +239,16 @@ resource "aws_instance" "ai_lab" {
     }
 
     precondition {
+      condition = !var.enable_cloudflare_access || (
+        var.enable_domain_access &&
+        var.cloudflare_account_id != null &&
+        var.cloudflare_api_token_secret_arn != null &&
+        length(var.cloudflare_access_allowed_emails) > 0
+      )
+      error_message = "Cloudflare access requires enable_domain_access, cloudflare_account_id, cloudflare_api_token_secret_arn, and at least one allowed email."
+    }
+
+    precondition {
       condition     = length(var.open_webui_demo_users) == 0 || var.open_webui_demo_user_password != null
       error_message = "open_webui_demo_user_password must be set when demo users are enabled."
     }
@@ -249,7 +267,7 @@ resource "aws_instance" "ai_lab" {
 }
 
 data "aws_route53_zone" "public" {
-  count        = var.enable_domain_access ? 1 : 0
+  count        = var.enable_domain_access && !var.enable_cloudflare_access ? 1 : 0
   name         = var.route53_zone_name
   private_zone = false
 }
@@ -339,7 +357,7 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_route53_record" "domain" {
-  for_each = local.domain_resources
+  for_each = local.route53_resources
   zone_id  = data.aws_route53_zone.public[0].zone_id
   name     = var.domain_name
   type     = "A"
@@ -349,4 +367,46 @@ resource "aws_route53_record" "domain" {
     zone_id                = aws_lb.domain[each.key].zone_id
     evaluate_target_health = true
   }
+}
+
+data "cloudflare_zones" "domain" {
+  count     = var.enable_cloudflare_access ? 1 : 0
+  name      = var.domain_name
+  max_items = 1
+
+  account = {
+    id = var.cloudflare_account_id
+  }
+}
+
+resource "cloudflare_dns_record" "domain" {
+  for_each = local.cloudflare_resources
+  zone_id  = data.cloudflare_zones.domain[0].result[0].id
+  name     = var.domain_name
+  type     = "CNAME"
+  content  = aws_lb.domain[each.key].dns_name
+  ttl      = 1
+  proxied  = true
+  comment  = "Managed by Terraform for the AI lab ALB"
+}
+
+resource "cloudflare_zero_trust_access_application" "domain" {
+  for_each                  = local.cloudflare_resources
+  account_id                = var.cloudflare_account_id
+  name                      = "${var.project_name} Open WebUI"
+  domain                    = var.domain_name
+  type                      = "self_hosted"
+  session_duration          = "8h"
+  auto_redirect_to_identity = true
+
+  policies = [{
+    name       = "Allow approved Open WebUI users"
+    decision   = "allow"
+    precedence = 1
+    include = [for email in var.cloudflare_access_allowed_emails : {
+      email = { email = email }
+    }]
+  }]
+
+  depends_on = [cloudflare_dns_record.domain]
 }

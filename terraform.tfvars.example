@@ -1,4 +1,4 @@
-aws_region  = "us-east-1"
+aws_region = "us-east-1"
 # Optional. Leave null to use environment variables, SSO, or an instance/CI role.
 aws_profile = null
 
@@ -13,17 +13,19 @@ open_webui_admin_name  = "Lab Admin"
 
 # This pre-created secret contains the initial Open WebUI administrator password.
 open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
+
 # Create a second secret for the four demo users and set its ARN here.
 open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
+
 # The default configuration creates demo1@example.local through
 # demo4@example.local. Override open_webui_demo_users to change their names
 # or email addresses, while keeping exactly four entries for this demo.
 
-# Optional public HTTPS access through an ALB and Route 53 alias.
-# enable_domain_access = true
-# enable_cloudflare_access = true
-# domain_name         = "aiwebdemo.click"
-# route53_zone_name   = "aiwebdemo.click"
+# Public HTTPS access through the ALB and Cloudflare.
+enable_domain_access     = true
+enable_cloudflare_access = true
+domain_name              = "aiwebdemo.click"
+route53_zone_name        = "aiwebdemo.click"
 acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 
 # Cloudflare deployment values. Replace this block when cloning the repo; do

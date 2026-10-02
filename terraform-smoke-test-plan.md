@@ -155,12 +155,6 @@ Invoke-TerraformWithCloudflareToken -Arguments @("validate")
 Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-out=ai-lab.tfplan")
 ```
 
-The plan file can contain sensitive values. Do not commit it; remove it after use:
-
-```powershell
-Remove-Item ai-lab.tfplan
-```
-
 ## 3. Deploy
 
 ```powershell
@@ -168,6 +162,13 @@ Invoke-TerraformWithCloudflareToken -Arguments @("apply", "ai-lab.tfplan")
 ```
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
+
+The plan file can contain sensitive values. Do not commit it. After the apply
+completes, remove the local plan file:
+
+```powershell
+Remove-Item ai-lab.tfplan
+```
 
 ## 4. Set the unique SSM target
 

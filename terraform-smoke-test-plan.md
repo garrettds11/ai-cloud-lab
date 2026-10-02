@@ -70,6 +70,33 @@ password during bootstrap. Terraform does not create, update, or destroy this
 secret. To rotate an existing lab, change the password in Open WebUI first,
 then update the matching value in the AWS console.
 
+Retrieve the two initial passwords from Secrets Manager when you need them for
+login verification. These commands print the values to the current terminal;
+do not paste the output into tickets, source files, or logs:
+
+```powershell
+$adminPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
+$demoPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
+
+aws secretsmanager get-secret-value `
+  --secret-id $adminPasswordSecretArn `
+  --query SecretString `
+  --output text `
+  --region $env:AWS_DEFAULT_REGION `
+  --profile $env:AWS_PROFILE
+
+aws secretsmanager get-secret-value `
+  --secret-id $demoPasswordSecretArn `
+  --query SecretString `
+  --output text `
+  --region $env:AWS_DEFAULT_REGION `
+  --profile $env:AWS_PROFILE
+```
+
+The first value is used for `admin@example.local`; the second is the temporary
+password shared by the four demo accounts. Each demo user should change it from
+Profile after first login.
+
 When Cloudflare resources are enabled, Terraform retrieves the Cloudflare API
 token from the separate AWS Secrets Manager secret below. Do not paste the token
 into the shell or store it in Terraform variables, `terraform.tfvars`, or the

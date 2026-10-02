@@ -159,6 +159,11 @@ data "aws_secretsmanager_secret" "open_webui_admin_password" {
   arn = var.open_webui_admin_password_secret_arn
 }
 
+data "aws_secretsmanager_secret" "open_webui_demo_password" {
+  count = var.open_webui_demo_user_password_secret_arn == null ? 0 : 1
+  arn   = var.open_webui_demo_user_password_secret_arn
+}
+
 resource "aws_iam_role_policy" "open_webui_admin_password" {
   name = "${var.project_name}-admin-password"
   role = aws_iam_role.ssm.id
@@ -166,9 +171,12 @@ resource "aws_iam_role_policy" "open_webui_admin_password" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = "secretsmanager:GetSecretValue"
-      Resource = data.aws_secretsmanager_secret.open_webui_admin_password.arn
+      Effect = "Allow"
+      Action = "secretsmanager:GetSecretValue"
+      Resource = concat(
+        [data.aws_secretsmanager_secret.open_webui_admin_password.arn],
+        var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn]
+      )
     }]
   })
 }
@@ -214,7 +222,7 @@ resource "aws_instance" "ai_lab" {
     open_webui_admin_name                = var.open_webui_admin_name
     open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
     open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
-    open_webui_demo_password_b64         = var.open_webui_demo_user_password == null ? "" : base64encode(var.open_webui_demo_user_password)
+    open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
     open_webui_container_image           = var.open_webui_container_image
     open_webui_container_name            = var.open_webui_container_name
     open_webui_host_port                 = var.open_webui_host_port
@@ -249,8 +257,8 @@ resource "aws_instance" "ai_lab" {
     }
 
     precondition {
-      condition     = length(var.open_webui_demo_users) == 0 || var.open_webui_demo_user_password != null
-      error_message = "open_webui_demo_user_password must be set when demo users are enabled."
+      condition     = length(var.open_webui_demo_users) == 0 || var.open_webui_demo_user_password_secret_arn != null
+      error_message = "open_webui_demo_user_password_secret_arn must reference a pre-created Secrets Manager secret when demo users are enabled."
     }
 
   }

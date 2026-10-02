@@ -93,15 +93,14 @@ variable "open_webui_demo_users" {
   }
 }
 
-variable "open_webui_demo_user_password" {
-  description = "Temporary password assigned to the four local demo accounts. Users should change it from Profile after first login."
+variable "open_webui_demo_user_password_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret containing the temporary password assigned to the four local demo accounts."
   type        = string
   default     = null
-  sensitive   = true
 
   validation {
-    condition     = var.open_webui_demo_user_password == null || length(var.open_webui_demo_user_password) >= 12
-    error_message = "open_webui_demo_user_password must be at least 12 characters."
+    condition     = var.open_webui_demo_user_password_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.open_webui_demo_user_password_secret_arn))
+    error_message = "open_webui_demo_user_password_secret_arn must be a valid Secrets Manager ARN."
   }
 }
 

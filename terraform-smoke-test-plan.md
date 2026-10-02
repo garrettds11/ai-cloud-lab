@@ -26,6 +26,7 @@ Notepad. At minimum, review:
 
 - `aws_region` and `aws_profile`
 - `open_webui_admin_password_secret_arn`
+- `open_webui_demo_user_password_secret_arn`
 - `domain_name`, `route53_zone_name`, and `acm_certificate_arn`
 - `cloudflare_account_id`
 - `cloudflare_api_token_secret_arn`
@@ -61,7 +62,6 @@ $env:AWS_PROFILE = "ai-cloud-lab"
 $env:AWS_DEFAULT_REGION = "us-east-1"
 $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
-$env:TF_VAR_open_webui_demo_user_password = "YourTemporaryDemoPasswordHere"
 ```
 
 The Secrets Manager secret must already exist and contain the desired admin
@@ -260,7 +260,8 @@ The bootstrap also creates these four local demo accounts:
 - `demo3@example.local`
 - `demo4@example.local`
 
-They all start with the value assigned to `$env:TF_VAR_open_webui_demo_user_password`.
+They all start with the value stored in the Secrets Manager secret identified by
+`open_webui_demo_user_password_secret_arn`.
 Have each user sign in, open Profile, and change that temporary password before
 using the account. These are local Open WebUI accounts; Cognito/OIDC is not
 required for this demonstrable use case.

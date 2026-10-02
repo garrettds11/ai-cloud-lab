@@ -114,7 +114,7 @@ wait_for_open_webui() {
 }
 
 provision_demo_users() {
-    if [[ -z "${open_webui_demo_password_b64}" ]]; then
+    if [[ -z "${open_webui_demo_password_secret_arn}" ]]; then
         echo "No Open WebUI demo-user password supplied; skipping demo-user provisioning."
         return 0
     fi
@@ -124,7 +124,16 @@ provision_demo_users() {
     local admin_token
 
     demo_users_json="$(printf '%s' '${open_webui_demo_users_b64}' | base64 --decode)"
-    demo_password="$(printf '%s' '${open_webui_demo_password_b64}' | base64 --decode)"
+    demo_password="$(aws secretsmanager get-secret-value \
+        --secret-id '${open_webui_demo_password_secret_arn}' \
+        --query SecretString \
+        --output text \
+        --region '${aws_region}')"
+
+    if [[ -z "$demo_password" || "$demo_password" == "None" ]]; then
+        echo "Open WebUI demo-user password secret was empty."
+        return 1
+    fi
 
     admin_token="$(curl --silent --show-error --fail \
         -X POST "http://127.0.0.1:${open_webui_host_port}/api/v1/auths/signin" \
@@ -321,7 +330,7 @@ Local demo accounts:
     demo4@example.local
 
 All demo accounts receive the temporary Terraform value supplied through
-open_webui_demo_user_password. Each user should change it from Profile after
+open_webui_demo_user_password_secret_arn. Each user should change it from Profile after
 first login. Do not use these demo credentials outside this lab.
 
 To inspect the environment:

@@ -84,25 +84,25 @@ the already-initialized Open WebUI account.
 
 The bootstrap then creates four ordinary local demo accounts using:
 
-- `open_webui_demo_user_password`
+- the password in `open_webui_demo_user_password_secret_arn`
 - `open_webui_demo_users` (exactly four local demo accounts by default)
 
-The demo-user password remains a Terraform-sensitive input and should not be
-committed. The admin password is kept in Secrets Manager rather than Terraform
-variables or state.
+The demo-user password must be stored in a second pre-created Secrets Manager
+secret and is retrieved through the EC2 role during bootstrap. Neither password
+is kept in Terraform variables, user-data, or the repository.
 
 The four demo accounts use local Open WebUI password authentication. They all receive the temporary demo password and should change it from Profile after first login. This MVP does not require Cognito/OIDC.
 
 PowerShell:
 
 ```powershell
-$env:TF_VAR_open_webui_demo_user_password = "<temporary-demo-password>"
+$env:TF_VAR_open_webui_demo_user_password_secret_arn = "<demo-password-secret-arn>"
 ```
 
 Linux/macOS:
 
 ```bash
-export TF_VAR_open_webui_demo_user_password="<temporary-demo-password>"
+export TF_VAR_open_webui_demo_user_password_secret_arn="<demo-password-secret-arn>"
 ```
 
 You may also use a local `terraform.tfvars` file for secrets. It is ignored by `.gitignore`; do not commit it.
@@ -117,7 +117,7 @@ Set-Location C:\GitHub\ai-cloud-lab
 Copy-Item terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars and set your region, model, and other values.
 $env:TF_VAR_open_webui_admin_password_secret_arn = "<secret-arn>"
-$env:TF_VAR_open_webui_demo_user_password = "<temporary-demo-password>"
+$env:TF_VAR_open_webui_demo_user_password_secret_arn = "<demo-password-secret-arn>"
 terraform init
 terraform fmt -recursive
 terraform validate

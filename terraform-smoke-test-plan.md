@@ -34,6 +34,54 @@ password during bootstrap. Terraform does not create, update, or destroy this
 secret. To rotate an existing lab, change the password in Open WebUI first,
 then update the matching value in the AWS console.
 
+When Cloudflare resources are enabled, Terraform retrieves the Cloudflare API
+token from the separate AWS Secrets Manager secret below. Do not paste the token
+into the shell or store it in Terraform variables, `terraform.tfvars`, or the
+repository. Run Terraform through this wrapper so the token exists only for the
+duration of each command:
+
+```powershell
+$env:CLOUDFLARE_TOKEN_SECRET_ARN = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
+
+function Invoke-TerraformWithCloudflareToken {
+  param([Parameter(Mandatory)][string[]]$Arguments)
+
+  $env:CLOUDFLARE_API_TOKEN = aws secretsmanager get-secret-value `
+    --secret-id $env:CLOUDFLARE_TOKEN_SECRET_ARN `
+    --query SecretString `
+    --output text `
+    --region $env:AWS_DEFAULT_REGION `
+    --profile $env:AWS_PROFILE
+
+  if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) {
+    throw "Cloudflare API token could not be retrieved from Secrets Manager."
+  }
+
+  try {
+    & terraform @Arguments
+    if ($LASTEXITCODE -ne 0) {
+      throw "Terraform exited with code $LASTEXITCODE."
+    }
+  }
+  finally {
+    Remove-Item Env:\CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+  }
+}
+```
+
+Use the wrapper for every Terraform command that initializes or applies the
+Cloudflare provider:
+
+```powershell
+Invoke-TerraformWithCloudflareToken @("init")
+Invoke-TerraformWithCloudflareToken @("validate")
+Invoke-TerraformWithCloudflareToken @("plan")
+Invoke-TerraformWithCloudflareToken @("apply")
+```
+
+The wrapper also supports teardown with
+`Invoke-TerraformWithCloudflareToken @("destroy")`.
+
 For the domain-access variant, set these additional values before planning:
 
 ```powershell

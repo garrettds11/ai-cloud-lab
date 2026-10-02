@@ -17,6 +17,25 @@ mark_failed() {
     echo "AI lab bootstrap failed. See $LOG_FILE."
 }
 
+read_secret_value() {
+    local secret_string="$1"
+
+    # Secrets created with the Secrets Manager key/value editor are returned as
+    # a one-property JSON object. Plaintext SecretString values remain valid.
+    if printf '%s' "$secret_string" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        printf '%s' "$secret_string" |
+            jq -er 'if length == 1 and (.[].value | type) == "string" then .[].value else error("secret object must contain exactly one string value") end'
+        return
+    fi
+
+    if printf '%s' "$secret_string" | jq -e 'type == "string"' >/dev/null 2>&1; then
+        printf '%s' "$secret_string" | jq -er '.'
+        return
+    fi
+
+    printf '%s' "$secret_string"
+}
+
 trap mark_failed ERR
 
 wait_for_ollama() {
@@ -124,11 +143,11 @@ provision_demo_users() {
     local admin_token
 
     demo_users_json="$(printf '%s' '${open_webui_demo_users_b64}' | base64 --decode)"
-    demo_password="$(aws secretsmanager get-secret-value \
+    demo_password="$(read_secret_value "$(aws secretsmanager get-secret-value \
         --secret-id '${open_webui_demo_password_secret_arn}' \
         --query SecretString \
         --output text \
-        --region '${aws_region}')"
+        --region '${aws_region}')")"
 
     if [[ -z "$demo_password" || "$demo_password" == "None" ]]; then
         echo "Open WebUI demo-user password secret was empty."
@@ -229,11 +248,11 @@ configure_local_firewall
 
 # Retrieve the password at boot through the instance role. The secret ARN is
 # safe to include in user-data; the password itself is not.
-open_webui_admin_password="$(aws secretsmanager get-secret-value \
+open_webui_admin_password="$(read_secret_value "$(aws secretsmanager get-secret-value \
     --secret-id '${open_webui_admin_password_secret_arn}' \
     --query SecretString \
     --output text \
-    --region '${aws_region}')"
+    --region '${aws_region}')")"
 
 if [[ -z "$open_webui_admin_password" || "$open_webui_admin_password" == "None" ]]; then
     echo "Open WebUI admin password secret was empty."

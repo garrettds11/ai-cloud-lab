@@ -73,10 +73,12 @@ Open WebUI creates the first local admin account during container startup using:
 - the password in `open_webui_admin_password_secret_arn`
 
 Create the Secrets Manager secret before running Terraform and store the desired
-admin password in it. Terraform only validates and references the existing
-secret, grants the EC2 instance role permission to read it, and retrieves the
-value at runtime. Terraform does not create, update, or destroy this secret, and
-the password is not embedded in EC2 user-data.
+admin password in it. The secret may be plain text or a one-key key/value secret;
+bootstrap extracts the single string value from either format. Terraform only
+validates and references the existing secret, grants the EC2 instance role
+permission to read it, and retrieves the value at runtime. Terraform does not
+create, update, or destroy this secret, and the password is not embedded in EC2
+user-data.
 
 To rotate an existing lab, change the password in Open WebUI first, then update
 the matching value in the AWS console. Changing the secret alone does not change

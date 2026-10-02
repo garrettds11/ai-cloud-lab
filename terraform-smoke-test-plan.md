@@ -65,10 +65,12 @@ $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 ```
 
 The Secrets Manager secret must already exist and contain the desired admin
-password. Terraform only grants the instance role read access and retrieves the
-password during bootstrap. Terraform does not create, update, or destroy this
-secret. To rotate an existing lab, change the password in Open WebUI first,
-then update the matching value in the AWS console.
+password. The value may be plain text or a one-key key/value secret; bootstrap
+extracts the single string value from either format. Terraform only grants the
+instance role read access and retrieves the password during bootstrap. Terraform
+does not create, update, or destroy this secret. To rotate an existing lab,
+change the password in Open WebUI first, then update the matching value in the
+AWS console.
 
 Retrieve the two initial passwords from Secrets Manager when you need them for
 login verification. These commands print the values to the current terminal;

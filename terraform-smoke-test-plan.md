@@ -135,12 +135,8 @@ function Invoke-TerraformWithCloudflareToken {
 Use the wrapper for every Terraform command that initializes or applies the
 Cloudflare provider:
 
-```powershell
-Invoke-TerraformWithCloudflareToken @("init")
-Invoke-TerraformWithCloudflareToken @("validate")
-Invoke-TerraformWithCloudflareToken @("plan")
-Invoke-TerraformWithCloudflareToken @("apply")
-```
+The complete command sequence is in **2. Validate and preview** and **3.
+Deploy** below. Do not run a separate unsaved `plan` or `apply` here.
 
 The wrapper also supports teardown with
 `Invoke-TerraformWithCloudflareToken @("destroy")`.

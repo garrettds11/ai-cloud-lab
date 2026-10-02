@@ -133,12 +133,17 @@ function Invoke-TerraformWithCloudflareToken {
   if ($parsedCloudflareSecret -is [string]) {
     $retrievedCloudflareToken = $parsedCloudflareSecret
   }
-  elseif ($null -ne $parsedCloudflareSecret -and
-          $null -ne $parsedCloudflareSecret.PSObject.Properties['CLOUDFLARE_API_TOKEN']) {
-    $retrievedCloudflareToken = [string]$parsedCloudflareSecret.CLOUDFLARE_API_TOKEN
-  }
   else {
-    $retrievedCloudflareToken = $cloudflareSecretString.Trim()
+    $tokenProperty = $parsedCloudflareSecret.PSObject.Properties |
+      Where-Object { $_.Name.Trim() -eq "CLOUDFLARE_API_TOKEN" } |
+      Select-Object -First 1
+
+    if ($null -ne $tokenProperty) {
+      $retrievedCloudflareToken = [string]$tokenProperty.Value
+    }
+    else {
+      $retrievedCloudflareToken = $cloudflareSecretString.Trim()
+    }
   }
 
   $env:CLOUDFLARE_API_TOKEN = $retrievedCloudflareToken.Trim()

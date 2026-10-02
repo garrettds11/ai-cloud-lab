@@ -109,7 +109,7 @@ $env:CLOUDFLARE_TOKEN_SECRET_ARN = "arn:aws:secretsmanager:us-east-1:39456673327
 function Invoke-TerraformWithCloudflareToken {
   param([Parameter(Mandatory)][string[]]$Arguments)
 
-  $retrievedCloudflareToken = aws secretsmanager get-secret-value `
+  $cloudflareSecretString = aws secretsmanager get-secret-value `
     --secret-id $env:CLOUDFLARE_TOKEN_SECRET_ARN `
     --query SecretString `
     --output text `
@@ -120,15 +120,31 @@ function Invoke-TerraformWithCloudflareToken {
     throw "Cloudflare API token could not be retrieved from Secrets Manager."
   }
 
+  $parsedCloudflareSecret = $null
+  try {
+    $parsedCloudflareSecret = $cloudflareSecretString.Trim() | ConvertFrom-Json -ErrorAction Stop
+  }
+  catch {
+    # A plaintext SecretString is also supported.
+  }
+
+  if ($parsedCloudflareSecret -is [string]) {
+    $retrievedCloudflareToken = $parsedCloudflareSecret
+  }
+  elseif ($null -ne $parsedCloudflareSecret -and
+          $null -ne $parsedCloudflareSecret.PSObject.Properties['CLOUDFLARE_API_TOKEN']) {
+    $retrievedCloudflareToken = [string]$parsedCloudflareSecret.CLOUDFLARE_API_TOKEN
+  }
+  else {
+    $retrievedCloudflareToken = $cloudflareSecretString.Trim()
+  }
+
   $env:CLOUDFLARE_API_TOKEN = $retrievedCloudflareToken.Trim()
 
   if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) {
     throw "Cloudflare API token could not be retrieved from Secrets Manager."
   }
 
-  if ($env:CLOUDFLARE_API_TOKEN -match '^\s*[\{\[]') {
-    throw "Cloudflare Secrets Manager value must be the raw API token, not JSON."
-  }
 
   try {
     & terraform @Arguments

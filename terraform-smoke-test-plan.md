@@ -63,6 +63,11 @@ Terraform receives the same values through `TF_VAR_aws_profile` and
 ```powershell
 $env:AWS_PROFILE = "ai-cloud-lab"
 $env:AWS_DEFAULT_REGION = "us-east-1"
+```
+
+After setting the profile and region above, copy this block unchanged:
+
+```powershell
 $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 ```

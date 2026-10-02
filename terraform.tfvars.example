@@ -16,7 +16,7 @@ open_webui_admin_name  = "Lab Admin"
 # terraform.tfvars file, which is ignored by .gitignore.
 # open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:region:account:secret:name-suffix"
 # Create a second secret for the four demo users and set its ARN here.
-# open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:region:account:secret:openwebui-demo-pass-suffix"
+open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
 # The default configuration creates demo1@example.local through
 # demo4@example.local. Override open_webui_demo_users to change their names
 # or email addresses, while keeping exactly four entries for this demo.

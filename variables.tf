@@ -158,6 +158,39 @@ variable "acm_certificate_arn" {
   default     = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 }
 
+variable "cloudflare_account_id" {
+  description = "Cloudflare account ID used for Access resources. Required when Cloudflare integration is enabled."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cloudflare_account_id == null || can(regex("^[a-f0-9]{32}$", var.cloudflare_account_id))
+    error_message = "cloudflare_account_id must be a 32-character hexadecimal Cloudflare account ID."
+  }
+}
+
+variable "cloudflare_api_token_secret_arn" {
+  description = "ARN of the pre-created Secrets Manager secret containing the Cloudflare API token. Terraform does not create or destroy this secret."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cloudflare_api_token_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.cloudflare_api_token_secret_arn))
+    error_message = "cloudflare_api_token_secret_arn must be a valid Secrets Manager ARN."
+  }
+}
+
+variable "cloudflare_access_allowed_emails" {
+  description = "Email addresses allowed through Cloudflare Access for the public Open WebUI hostname."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for email in var.cloudflare_access_allowed_emails : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", email))])
+    error_message = "cloudflare_access_allowed_emails must contain valid email addresses."
+  }
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

@@ -41,7 +41,7 @@ For the Cloudflare domain smoke test, uncomment or confirm these settings in
 `terraform.tfvars`:
 
 ```hcl
-enable_domain_access   = true
+enable_domain_access     = true
 enable_cloudflare_access = true
 ```
 
@@ -173,14 +173,15 @@ function Invoke-TerraformWithCloudflareToken {
 }
 ```
 
-Use the wrapper for every Terraform command that initializes or applies the
-Cloudflare provider:
+Run every Terraform command that plans, applies, or destroys through the
+wrapper, including teardown. Plain `terraform plan`, `apply`, or `destroy`
+sends no Cloudflare credentials and fails with
+`403 Missing X-Auth-Email header` when Cloudflare is enabled. Paste the wrapper
+into the same PowerShell window that runs the later steps; it does not persist
+into a new window.
 
 The complete command sequence is in **2. Validate and preview** and **3.
 Deploy** below. Do not run a separate unsaved `plan` or `apply` here.
-
-The wrapper also supports teardown with
-`Invoke-TerraformWithCloudflareToken @("destroy")`.
 
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
@@ -355,17 +356,26 @@ aws ec2 stop-instances `
   --instance-ids $env:instance_id
 ```
 
-For permanent cleanup, review the destroy plan and then remove all Terraform-managed resources:
+For permanent cleanup, review the destroy plan and then remove all Terraform-managed resources.
+Use the wrapper from section 1; plain `terraform` cannot authenticate to Cloudflare:
 
 ```powershell
-terraform plan -destroy
-
-terraform destroy
+Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-destroy", "-out=ai-lab-destroy.tfplan")
 ```
 
-After teardown, verify that the instance, ALB, target group, security groups,
-and Route 53 alias are gone. Remove `terraform.tfvars` if it contains a real
-password, but keep `terraform.tfvars.example`.
+Review the plan, then apply it and remove the plan file:
+
+```powershell
+Invoke-TerraformWithCloudflareToken -Arguments @("apply", "ai-lab-destroy.tfplan")
+Remove-Item ai-lab-destroy.tfplan
+```
+
+After teardown, verify that the instance, ALB, target group, and security groups
+are gone. When Cloudflare is enabled, also confirm the proxied apex CNAME and
+the Access application are removed in the Cloudflare dashboard. Terraform does
+not manage the ACM certificate, its DNS-only validation CNAME, or the Secrets
+Manager secrets, so those remain. Remove `terraform.tfvars` if it contains a
+real password, but keep `terraform.tfvars.example`.
 
 ## Likely failure points
 
@@ -375,4 +385,5 @@ password, but keep `terraform.tfvars.example`.
 - The Session Manager plugin is not installed locally.
 - Bootstrap is still downloading packages, Ollama, the model, or the Open WebUI image.
 - Local port 8080 is already occupied; use local port 8081 for the tunnel.
-- Domain access requires a public Route 53 hosted zone and an issued ACM certificate in the selected region.
+- Domain access requires an issued ACM certificate in the selected region, plus either a public Route 53 hosted zone or, with Cloudflare, an **Active** Cloudflare zone.
+- A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set.

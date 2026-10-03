@@ -84,6 +84,11 @@ The project defaults to the issued `aiwebdemo.click` certificate ARN in
 `us-east-1`. Set `acm_certificate_arn` only when intentionally changing the
 certificate. When cloning for another account, replace it or set it to `null`.
 
+When Cloudflare is enabled, `terraform plan`, `apply`, and `destroy` need the
+Cloudflare API token in `CLOUDFLARE_API_TOKEN`. Run them through the wrapper in
+[terraform-smoke-test-plan.md](terraform-smoke-test-plan.md) rather than plain
+`terraform`, or they fail with `403 Missing X-Auth-Email header`.
+
 A few Cloudflare settings are not managed by Terraform. The most important is
 setting SSL/TLS to **Full (strict)**; **Flexible** causes a redirect loop with
 the ALB's HTTP-to-HTTPS redirect. See

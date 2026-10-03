@@ -1,8 +1,19 @@
-aws_region  = "us-east-1"
+aws_region = "us-east-1"
 # Optional. Leave null to use environment variables, SSO, or an instance/CI role.
 aws_profile = null
 
-project_name = "ollama-open-webui-lab"
+project_name = "aiwebdemo"
+
+# AWS tags applied to every resource. Uncommenting this REPLACES the defaults
+# (Environment, ManagedBy, Application), so list every tag you want. Use your own
+# tag keys, such as the project tag your other AWS resources already carry.
+# Each resource's Name tag is derived from project_name, not from this map.
+# tags = {
+#   project     = "aiwebdemo"
+#   Environment = "lab"
+#   ManagedBy   = "terraform"
+#   Application = "Open-WebUI"
+# }
 
 instance_type    = "c7i.4xlarge"
 root_volume_size = 80
@@ -11,21 +22,79 @@ ollama_model     = "llama3.2:3b"
 open_webui_admin_email = "admin@example.local"
 open_webui_admin_name  = "Lab Admin"
 
-# Set it before apply with TF_VAR_open_webui_admin_password or a local
-# terraform.tfvars file, which is ignored by .gitignore.
-# open_webui_admin_password = "replace-with-a-strong-local-password"
-# open_webui_demo_user_password = "replace-with-a-temporary-demo-password"
-# The default configuration creates demo1@example.local through
-# demo4@example.local. Override open_webui_demo_users to change their names
-# or email addresses, while keeping exactly four entries for this demo.
+# This pre-created secret contains the initial Open WebUI administrator password.
+open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
 
-# Optional public HTTPS access through an ALB and Route 53 alias.
-# enable_domain_access = true
-# domain_name         = "aiwebdemo.click"
-# route53_zone_name   = "aiwebdemo.click"
+# Create a second secret for the demo users and set its ARN here.
+open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
+
+# The default configuration creates demo1@example.local through
+# demo10@example.local. Override open_webui_demo_users to change their names
+# or email addresses, while keeping between 1 and 25 entries.
+
+# Public HTTPS access through the ALB and Cloudflare.
+enable_domain_access     = true
+enable_cloudflare_access = true
+domain_name              = "aiwebdemo.click"
+route53_zone_name        = "aiwebdemo.click"
 acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
+
+# Cloudflare deployment values. Replace this block when cloning the repo; do
+# not store the API token itself here.
+cloudflare_account_id            = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
+cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
+cloudflare_access_allowed_emails = []
+
+# Optional Cloudflare Access settings. The defaults are shown; uncomment to change.
+# cloudflare_access_app_name         = "AI Web Demo" # Shown on the Access login page
+# cloudflare_access_session_duration = "4h"          # How long a login lasts
+
+# Amazon Cognito is the user directory and sign-in for both Cloudflare Access and
+# Open WebUI. Terraform creates the users (the demo users plus any in
+# cognito_extra_users) without passwords; run scripts/set-cognito-passwords.ps1
+# after apply. Set enable_cognito = false to use Access login methods you configure
+# yourself and Open WebUI local accounts instead.
+# cloudflare_access_team_domain is the host shown on the Access login page.
+# Cognito needs the Cloudflare API token permission "Access: Organizations,
+# Identity Providers, and Groups Edit". cognito_domain_prefix must be unique in
+# the region and must not contain aws, amazon, or cognito.
+enable_cognito                = true
+cognito_domain_prefix         = "aiwebdemo"
+cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
+cognito_extra_users = []
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null
 allowed_ssh_cidr = null
+
+# Security and acceptable use notice shown at the top of Open WebUI after sign-in.
+# Set to "" for no banner. Changing it replaces the EC2 instance on the next apply.
+security_banner_text = "This system is for authorized users only. Activity may be monitored and logged. By using this lab you agree to use it only for approved purposes: do not enter confidential, regulated, or personal data, do not create illegal, harmful, or abusive content, and do not try to bypass security controls. Misuse may result in loss of access."
+
+# Open WebUI also has local accounts (the admin and the demo users) that can
+# sign in with a password. Set to false to allow sign-in only through Cognito.
+# Requires enable_cognito = true. Changing it replaces the EC2 instance.
+# open_webui_enable_local_login = false
+
+# Optional: accept HTTPS at the ALB only from Cloudflare's IP ranges, so nobody can
+# bypass Cloudflare Access by connecting to the ALB directly. Requires
+# enable_cloudflare_access. Turn it on only after the site works through Cloudflare.
+# The ranges are in variables.tf (cloudflare_ipv4_cidrs, cloudflare_ipv6_cidrs);
+# override them here when Cloudflare publishes changes.
+# enable_origin_lockdown = true
+# origin_lockdown_extra_cidrs = ["203.0.113.10/32"] # Recovery only; leave empty normally
+
+# Cost guardrail: the lab stops itself with two independent controls. Set either to
+# 0 to turn that control off.
+#   auto_stop_idle_minutes:       stops the instance after that many minutes with no
+#                                 active Open WebUI user and no reply being generated.
+#                                 Active users are never stopped by this.
+#   auto_stop_max_uptime_minutes: a hard time limit. The instance stops that many
+#                                 minutes after it boots even if people are using it,
+#                                 and an email warns shortly before.
+# Demo: idle 0 and limit 90, so it always stops 90 minutes after boot.
+# Production: idle 60 and limit 0, so it stops only when nobody is using it.
+auto_stop_idle_minutes       = 0
+auto_stop_max_uptime_minutes = 90
+auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link

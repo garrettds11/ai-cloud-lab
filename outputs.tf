@@ -23,6 +23,11 @@ output "open_webui_local_url" {
   value       = "http://localhost:${var.open_webui_host_port}"
 }
 
+output "open_webui_admin_password_secret_arn" {
+  description = "Pre-created Secrets Manager ARN used by Open WebUI bootstrap."
+  value       = var.open_webui_admin_password_secret_arn
+}
+
 output "open_webui_domain_url" {
   description = "Public HTTPS URL when domain access is enabled."
   value       = var.enable_domain_access ? "https://${var.domain_name}" : null
@@ -58,4 +63,29 @@ output "ssm_shell_command" {
   value = <<-EOT
     aws ssm start-session --target ${aws_instance.ai_lab.id} --region ${var.aws_region}${local.aws_cli_profile_arg}
   EOT
+}
+
+output "auto_stop_watchdog" {
+  description = "Name of the auto-stop watchdog Lambda function when auto-stop is on (an idle timeout or a maximum uptime is set)."
+  value       = local.auto_stop_enabled ? aws_lambda_function.auto_stop_watchdog["auto_stop"].function_name : null
+}
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool ID when enable_cognito is true."
+  value       = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : null
+}
+
+output "cognito_hosted_login_domain" {
+  description = "Cognito hosted sign-in domain when enable_cognito is true."
+  value       = var.enable_cognito ? "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com" : null
+}
+
+output "open_webui_admin_email" {
+  description = "Email of the Open WebUI administrator. Used by scripts/set-cognito-passwords.ps1."
+  value       = var.open_webui_admin_email
+}
+
+output "cognito_user_emails" {
+  description = "Emails of the Cognito users Terraform creates. Used by scripts/set-cognito-passwords.ps1."
+  value       = var.enable_cognito ? sort(keys(local.cognito_users)) : []
 }

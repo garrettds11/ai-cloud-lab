@@ -17,6 +17,25 @@ mark_failed() {
     echo "AI lab bootstrap failed. See $LOG_FILE."
 }
 
+read_secret_value() {
+    local secret_string="$1"
+
+    # Secrets created with the Secrets Manager key/value editor are returned as
+    # a one-property JSON object. Plaintext SecretString values remain valid.
+    if printf '%s' "$secret_string" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        printf '%s' "$secret_string" |
+            jq -er 'if length == 1 and (.[] | type) == "string" then .[] else error("secret object must contain exactly one string value") end'
+        return
+    fi
+
+    if printf '%s' "$secret_string" | jq -e 'type == "string"' >/dev/null 2>&1; then
+        printf '%s' "$secret_string" | jq -er '.'
+        return
+    fi
+
+    printf '%s' "$secret_string"
+}
+
 trap mark_failed ERR
 
 wait_for_ollama() {
@@ -114,7 +133,7 @@ wait_for_open_webui() {
 }
 
 provision_demo_users() {
-    if [[ -z "${open_webui_demo_password_b64}" ]]; then
+    if [[ -z "${open_webui_demo_password_secret_arn}" ]]; then
         echo "No Open WebUI demo-user password supplied; skipping demo-user provisioning."
         return 0
     fi
@@ -124,14 +143,23 @@ provision_demo_users() {
     local admin_token
 
     demo_users_json="$(printf '%s' '${open_webui_demo_users_b64}' | base64 --decode)"
-    demo_password="$(printf '%s' '${open_webui_demo_password_b64}' | base64 --decode)"
+    demo_password="$(read_secret_value "$(aws secretsmanager get-secret-value \
+        --secret-id '${open_webui_demo_password_secret_arn}' \
+        --query SecretString \
+        --output text \
+        --region '${aws_region}')")"
+
+    if [[ -z "$demo_password" || "$demo_password" == "None" ]]; then
+        echo "Open WebUI demo-user password secret was empty."
+        return 1
+    fi
 
     admin_token="$(curl --silent --show-error --fail \
         -X POST "http://127.0.0.1:${open_webui_host_port}/api/v1/auths/signin" \
         -H 'Content-Type: application/json' \
         --data "$(jq -n \
             --arg email '${open_webui_admin_email}' \
-            --arg password '${open_webui_admin_password}' \
+            --arg password "$open_webui_admin_password" \
             '{email: $email, password: $password}')" | jq -r '.token')"
 
     if [[ -z "$admin_token" || "$admin_token" == "null" ]]; then
@@ -185,7 +213,24 @@ apt-get install -y \
     ca-certificates \
     docker.io \
     iptables \
-    snapd
+    snapd \
+    sqlite3 \
+    unzip
+
+# Ubuntu 24.04 does not provide the AWS CLI package in every enabled APT
+# source. Install AWS CLI v2 from AWS so bootstrap can retrieve Secrets Manager
+# values through the instance role.
+if ! command -v aws >/dev/null 2>&1; then
+    aws_cli_tmp_dir="$(mktemp -d)"
+    curl --fail --silent --show-error --location \
+        "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+        --output "$aws_cli_tmp_dir/awscliv2.zip"
+    unzip -q "$aws_cli_tmp_dir/awscliv2.zip" -d "$aws_cli_tmp_dir"
+    "$aws_cli_tmp_dir/aws/install" --update
+    rm -rf "$aws_cli_tmp_dir"
+fi
+
+aws --version
 
 # Ubuntu AWS images usually include the SSM agent. This makes sure it is active.
 ensure_ssm_agent
@@ -201,6 +246,19 @@ fi
 
 systemctl enable --now docker
 configure_local_firewall
+
+# Retrieve the password at boot through the instance role. The secret ARN is
+# safe to include in user-data; the password itself is not.
+open_webui_admin_password="$(read_secret_value "$(aws secretsmanager get-secret-value \
+    --secret-id '${open_webui_admin_password_secret_arn}' \
+    --query SecretString \
+    --output text \
+    --region '${aws_region}')")"
+
+if [[ -z "$open_webui_admin_password" || "$open_webui_admin_password" == "None" ]]; then
+    echo "Open WebUI admin password secret was empty."
+    exit 1
+fi
 
 # Install Ollama using the official Linux installer.
 curl -fsSL https://ollama.com/install.sh | sh
@@ -221,6 +279,37 @@ wait_for_ollama
 # Pull requested model.
 HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
 
+# Optional Cognito single sign-on for Open WebUI. The app client secret is read
+# from Cognito through the instance role, so it is never in user-data.
+oauth_args=()
+if [[ "${open_webui_oidc_enabled}" == "true" ]]; then
+    cognito_client_secret="$(aws cognito-idp describe-user-pool-client \
+        --user-pool-id '${cognito_user_pool_id}' \
+        --client-id '${cognito_client_id}' \
+        --query 'UserPoolClient.ClientSecret' \
+        --output text \
+        --region '${aws_region}')"
+
+    if [[ -z "$cognito_client_secret" || "$cognito_client_secret" == "None" ]]; then
+        echo "Could not read the Cognito app client secret."
+        exit 1
+    fi
+
+    oauth_args=(
+        -e OAUTH_CLIENT_ID='${cognito_client_id}'
+        -e OAUTH_CLIENT_SECRET="$cognito_client_secret"
+        -e OPENID_PROVIDER_URL='https://cognito-idp.${aws_region}.amazonaws.com/${cognito_user_pool_id}/.well-known/openid-configuration'
+        -e OPENID_REDIRECT_URI='${open_webui_url}/oauth/oidc/callback'
+        -e OAUTH_PROVIDER_NAME='Cognito'
+        -e OAUTH_SCOPES='openid email profile'
+        -e OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true
+    )
+fi
+
+# Security notice banner shown in Open WebUI. Passed through base64 so quotes and
+# apostrophes in the text cannot break the shell.
+webui_banners="$(echo '${open_webui_banners_b64}' | base64 -d)"
+
 docker volume create "${open_webui_docker_volume}"
 docker pull "${open_webui_container_image}"
 docker rm -f "${open_webui_container_name}" 2>/dev/null || true
@@ -233,18 +322,68 @@ docker run -d \
     -e OLLAMA_BASE_URL="${open_webui_ollama_base_url}" \
     -e WEBUI_URL="${open_webui_url}" \
     -e WEBUI_AUTH=true \
-    -e ENABLE_LOGIN_FORM=true \
-    -e ENABLE_PASSWORD_AUTH=true \
+    -e ENABLE_LOGIN_FORM="${open_webui_local_login_enabled}" \
+    -e ENABLE_PASSWORD_AUTH="${open_webui_local_login_enabled}" \
     -e ENABLE_SIGNUP=false \
-    -e ENABLE_OAUTH_SIGNUP=false \
+    -e ENABLE_OAUTH_SIGNUP="${open_webui_oidc_enabled}" \
+    -e DEFAULT_USER_ROLE="${open_webui_default_user_role}" \
+    -e WEBUI_BANNERS="$webui_banners" \
     -e ENABLE_OPENAI_API=false \
     -e WEBUI_ADMIN_EMAIL="${open_webui_admin_email}" \
     -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \
-    -e WEBUI_ADMIN_PASSWORD="${open_webui_admin_password}" \
+    -e WEBUI_ADMIN_PASSWORD="$open_webui_admin_password" \
+    "$${oauth_args[@]}" \
     "${open_webui_container_image}"
 
 wait_for_open_webui
-provision_demo_users
+
+# The demo users are local Open WebUI accounts only when Cognito is off. With
+# Cognito on they exist only in Cognito and get an Open WebUI account the first
+# time they sign in. Local provisioning uses the password API, so it also needs
+# local password sign-in enabled.
+if [[ "${open_webui_local_demo_users_enabled}" == "true" ]]; then
+    provision_demo_users
+else
+    echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
+fi
+
+# Idle-aware auto-stop: a systemd timer runs the idle monitor every minute. It does
+# nothing until the ready file exists, so it cannot stop the instance mid-bootstrap,
+# and it reads its on/off switch and timeout from an SSM parameter at run time.
+mkdir -p /etc/ai-lab
+cat > /etc/ai-lab/auto-stop.env <<'EOF'
+OPEN_WEBUI_VOLUME=${open_webui_docker_volume}
+OLLAMA_PORT=11434
+AUTO_STOP_PARAMETER=${auto_stop_parameter_name}
+EOF
+
+printf '%s' '${auto_stop_script_b64}' | base64 --decode > /usr/local/sbin/ai-lab-idle-check
+chmod 0755 /usr/local/sbin/ai-lab-idle-check
+
+cat > /etc/systemd/system/ai-lab-idle-check.service <<'EOF'
+[Unit]
+Description=Stop the AI lab when nobody is using it
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ai-lab-idle-check
+EOF
+
+cat > /etc/systemd/system/ai-lab-idle-check.timer <<'EOF'
+[Unit]
+Description=Run the AI lab idle check every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now ai-lab-idle-check.timer
 
 # Convenience diagnostic script.
 cat > /usr/local/bin/ai-lab-status <<'EOF'
@@ -307,7 +446,7 @@ Local demo accounts:
     demo4@example.local
 
 All demo accounts receive the temporary Terraform value supplied through
-open_webui_demo_user_password. Each user should change it from Profile after
+open_webui_demo_user_password_secret_arn. Each user should change it from Profile after
 first login. Do not use these demo credentials outside this lab.
 
 To inspect the environment:

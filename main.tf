@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -14,17 +22,42 @@ provider "aws" {
   profile = var.aws_profile
 
   default_tags {
-    tags = {
-      Project     = var.project_name
-      Environment = "lab"
-      ManagedBy   = "terraform"
-    }
+    tags = var.tags
   }
 }
 
+provider "cloudflare" {}
+
 locals {
-  aws_cli_profile_arg = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
-  domain_resources    = var.enable_domain_access ? { domain = true } : {}
+  aws_cli_profile_arg     = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
+  domain_resources        = var.enable_domain_access ? { domain = true } : {}
+  route53_resources       = var.enable_domain_access && !var.enable_cloudflare_access ? { domain = true } : {}
+  cloudflare_resources    = var.enable_cloudflare_access ? { domain = true } : {}
+  http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
+  cognito_resources       = var.enable_cognito ? { domain = true } : {}
+  auto_stop_enabled       = var.auto_stop_idle_minutes > 0 || var.auto_stop_max_uptime_minutes > 0
+  auto_stop_resources     = local.auto_stop_enabled ? { auto_stop = true } : {}
+  cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
+  # Everyone who can sign in through Cognito: the Open WebUI administrator, the demo
+  # users, and any extra users. The grouping (...) and [0] drop duplicate emails.
+  cognito_user_list = concat(
+    [{ email = var.open_webui_admin_email, name = var.open_webui_admin_name }],
+    var.open_webui_demo_users,
+    var.cognito_extra_users
+  )
+  cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
+  open_webui_banners = var.security_banner_text == "" ? [] : [{
+    id          = "security-notice"
+    type        = "warning"
+    title       = "Security and acceptable use notice"
+    content     = var.security_banner_text
+    dismissible = false
+    timestamp   = 0
+  }]
+  access_allowed_emails = var.enable_cognito ? toset(concat(
+    tolist(var.cloudflare_access_allowed_emails),
+    [for user in values(local.cognito_users) : user.email]
+  )) : var.cloudflare_access_allowed_emails
   domain_certificate_arn = var.acm_certificate_arn != null ? var.acm_certificate_arn : (
     var.enable_domain_access ? data.aws_acm_certificate.domain[0].arn : null
   )
@@ -90,19 +123,23 @@ resource "aws_security_group" "alb" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "HTTPS from the Internet"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description      = var.enable_origin_lockdown ? "HTTPS from Cloudflare only" : "HTTPS from the Internet"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = var.enable_origin_lockdown ? concat(var.cloudflare_ipv4_cidrs, var.origin_lockdown_extra_cidrs) : ["0.0.0.0/0"]
+    ipv6_cidr_blocks = var.enable_origin_lockdown ? var.cloudflare_ipv6_cidrs : []
   }
 
-  ingress {
-    description = "HTTP redirect to HTTPS"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "ingress" {
+    for_each = local.http_redirect_resources
+    content {
+      description = "HTTP redirect to HTTPS"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
 
   egress {
@@ -115,6 +152,13 @@ resource "aws_security_group" "alb" {
 
   tags = {
     Name = "${var.project_name}-alb-sg"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_origin_lockdown || var.enable_cloudflare_access
+      error_message = "enable_origin_lockdown requires enable_cloudflare_access, because only Cloudflare traffic is allowed through."
+    }
   }
 }
 
@@ -147,6 +191,32 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+data "aws_secretsmanager_secret" "open_webui_admin_password" {
+  arn = var.open_webui_admin_password_secret_arn
+}
+
+data "aws_secretsmanager_secret" "open_webui_demo_password" {
+  count = var.open_webui_demo_user_password_secret_arn == null ? 0 : 1
+  arn   = var.open_webui_demo_user_password_secret_arn
+}
+
+resource "aws_iam_role_policy" "open_webui_admin_password" {
+  name = "${var.project_name}-admin-password"
+  role = aws_iam_role.ssm.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = "secretsmanager:GetSecretValue"
+      Resource = concat(
+        [data.aws_secretsmanager_secret.open_webui_admin_password.arn],
+        var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn]
+      )
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "ssm" {
   name_prefix = "${var.project_name}-"
   role        = aws_iam_role.ssm.name
@@ -165,6 +235,9 @@ resource "aws_instance" "ai_lab" {
 
   iam_instance_profile = aws_iam_instance_profile.ssm.name
 
+  # The idle monitor powers the instance off from inside; EC2 must stop it (not terminate it).
+  instance_initiated_shutdown_behavior = "stop"
+
   # Needed during bootstrap for packages, Docker image pulls, Ollama, and model downloads.
   # Open WebUI and Ollama are not exposed by security group ingress.
   associate_public_ip_address = true
@@ -182,21 +255,31 @@ resource "aws_instance" "ai_lab" {
     delete_on_termination = true
   }
 
-  user_data = replace(templatefile("${path.module}/cloud-init.sh.tpl", {
-    ollama_model                     = var.ollama_model
-    open_webui_admin_email           = var.open_webui_admin_email
-    open_webui_admin_name            = var.open_webui_admin_name
-    open_webui_admin_password        = var.open_webui_admin_password == null ? "" : var.open_webui_admin_password
-    open_webui_demo_users_b64        = base64encode(jsonencode(var.open_webui_demo_users))
-    open_webui_demo_password_b64     = var.open_webui_demo_user_password == null ? "" : base64encode(var.open_webui_demo_user_password)
-    open_webui_container_image       = var.open_webui_container_image
-    open_webui_container_name        = var.open_webui_container_name
-    open_webui_host_port             = var.open_webui_host_port
-    open_webui_docker_volume         = var.open_webui_docker_volume
-    open_webui_domain_access_enabled = var.enable_domain_access ? "true" : "false"
-    open_webui_ollama_base_url       = "http://127.0.0.1:11434"
-    open_webui_url                   = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
-  }), "\r\n", "\n")
+  user_data_base64 = base64gzip(replace(templatefile("${path.module}/cloud-init.sh.tpl", {
+    ollama_model                         = var.ollama_model
+    open_webui_admin_email               = var.open_webui_admin_email
+    open_webui_admin_name                = var.open_webui_admin_name
+    open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
+    open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
+    open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
+    open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
+    open_webui_local_login_enabled       = var.open_webui_enable_local_login ? "true" : "false"
+    open_webui_local_demo_users_enabled  = var.open_webui_enable_local_login && !var.enable_cognito ? "true" : "false"
+    open_webui_default_user_role         = var.open_webui_default_user_role
+    open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
+    cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
+    cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
+    open_webui_container_image           = var.open_webui_container_image
+    open_webui_container_name            = var.open_webui_container_name
+    open_webui_host_port                 = var.open_webui_host_port
+    open_webui_docker_volume             = var.open_webui_docker_volume
+    open_webui_domain_access_enabled     = var.enable_domain_access ? "true" : "false"
+    open_webui_ollama_base_url           = "http://127.0.0.1:11434"
+    open_webui_url                       = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
+    aws_region                           = var.aws_region
+    auto_stop_parameter_name             = local.auto_stop_parameter_name
+    auto_stop_script_b64                 = base64encode(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
+  }), "\r\n", "\n"))
 
   user_data_replace_on_change = true
 
@@ -207,29 +290,47 @@ resource "aws_instance" "ai_lab" {
     }
 
     precondition {
-      condition     = var.open_webui_admin_password != null
-      error_message = "open_webui_admin_password must be set before applying the lab."
+      condition     = var.open_webui_admin_password_secret_arn != null
+      error_message = "open_webui_admin_password_secret_arn must reference a pre-created Secrets Manager secret before applying the lab."
     }
 
     precondition {
-      condition     = length(var.open_webui_demo_users) == 0 || var.open_webui_demo_user_password != null
-      error_message = "open_webui_demo_user_password must be set when demo users are enabled."
+      condition = !var.enable_cloudflare_access || (
+        var.enable_domain_access &&
+        var.cloudflare_account_id != null &&
+        var.cloudflare_api_token_secret_arn != null &&
+        length(local.access_allowed_emails) > 0
+      )
+      error_message = "Cloudflare access requires enable_domain_access, cloudflare_account_id, cloudflare_api_token_secret_arn, and at least one allowed email."
+    }
+
+    precondition {
+      condition     = var.open_webui_enable_local_login || var.enable_cognito
+      error_message = "open_webui_enable_local_login = false requires enable_cognito = true, otherwise nobody could sign in."
+    }
+
+    precondition {
+      condition     = length(var.open_webui_demo_users) == 0 || var.open_webui_demo_user_password_secret_arn != null
+      error_message = "open_webui_demo_user_password_secret_arn must reference a pre-created Secrets Manager secret when demo users are enabled."
     }
 
   }
 
   tags = {
-    Name        = var.project_name
-    Application = "Open-WebUI-Ollama"
+    Name = var.project_name
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.ssm
+    aws_iam_role_policy_attachment.ssm,
+    aws_iam_role_policy.open_webui_admin_password,
+    aws_iam_role_policy.cognito_client,
+    aws_iam_role_policy.auto_stop_agent,
+    aws_cognito_user_pool_domain.lab
   ]
 }
 
 data "aws_route53_zone" "public" {
-  count        = var.enable_domain_access ? 1 : 0
+  count        = var.enable_domain_access && !var.enable_cloudflare_access ? 1 : 0
   name         = var.route53_zone_name
   private_zone = false
 }
@@ -289,7 +390,7 @@ resource "aws_lb_target_group_attachment" "domain" {
 }
 
 resource "aws_lb_listener" "http_redirect" {
-  for_each          = local.domain_resources
+  for_each          = local.http_redirect_resources
   load_balancer_arn = aws_lb.domain[each.key].arn
   port              = 80
   protocol          = "HTTP"
@@ -319,7 +420,7 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_route53_record" "domain" {
-  for_each = local.domain_resources
+  for_each = local.route53_resources
   zone_id  = data.aws_route53_zone.public[0].zone_id
   name     = var.domain_name
   type     = "A"
@@ -329,4 +430,51 @@ resource "aws_route53_record" "domain" {
     zone_id                = aws_lb.domain[each.key].zone_id
     evaluate_target_health = true
   }
+}
+
+data "cloudflare_zones" "domain" {
+  count     = var.enable_cloudflare_access ? 1 : 0
+  name      = var.domain_name
+  max_items = 1
+
+  account = {
+    id = var.cloudflare_account_id
+  }
+}
+
+resource "cloudflare_dns_record" "domain" {
+  for_each = local.cloudflare_resources
+  zone_id  = data.cloudflare_zones.domain[0].result[0].id
+  name     = var.domain_name
+  type     = "CNAME"
+  content  = aws_lb.domain[each.key].dns_name
+  ttl      = 1
+  proxied  = true
+  comment  = "Managed by Terraform for the AI lab ALB"
+}
+
+resource "cloudflare_zero_trust_access_application" "domain" {
+  for_each         = local.cloudflare_resources
+  account_id       = var.cloudflare_account_id
+  name             = var.cloudflare_access_app_name
+  domain           = var.domain_name
+  type             = "self_hosted"
+  session_duration = var.cloudflare_access_session_duration
+
+  # With Cognito enabled, only the Cognito login method is offered and users go
+  # straight to it. Otherwise Access uses whatever login methods your Zero Trust
+  # organization has configured.
+  allowed_idps              = var.enable_cognito ? [cloudflare_zero_trust_access_identity_provider.cognito["domain"].id] : null
+  auto_redirect_to_identity = var.enable_cognito
+
+  policies = [{
+    name       = "Allow approved Open WebUI users"
+    decision   = "allow"
+    precedence = 1
+    include = [for email in local.access_allowed_emails : {
+      email = { email = email }
+    }]
+  }]
+
+  depends_on = [cloudflare_dns_record.domain]
 }

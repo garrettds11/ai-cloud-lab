@@ -30,7 +30,7 @@ def point(value, stat):
 
 
 class WatchdogTest(unittest.TestCase):
-    def run_handler(self, *, state="running", uptime=120, agent=None, alb=None, alb_dimension="app/lab/abc"):
+    def run_handler(self, *, state="running", uptime=120, agent=None, alb=None, alb_dimension="app/lab/abc", enforce=False):
         """agent: None for silent, else dict(idle=, users=). alb: request count, None for no data."""
         instance = {"State": {"Name": state}, "LaunchTime": NOW - datetime.timedelta(minutes=uptime)}
         ec2 = mock.Mock()
@@ -52,7 +52,7 @@ class WatchdogTest(unittest.TestCase):
             return {"Datapoints": [values[name]]}
 
         cloudwatch.get_metric_statistics.side_effect = stats
-        with mock.patch.multiple(watchdog, ec2=ec2, cloudwatch=cloudwatch, sns=sns, _now=lambda: NOW, ALB_DIMENSION=alb_dimension):
+        with mock.patch.multiple(watchdog, ec2=ec2, cloudwatch=cloudwatch, sns=sns, _now=lambda: NOW, ALB_DIMENSION=alb_dimension, ENFORCE_MAX_UPTIME=enforce):
             result = watchdog.lambda_handler({}, None)
         return result, ec2, sns
 
@@ -109,6 +109,33 @@ class WatchdogTest(unittest.TestCase):
         sns.publish.assert_not_called()
         _, _, sns = self.run_handler(uptime=9 * 60 + 1, agent={"idle": 0, "users": 2})
         sns.publish.assert_called_once()
+
+    def test_enforced_max_uptime_is_left_to_the_agent_at_first(self):
+        result, ec2, _ = self.run_handler(uptime=8 * 60 + 2, agent={"idle": 0, "users": 3}, enforce=True)
+        self.assertEqual(result["action"], "none")
+        ec2.stop_instances.assert_not_called()
+
+    def test_enforced_max_uptime_is_stopped_even_with_active_users(self):
+        result, ec2, _ = self.run_handler(uptime=8 * 60 + 6, agent={"idle": 0, "users": 3}, enforce=True)
+        self.assertEqual(result["action"], "stop")
+        ec2.stop_instances.assert_called_once_with(InstanceIds=["i-0123"])
+
+    def test_enforced_max_uptime_warns_thirty_minutes_ahead(self):
+        result, ec2, sns = self.run_handler(uptime=7 * 60 + 32, agent={"idle": 0, "users": 3}, enforce=True)
+        self.assertEqual(result["action"], "none")
+        self.assertTrue(result.get("alerted"))
+        ec2.stop_instances.assert_not_called()
+        sns.publish.assert_called_once()
+
+    def test_enforced_max_uptime_does_not_warn_every_run(self):
+        _, _, sns = self.run_handler(uptime=7 * 60 + 40, agent={"idle": 0, "users": 3}, enforce=True)
+        sns.publish.assert_not_called()
+        _, _, sns = self.run_handler(uptime=7 * 60, agent={"idle": 0, "users": 3}, enforce=True)
+        sns.publish.assert_not_called()
+
+    def test_enforced_max_uptime_does_not_send_hourly_alerts(self):
+        _, _, sns = self.run_handler(uptime=9 * 60 + 1, agent={"idle": 0, "users": 3}, enforce=True)
+        sns.publish.assert_not_called()
 
 
 if __name__ == "__main__":

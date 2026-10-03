@@ -11,13 +11,15 @@ Set-Location C:\GitHub\ai-cloud-lab
 Get-ChildItem *.tf
 ```
 
-If `Get-ChildItem *.tf` returns no files, stop and change to the correct repository directory before continuing.
+If `Get-ChildItem *.tf` returns *no files*, `STOP` and *change to the correct repository directory* before continuing.
 
 Create the local variables file once:
 
 ```powershell
 Copy-Item terraform.tfvars.example terraform.tfvars
+Copy-Item terraform.tfvars terraform.tfvars.md
 notepad terraform.tfvars
+terraform.tfvars.md
 ```
 
 Stop after opening Notepad. Before running any Terraform command, replace each
@@ -107,6 +109,8 @@ The first value is used for `admin@example.local`, both its local Open WebUI
 account and its Cognito user; the second is the password shared by the demo
 users. With `enable_cognito = false`, each demo user should change it from
 Profile after first login.
+
+### Set Cloudflare tokens if provider is in use.
 
 When Cloudflare resources are enabled, Terraform retrieves the Cloudflare API
 token from the separate AWS Secrets Manager secret below. Do not paste the token
@@ -211,6 +215,55 @@ Invoke-TerraformWithCloudflareToken -Arguments @("apply", "ai-lab.tfplan")
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
 
+### Auto-stop test
+
+`auto_stop_idle_minutes` in `terraform.tfvars` is both the switch (`0` is off) and
+the idle timeout (the example uses 90 for a demo). The idle timeout stops the
+instance only when no Open WebUI user is active and no reply is being generated, so
+test with and without activity. `auto_stop_max_uptime_hours` with
+`auto_stop_enforce_max_uptime = true` is a separate hard cap that stops it even when
+people are active. Changing these settings updates in
+place; it does not replace the instance.
+
+1. After first-boot setup finishes and Open WebUI is ready, confirm the monitor
+   sees the lab. In the SSM shell:
+
+```bash
+sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check
+```
+
+It prints `active_users`, `busy_connections` and `idle_minutes`. Signed in and
+chatting must show `active_users` of 1 or more; with nobody active it must show
+`active_users=0`.
+
+2. Set `auto_stop_idle_minutes = 5` in `terraform.tfvars`, then plan and apply
+   (only the SSM parameter and the watchdog change).
+3. Keep a signed-in browser tab sending messages for more than 5 minutes. The
+   instance must stay running.
+4. Stop using Open WebUI and close the tab. After about 5 to 8 minutes, confirm
+   the instance stopped:
+
+```powershell
+aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[0].Instances[0].State.Name" --output text
+```
+
+It must return `stopping` or `stopped`. To bring it back, run
+`aws ec2 start-instances --instance-ids $env:instance_id`; it gets a full idle
+window before it stops again. Set the demo value (90) again when you finish
+testing. Click the SNS confirmation link in the `auto_stop_alert_email` inbox so
+alerts are delivered.
+
+5. To test the hard cap, set `auto_stop_max_uptime_hours = 1` and
+   `auto_stop_enforce_max_uptime = true`, apply, and start the instance fresh
+   (stop and start it, since the limit counts from boot). Keep a signed-in tab
+   sending messages. About 30 minutes after boot you must receive the "will stop in
+   about 30 minutes" email, and at about 60 minutes the instance must stop even
+   though you are active. Restore `auto_stop_max_uptime_hours = 8` afterwards.
+6. To test the off switch, set `auto_stop_idle_minutes = 0` and apply. The watchdog,
+   SNS topic and EventBridge rule are removed, and the instance no longer stops itself
+   (`AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check` prints nothing because the
+   monitor exits when disabled).
+
 The plan file can contain sensitive values. Do not commit it. After the apply
 completes, remove the local plan file:
 
@@ -271,18 +324,21 @@ The EC2 target should report `healthy`.
 
 - URL loads Open WebUI: https://aiwebdemo.click
 
-- The ALB has no public port 80 (the default). Plain `http://` is not a supported
+> If `enable_cloudflare_access = false` this check returns a `500` internal error,
+> otherwise it should show a branded Cognito login page.
+
+- The ALB has no public port 80 (the default). Plain *http://* is not a supported
   application URL; with Cloudflare, **Always Use HTTPS** sends visitors who type
-  `http://` to HTTPS at the edge before they reach AWS.
+  *http://* to HTTPS at the edge before they reach AWS.
 
 To confirm the ALB itself no longer listens on port 80, run:
 
 ```powershell
 $env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
-curl.exe -I --max-time 10 "http://$env:alb_dns_name"
+curl.exe -I --max-time 5 "http://$env:alb_dns_name"
 ```
 
-The request must time out or fail to connect, not return a redirect.
+The request ==must time out or fail== to connect, not return a redirect.
 
 ### Origin lockdown test
 
@@ -326,7 +382,7 @@ In both cases the email must be in the Access policy: with Cognito, that is ever
 Cognito user's email plus `cloudflare_access_allowed_emails`; without Cognito, it
 is `cloudflare_access_allowed_emails` only.
 
-Run these from a browser:
+**Run these from a browser:**
 
 1. In a private window, open https://aiwebdemo.click. You must land on a
    sign-in page (Cognito, or the Access page when Cognito is off), not the Open
@@ -420,7 +476,11 @@ admin@example.local
 - Password is set in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
 
-The demo users are `demo1@example.local` through `demo10@example.local`.
+The demo users are numbered 1 through 10, like:
+
+```
+demo1@example.local
+``` 
 
 They all use the value stored in the Secrets Manager secret identified by
 `open_webui_demo_user_password_secret_arn`.
@@ -438,9 +498,9 @@ Where they sign in depends on `enable_cognito`:
 To turn local password sign-in off, set `open_webui_enable_local_login = false`
 (see "Where each account lives" in the README).
 
-Change the temporary password immediately after confirming access.
+==*Change the temporary password immediately*== after confirming access.
 
-## 6. Stop or dismantle the test system
+## 6. Stop or Destroy the Test System
 
 If you may test again later, stop the instance to avoid ongoing compute charges:
 
@@ -472,11 +532,11 @@ real password, but keep `terraform.tfvars.example`.
 
 ## Likely failure points
 
-- AWS credentials are missing, expired, or lack EC2, IAM, security-group, or SSM permissions.
-- The selected region has no default VPC.
-- The account lacks `c7i.4xlarge` quota, or the selected subnet's AZ does not offer that instance type.
-- The Session Manager plugin is not installed locally.
-- Bootstrap is still downloading packages, Ollama, the model, or the Open WebUI image.
-- Local port 8080 is already occupied; use local port 8081 for the tunnel.
-- Domain access requires an issued ACM certificate in the selected region, plus either a public Route 53 hosted zone or, with Cloudflare, an **Active** Cloudflare zone.
-- A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set.
+> - AWS credentials are missing, expired, or lack EC2, IAM, security-group, or SSM permissions.
+> - The selected region has no default VPC.
+> - The account lacks `c7i.4xlarge` quota, or the selected subnet's AZ does not offer that instance type.
+> - The Session Manager plugin is not installed locally.
+> - Bootstrap is still downloading packages, Ollama, the model, or the Open WebUI image.
+> - Local port 8080 is already occupied; use local port 8081 for the tunnel.
+> - Domain access requires an issued ACM certificate in the selected region, plus either a public Route 53 hosted zone or, with Cloudflare, an **Active** Cloudflare zone.
+> - A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set.

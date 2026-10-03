@@ -1,4 +1,4 @@
-# Idle-aware auto-stop.
+# Idle-aware auto-stop. auto_stop_idle_minutes is the switch: 0 is off, 1 or more is on.
 #
 # Layer 1 runs on the instance (scripts/ai-lab-idle-check.sh, installed by
 # cloud-init): it powers the instance off only after auto_stop_idle_minutes with
@@ -9,7 +9,9 @@
 # agent already reports it idle (shutdown failed) or when the agent is silent and
 # the load balancer shows no traffic. It emails an alert when the instance runs
 # longer than auto_stop_max_uptime_hours or when the agent stops reporting. It never
-# stops an instance that has active users.
+# stops an instance that has active users because of the idle timeout. With
+# auto_stop_enforce_max_uptime the maximum uptime is a hard cap: both layers stop the
+# instance at the limit even if people are active, after an email warning.
 
 locals {
   auto_stop_check_minutes  = 5
@@ -18,8 +20,8 @@ locals {
 
 check "auto_stop_alert_email" {
   assert {
-    condition     = !var.enable_auto_stop || var.auto_stop_alert_email != null
-    error_message = "enable_auto_stop is on but auto_stop_alert_email is not set, so long-running and not-reporting alerts have nowhere to go. Set auto_stop_alert_email in terraform.tfvars."
+    condition     = var.auto_stop_idle_minutes == 0 || var.auto_stop_alert_email != null
+    error_message = "auto_stop_idle_minutes is above 0 but auto_stop_alert_email is not set, so long-running and not-reporting alerts have nowhere to go. Set auto_stop_alert_email in terraform.tfvars."
   }
 }
 
@@ -29,7 +31,12 @@ check "auto_stop_alert_email" {
 resource "aws_ssm_parameter" "auto_stop" {
   name  = local.auto_stop_parameter_name
   type  = "String"
-  value = jsonencode({ enabled = var.enable_auto_stop, idle_minutes = var.auto_stop_idle_minutes })
+  value = jsonencode({
+    enabled            = var.auto_stop_idle_minutes > 0
+    idle_minutes       = var.auto_stop_idle_minutes
+    max_uptime_minutes = var.auto_stop_max_uptime_hours * 60
+    enforce_max_uptime = var.auto_stop_enforce_max_uptime
+  })
 }
 
 # Lets the agent read its settings and publish its idle state for the watchdog.
@@ -63,7 +70,7 @@ resource "aws_sns_topic" "auto_stop" {
 
 # Email subscriptions stay "pending" until the recipient clicks the confirmation link.
 resource "aws_sns_topic_subscription" "auto_stop_email" {
-  for_each = var.enable_auto_stop && var.auto_stop_alert_email != null ? local.auto_stop_resources : {}
+  for_each = var.auto_stop_alert_email != null ? local.auto_stop_resources : {}
 
   topic_arn = aws_sns_topic.auto_stop[each.key].arn
   protocol  = "email"
@@ -157,12 +164,13 @@ resource "aws_lambda_function" "auto_stop_watchdog" {
 
   environment {
     variables = {
-      INSTANCE_ID      = aws_instance.ai_lab.id
-      IDLE_MINUTES     = tostring(var.auto_stop_idle_minutes)
-      MAX_UPTIME_HOURS = tostring(var.auto_stop_max_uptime_hours)
-      CHECK_MINUTES    = tostring(local.auto_stop_check_minutes)
-      SNS_TOPIC_ARN    = aws_sns_topic.auto_stop[each.key].arn
-      ALB_DIMENSION    = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
+      INSTANCE_ID         = aws_instance.ai_lab.id
+      IDLE_MINUTES        = tostring(var.auto_stop_idle_minutes)
+      MAX_UPTIME_HOURS    = tostring(var.auto_stop_max_uptime_hours)
+      ENFORCE_MAX_UPTIME  = tostring(var.auto_stop_enforce_max_uptime)
+      CHECK_MINUTES       = tostring(local.auto_stop_check_minutes)
+      SNS_TOPIC_ARN       = aws_sns_topic.auto_stop[each.key].arn
+      ALB_DIMENSION       = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
     }
   }
 

@@ -9,8 +9,10 @@ are using, and it flags an instance that has been left running:
 * If the agent has gone silent, activity cannot be read from the instance. Stop it
   only when the load balancer also shows no requests for the whole idle window;
   otherwise send an alert and leave it running.
-* If the instance has been up longer than the maximum uptime, send an alert (never
-  a forced stop), repeating hourly.
+* Maximum uptime. With ENFORCE_MAX_UPTIME the limit is a hard cap: send a warning 30
+  minutes before it and stop the instance shortly after it if the agent has not
+  (people being active does not prevent this). Without it, only send an alert once
+  the limit passes, repeating hourly, and never stop for this reason.
 """
 
 import datetime
@@ -22,10 +24,12 @@ import boto3
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "")
 IDLE_MINUTES = int(os.environ.get("IDLE_MINUTES", "60"))
 MAX_UPTIME_MINUTES = int(os.environ.get("MAX_UPTIME_HOURS", "8")) * 60
+ENFORCE_MAX_UPTIME = os.environ.get("ENFORCE_MAX_UPTIME", "false").lower() == "true"
 CHECK_MINUTES = int(os.environ.get("CHECK_MINUTES", "5"))
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 ALB_DIMENSION = os.environ.get("ALB_DIMENSION", "")  # e.g. app/name/1234567890abcdef
 
+WARN_BEFORE_MINUTES = 30  # warning email before an enforced maximum uptime
 STOP_GRACE_MINUTES = 5  # extra idle time before the watchdog steps in after the agent
 SETUP_GRACE_MINUTES = 30  # leave a freshly started instance alone while it sets up
 SILENT_AFTER_MINUTES = 10  # no heartbeat for this long means the agent is silent
@@ -122,7 +126,21 @@ def lambda_handler(event, context):
             )
             result["action"] = "alert"
 
-    if result["action"] != "stop" and uptime >= MAX_UPTIME_MINUTES:
+    if ENFORCE_MAX_UPTIME and result["action"] != "stop":
+        if uptime >= MAX_UPTIME_MINUTES + STOP_GRACE_MINUTES:
+            # The agent should have powered off at the limit; this is the backstop.
+            _stop(f"instance has run {uptime:.0f} minutes (enforced maximum {MAX_UPTIME_MINUTES})")
+            result["action"] = "stop"
+        elif 0 <= uptime - (MAX_UPTIME_MINUTES - WARN_BEFORE_MINUTES) < CHECK_MINUTES:
+            who = "unknown" if active_users is None else f"{active_users:.0f}"
+            _alert(
+                "AI lab will stop in about 30 minutes",
+                f"Instance {INSTANCE_ID} reaches its maximum uptime of {MAX_UPTIME_MINUTES // 60}h in about "
+                f"{WARN_BEFORE_MINUTES} minutes and will be stopped even if people are using it "
+                f"(active Open WebUI users: {who}). Start it again afterwards to continue.",
+            )
+            result["alerted"] = True
+    elif result["action"] != "stop" and uptime >= MAX_UPTIME_MINUTES:
         # Repeat roughly once an hour.
         if (uptime - MAX_UPTIME_MINUTES) % 60 < CHECK_MINUTES:
             who = "unknown" if active_users is None else f"{active_users:.0f}"

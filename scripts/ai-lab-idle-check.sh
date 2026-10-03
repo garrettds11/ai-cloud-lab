@@ -9,7 +9,9 @@
 #      activity cannot be determined (unknown is treated as active);
 #   3. publishes ActiveUsers, IdleMinutes, UptimeMinutes and Heartbeat to
 #      CloudWatch (namespace AILab) for the independent watchdog;
-#   4. powers the instance off (EC2 stops it) after IDLE_MINUTES of idleness.
+#   4. powers the instance off (EC2 stops it) after IDLE_MINUTES of idleness;
+#   5. when enforce_max_uptime is set, powers it off at max_uptime_minutes of uptime
+#      even if people are active (the warning email comes from the watchdog).
 #
 # Set AI_LAB_DRY_RUN=1 to print what it sees without publishing or powering off.
 set -uo pipefail
@@ -34,6 +36,8 @@ now=$(date +%s)
 # If the parameter cannot be read, fall back to the safe defaults below.
 enabled=true
 IDLE_MINUTES=60
+MAX_UPTIME_MINUTES=0
+ENFORCE_MAX_UPTIME=false # unknown settings never stop active users
 imds_token=$(curl -s -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' || true)
 imds() { curl -s -m 3 -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"; }
 instance_id=$(imds instance-id || true)
@@ -42,6 +46,9 @@ if [[ -n $region ]] && config=$(aws ssm get-parameter --region "$region" --name 
   enabled=$(jq -r '.enabled' <<<"$config" 2>/dev/null || echo true)
   configured_idle=$(jq -r '.idle_minutes' <<<"$config" 2>/dev/null || true)
   [[ $configured_idle =~ ^[0-9]+$ ]] && IDLE_MINUTES=$configured_idle
+  configured_max=$(jq -r '.max_uptime_minutes' <<<"$config" 2>/dev/null || true)
+  [[ $configured_max =~ ^[0-9]+$ ]] && MAX_UPTIME_MINUTES=$configured_max
+  [[ $(jq -r '.enforce_max_uptime' <<<"$config" 2>/dev/null || true) == "true" ]] && ENFORCE_MAX_UPTIME=true
 fi
 if [[ $enabled == "false" ]]; then
   echo "$now" >"$STATE_DIR/last-activity" # a later re-enable gets a full idle window
@@ -69,7 +76,7 @@ last_activity=$(<"$STATE_DIR/last-activity")
 idle_minutes=$(((now - last_activity) / 60))
 uptime_minutes=$(awk '{print int($1 / 60)}' /proc/uptime)
 
-echo "active_users=$active_users busy_connections=$busy_connections idle_minutes=$idle_minutes/$IDLE_MINUTES uptime_minutes=$uptime_minutes"
+echo "active_users=$active_users busy_connections=$busy_connections idle_minutes=$idle_minutes/$IDLE_MINUTES uptime_minutes=$uptime_minutes/$MAX_UPTIME_MINUTES enforce_max_uptime=$ENFORCE_MAX_UPTIME"
 
 if [[ -n ${AI_LAB_DRY_RUN:-} ]]; then
   exit 0
@@ -86,6 +93,13 @@ if [[ -n $instance_id && -n $region ]]; then
      | map(. + {Dimensions:[{Name:"InstanceId",Value:$id}]})')
   aws cloudwatch put-metric-data --region "$region" --namespace AILab --metric-data "$metrics" ||
     logger -t ai-lab-idle "could not publish metrics"
+fi
+
+# Hard cap: stop at the maximum uptime even if people are active.
+if [[ $ENFORCE_MAX_UPTIME == "true" ]] && ((MAX_UPTIME_MINUTES > 0 && uptime_minutes >= MAX_UPTIME_MINUTES)); then
+  logger -t ai-lab-idle "up for $uptime_minutes minutes (maximum $MAX_UPTIME_MINUTES); powering off"
+  systemctl poweroff
+  exit 0
 fi
 
 if ((idle_minutes >= IDLE_MINUTES)); then

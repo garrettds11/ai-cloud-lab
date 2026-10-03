@@ -133,10 +133,10 @@ To rotate an existing lab, change the password in Open WebUI first, then update
 the matching value in the AWS console. Changing the secret alone does not change
 the already-initialized Open WebUI account.
 
-The four demo users use:
+The demo users use:
 
 - the password in `open_webui_demo_user_password_secret_arn`
-- `open_webui_demo_users` (exactly four demo users by default)
+- `open_webui_demo_users` (ten demo users by default; any number from 1 to 25)
 
 The demo-user password must be stored in a second pre-created Secrets Manager
 secret and is retrieved through the EC2 role during bootstrap or by

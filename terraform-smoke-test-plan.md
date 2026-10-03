@@ -104,7 +104,7 @@ aws secretsmanager get-secret-value `
 ```
 
 The first value is used for `admin@example.local`, both its local Open WebUI
-account and its Cognito user; the second is the password shared by the four demo
+account and its Cognito user; the second is the password shared by the demo
 users. With `enable_cognito = false`, each demo user should change it from
 Profile after first login.
 
@@ -386,7 +386,7 @@ aws ssm start-session `
 
 Then open http://localhost:8081.
 
-### Login with the admin and four demo accounts
+### Login with the admin and demo accounts
 
 Initial login credentials are as follows unless you changed `open_webui_admin_email`:
 
@@ -397,20 +397,7 @@ admin@example.local
 - Password is set in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
 
-The four demo users are:
-
-```
-demo1@example.local
-```
-```
-demo2@example.local
-```
-```
-demo3@example.local
-```
-```
-demo4@example.local
-```
+The demo users are `demo1@example.local` through `demo10@example.local`.
 
 They all use the value stored in the Secrets Manager secret identified by
 `open_webui_demo_user_password_secret_arn`.

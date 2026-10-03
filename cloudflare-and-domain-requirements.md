@@ -65,7 +65,7 @@ The administrator needs:
 1. An AWS profile or another AWS credential source with permission to create and destroy the lab.
 2. An AWS region. The current example uses `us-east-1`.
 3. An existing Secrets Manager secret for the Open WebUI administrator password.
-4. An existing Secrets Manager secret for the four demo users' temporary password.
+4. An existing Secrets Manager secret for the demo users' temporary password.
 5. An issued ACM certificate covering the public hostname, in the same AWS region as the ALB.
 
 The two Open WebUI password secrets are read by the EC2 instance through its IAM role. Terraform does not create, rotate, update, or destroy those secrets.
@@ -229,7 +229,7 @@ With Cognito enabled, Terraform creates:
 
 - A Cognito user pool with no self-service sign-up, a hosted sign-in domain
   (`cognito_domain_prefix`), and one app client used by Cloudflare and Open WebUI.
-- A Cognito user for each of the four `open_webui_demo_users` plus any
+- A Cognito user for each of the `open_webui_demo_users` plus any
   `cognito_extra_users`. They are created without passwords and with the email
   marked verified, so no email is sent. Run `scripts/set-cognito-passwords.ps1`
   after `apply` to set each password from your existing demo-user password secret.

@@ -25,12 +25,12 @@ open_webui_admin_name  = "Lab Admin"
 # This pre-created secret contains the initial Open WebUI administrator password.
 open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
 
-# Create a second secret for the four demo users and set its ARN here.
+# Create a second secret for the demo users and set its ARN here.
 open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
 
 # The default configuration creates demo1@example.local through
 # demo4@example.local. Override open_webui_demo_users to change their names
-# or email addresses, while keeping exactly four entries for this demo.
+# or email addresses, while keeping between 1 and 25 entries.
 
 # Public HTTPS access through the ALB and Cloudflare.
 enable_domain_access     = true
@@ -50,7 +50,7 @@ cloudflare_access_allowed_emails = []
 # cloudflare_access_session_duration = "4h"          # How long a login lasts
 
 # Amazon Cognito is the user directory and sign-in for both Cloudflare Access and
-# Open WebUI. Terraform creates the users (the four demo users plus any in
+# Open WebUI. Terraform creates the users (the demo users plus any in
 # cognito_extra_users) without passwords; run scripts/set-cognito-passwords.ps1
 # after apply. Set enable_cognito = false to use Access login methods you configure
 # yourself and Open WebUI local accounts instead.
@@ -72,7 +72,7 @@ allowed_ssh_cidr = null
 # Set to "" for no banner. Changing it replaces the EC2 instance on the next apply.
 security_banner_text = "This system is for authorized users only. Activity may be monitored and logged. By using this lab you agree to use it only for approved purposes: do not enter confidential, regulated, or personal data, do not create illegal, harmful, or abusive content, and do not try to bypass security controls. Misuse may result in loss of access."
 
-# Open WebUI also has local accounts (the admin and the four demo users) that can
+# Open WebUI also has local accounts (the admin and the demo users) that can
 # sign in with a password. Set to false to allow sign-in only through Cognito.
 # Requires enable_cognito = true. Changing it replaces the EC2 instance.
 # open_webui_enable_local_login = false

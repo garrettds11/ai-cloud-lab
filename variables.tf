@@ -73,7 +73,7 @@ variable "open_webui_admin_password_secret_arn" {
 }
 
 variable "open_webui_demo_users" {
-  description = "Four demo users. They are Cognito users when enable_cognito is true and local Open WebUI accounts otherwise. Each object contains an email and display name."
+  description = "Demo users, ten by default. They are Cognito users when enable_cognito is true and local Open WebUI accounts otherwise. Each object contains an email and display name."
   type = list(object({
     email = string
     name  = string
@@ -94,17 +94,41 @@ variable "open_webui_demo_users" {
     {
       email = "demo4@example.local"
       name  = "Demo User 4"
+    },
+    {
+      email = "demo5@example.local"
+      name  = "Demo User 5"
+    },
+    {
+      email = "demo6@example.local"
+      name  = "Demo User 6"
+    },
+    {
+      email = "demo7@example.local"
+      name  = "Demo User 7"
+    },
+    {
+      email = "demo8@example.local"
+      name  = "Demo User 8"
+    },
+    {
+      email = "demo9@example.local"
+      name  = "Demo User 9"
+    },
+    {
+      email = "demo10@example.local"
+      name  = "Demo User 10"
     }
   ]
 
   validation {
-    condition     = length(var.open_webui_demo_users) == 4
-    error_message = "open_webui_demo_users must contain exactly four demo accounts for this lab scenario."
+    condition     = length(var.open_webui_demo_users) >= 1 && length(var.open_webui_demo_users) <= 25
+    error_message = "open_webui_demo_users must contain between 1 and 25 demo accounts."
   }
 }
 
 variable "open_webui_demo_user_password_secret_arn" {
-  description = "ARN of a pre-created Secrets Manager secret containing the temporary password assigned to the four local demo accounts."
+  description = "ARN of a pre-created Secrets Manager secret containing the temporary password assigned to the demo accounts."
   type        = string
   default     = null
 

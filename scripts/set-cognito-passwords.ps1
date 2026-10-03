@@ -40,7 +40,9 @@ $poolId = (terraform output -raw cognito_user_pool_id).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $poolId -or $poolId -eq "null") {
   throw "No Cognito user pool in Terraform outputs. Set enable_cognito = true and apply first."
 }
-$emails = @(terraform output -json cognito_user_emails | ConvertFrom-Json)
+# Windows PowerShell 5.1 returns a JSON array as a single object; enumerate it so
+# each email is handled on its own.
+$emails = @((terraform output -json cognito_user_emails | Out-String | ConvertFrom-Json) | ForEach-Object { $_ })
 if ($emails.Count -eq 0) { throw "No Cognito users found in Terraform outputs." }
 
 $secretString = (aws secretsmanager get-secret-value `

@@ -107,6 +107,33 @@ for the full prerequisites, security settings, and trade-offs.
 The EC2 instance does not receive a public application ingress rule. When domain
 access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 
+## Cost Guardrail: Auto-Stop
+
+By default (`enable_auto_stop = true`), an EventBridge Scheduler schedule calls
+`ec2:StopInstances` on the lab instance every `auto_stop_after_minutes` minutes
+(default 60; `terraform.tfvars.example` sets 90 for a demo). Both settings are in
+`terraform.tfvars`; set `enable_auto_stop = false` to leave the instance running.
+
+How it behaves:
+
+- It is a **recurring** schedule, not a countdown from instance start. The first
+  stop comes `auto_stop_after_minutes` minutes after Terraform creates the
+  schedule, and it repeats at that interval.
+- A manual restart (`aws ec2 start-instances`) is stopped again at the next
+  scheduled run, which can be sooner than a full interval.
+- **Keep the value well above the bootstrap time on a first deploy.** Setup runs
+  once at first boot (package installs, the model download, Open WebUI). An
+  instance stopped before that finishes does not resume setup when restarted; it
+  must be replaced (`terraform apply -replace=aws_instance.ai_lab`). For a short
+  test such as 5 minutes, deploy with a longer value, wait until Open WebUI is
+  ready, then lower it and apply; only the schedule changes.
+- Stopping saves compute charges only. EBS storage, the ALB, and any NAT or
+  endpoint charges continue until you destroy the lab.
+- The identity that runs Terraform needs permission to create the scheduler IAM
+  role, pass it to EventBridge Scheduler, and create the schedule.
+- `terraform output auto_stop_schedule` shows the schedule name. The schedule and
+  its role are removed on `terraform destroy`.
+
 ## Prerequisites
 
 - Terraform installed

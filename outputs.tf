@@ -65,6 +65,11 @@ output "ssm_shell_command" {
   EOT
 }
 
+output "auto_stop_schedule" {
+  description = "EventBridge Scheduler name when automatic stopping is enabled."
+  value       = var.enable_auto_stop ? aws_scheduler_schedule.auto_stop["auto_stop"].name : null
+}
+
 output "cognito_user_pool_id" {
   description = "Cognito user pool ID when enable_cognito is true."
   value       = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : null

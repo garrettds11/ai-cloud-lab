@@ -408,3 +408,20 @@ variable "origin_lockdown_extra_cidrs" {
     error_message = "origin_lockdown_extra_cidrs must be valid CIDRs and must not be 0.0.0.0/0."
   }
 }
+
+variable "enable_auto_stop" {
+  description = "Whether EventBridge Scheduler stops the lab instance on a recurring schedule, as a cost guardrail. On by default; set to false to leave the instance running."
+  type        = bool
+  default     = true
+}
+
+variable "auto_stop_after_minutes" {
+  description = "How often, in minutes, the schedule stops the instance (1 to 10080). The first stop happens this many minutes after Terraform creates the schedule, and it repeats at the same interval, including after a manual restart. Use a short value only after bootstrap has finished."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.auto_stop_after_minutes >= 1 && var.auto_stop_after_minutes <= 10080 && floor(var.auto_stop_after_minutes) == var.auto_stop_after_minutes
+    error_message = "auto_stop_after_minutes must be a whole number from 1 through 10080."
+  }
+}

@@ -31,6 +31,7 @@ locals {
   cloudflare_resources    = var.enable_cloudflare_access ? { domain = true } : {}
   http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
   cognito_resources       = var.enable_cognito ? { domain = true } : {}
+  auto_stop_resources     = var.enable_auto_stop ? { auto_stop = true } : {}
   cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
   # Everyone who can sign in through Cognito: the Open WebUI administrator, the demo
   # users, and any extra users. The grouping (...) and [0] drop duplicate emails.
@@ -315,6 +316,69 @@ resource "aws_instance" "ai_lab" {
     aws_iam_role_policy.cognito_client,
     aws_cognito_user_pool_domain.lab
   ]
+}
+
+# Cost guardrail: EventBridge Scheduler stops the instance every
+# auto_stop_after_minutes minutes. Stopping an already stopped instance is harmless.
+resource "aws_iam_role" "auto_stop" {
+  for_each    = local.auto_stop_resources
+  name_prefix = "${var.project_name}-stop-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "scheduler.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.project_name}-auto-stop-role"
+  }
+}
+
+resource "aws_iam_role_policy" "auto_stop" {
+  for_each = local.auto_stop_resources
+  name     = "${var.project_name}-stop"
+  role     = aws_iam_role.auto_stop[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "ec2:StopInstances"
+        Resource = aws_instance.ai_lab.arn
+      }
+    ]
+  })
+}
+
+resource "aws_scheduler_schedule" "auto_stop" {
+  for_each                     = local.auto_stop_resources
+  name                         = "${var.project_name}-auto-stop"
+  schedule_expression          = "rate(${var.auto_stop_after_minutes} ${var.auto_stop_after_minutes == 1 ? "minute" : "minutes"})"
+  schedule_expression_timezone = "UTC"
+  state                        = "ENABLED"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
+    role_arn = aws_iam_role.auto_stop[each.key].arn
+    input = jsonencode({
+      InstanceIds = [aws_instance.ai_lab.id]
+    })
+  }
+
+  depends_on = [aws_iam_role_policy.auto_stop]
 }
 
 data "aws_route53_zone" "public" {

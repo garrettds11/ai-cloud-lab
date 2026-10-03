@@ -84,3 +84,11 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # override them here when Cloudflare publishes changes.
 # enable_origin_lockdown = true
 # origin_lockdown_extra_cidrs = ["203.0.113.10/32"] # Recovery only; leave empty normally
+
+# Cost guardrail: EventBridge Scheduler stops the instance every
+# auto_stop_after_minutes minutes, including after a manual restart. The first
+# stop comes that many minutes after Terraform creates the schedule, so keep the
+# value well above the bootstrap time (model download) on a first deploy. Set
+# enable_auto_stop = false to turn it off.
+enable_auto_stop        = true
+auto_stop_after_minutes = 90

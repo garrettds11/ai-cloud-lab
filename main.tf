@@ -405,7 +405,7 @@ resource "cloudflare_dns_record" "domain" {
 resource "cloudflare_zero_trust_access_application" "domain" {
   for_each         = local.cloudflare_resources
   account_id       = var.cloudflare_account_id
-  name             = "${var.project_name} Open WebUI"
+  name             = var.cloudflare_access_app_name
   domain           = var.domain_name
   type             = "self_hosted"
   session_duration = var.cloudflare_access_session_duration

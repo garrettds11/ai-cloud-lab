@@ -202,6 +202,17 @@ variable "cloudflare_access_allowed_emails" {
   }
 }
 
+variable "cloudflare_access_app_name" {
+  description = "Name of the Cloudflare Access application. Visitors see it on the Access login page (Log in to <name>)."
+  type        = string
+  default     = "AI Web Demo"
+
+  validation {
+    condition     = length(trimspace(var.cloudflare_access_app_name)) > 0
+    error_message = "cloudflare_access_app_name must not be empty."
+  }
+}
+
 variable "cloudflare_access_session_duration" {
   description = "How long a Cloudflare Access login lasts before the user must authenticate again, such as 4h or 30m."
   type        = string

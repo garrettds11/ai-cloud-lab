@@ -196,6 +196,17 @@ variable "cloudflare_access_allowed_emails" {
   }
 }
 
+variable "cloudflare_access_session_duration" {
+  description = "How long a Cloudflare Access login lasts before the user must authenticate again, such as 4h or 30m."
+  type        = string
+  default     = "4h"
+
+  validation {
+    condition     = can(regex("^[0-9]+(ms|s|m|h)$", var.cloudflare_access_session_duration))
+    error_message = "cloudflare_access_session_duration must look like 30m or 4h."
+  }
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

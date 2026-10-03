@@ -268,6 +268,27 @@ The EC2 target should report `healthy`. Then verify both:
 - `http://aiwebdemo.click` redirects to HTTPS.
 - `https://aiwebdemo.click` loads Open WebUI and accepts the admin and four demo accounts.
 
+### Cloudflare Access test
+
+When `TF_VAR_enable_cloudflare_access` is `true`, the Access check comes before
+the Open WebUI login. Run these from a browser:
+
+1. In a private window, open `https://aiwebdemo.click`. You must land on the
+   Cloudflare Access sign-in page, not the Open WebUI login page.
+2. Enter an email that is **not** in `cloudflare_access_allowed_emails`. Access
+   must not accept it (no code arrives, or access is denied).
+3. Enter an approved email, then the one-time PIN Cloudflare emails to it. You
+   must reach the Open WebUI login page.
+4. Sign in to Open WebUI, send a chat message, and confirm the reply streams in
+   (this exercises API calls and websockets through Cloudflare).
+5. Confirm the apex record is proxied: `nslookup aiwebdemo.click` must return
+   Cloudflare addresses, not the ALB address.
+6. In the Cloudflare dashboard, confirm SSL/TLS is **Full (strict)** and that
+   Security > WAF shows the Free Managed Ruleset enabled.
+
+`curl.exe -I https://aiwebdemo.click` should return a `302` to
+`cloudflareaccess.com` rather than an Open WebUI page.
+
 ### SSM-only test
 
 For an SSM-only run, set the mode explicitly before planning so a stale domain

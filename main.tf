@@ -404,8 +404,7 @@ resource "cloudflare_zero_trust_access_application" "domain" {
   name                      = "${var.project_name} Open WebUI"
   domain                    = var.domain_name
   type                      = "self_hosted"
-  session_duration          = "8h"
-  auto_redirect_to_identity = true
+  session_duration          = var.cloudflare_access_session_duration
 
   policies = [{
     name       = "Allow approved Open WebUI users"

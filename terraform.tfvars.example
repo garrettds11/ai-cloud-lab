@@ -49,18 +49,21 @@ cloudflare_access_allowed_emails = ["garrettds11@gmail.com"]
 # cloudflare_access_app_name         = "AI Web Demo" # Shown on the Access login page
 # cloudflare_access_session_duration = "4h"          # How long a login lasts
 
-# Optional: Amazon Cognito as the user directory and sign-in for both Cloudflare
-# Access and Open WebUI. Terraform creates the users (the four demo users plus any
-# in cognito_extra_users) without passwords; run scripts/set-cognito-passwords.ps1
-# after apply. cloudflare_access_team_domain is the host shown on the Access login
-# page (Zero Trust > Settings > Custom pages). Needs the Cloudflare API token
-# permission "Access: Organizations, Identity Providers, and Groups Edit".
-# enable_cognito                = true
-# cognito_domain_prefix         = "aiwebdemo-lab"        # Must be unique in the region
-# cloudflare_access_team_domain = "your-team.cloudflareaccess.com"
-# cognito_extra_users = [
-#   { email = "garrettds11@gmail.com", name = "Garrett" },
-# ]
+# Amazon Cognito is the user directory and sign-in for both Cloudflare Access and
+# Open WebUI. Terraform creates the users (the four demo users plus any in
+# cognito_extra_users) without passwords; run scripts/set-cognito-passwords.ps1
+# after apply. Set enable_cognito = false to use Access login methods you configure
+# yourself and Open WebUI local accounts instead.
+# cloudflare_access_team_domain is the host shown on the Access login page.
+# Cognito needs the Cloudflare API token permission "Access: Organizations,
+# Identity Providers, and Groups Edit". cognito_domain_prefix must be unique in
+# the region and must not contain aws, amazon, or cognito.
+enable_cognito                = true
+cognito_domain_prefix         = "aiwebdemo-lab"
+cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
+cognito_extra_users = [
+  { email = "garrettds11@gmail.com", name = "Garrett" },
+]
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false

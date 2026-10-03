@@ -13,7 +13,7 @@ variable "aws_profile" {
 variable "project_name" {
   description = "Name applied to the lab resources."
   type        = string
-  default     = "ollama-open-webui-lab"
+  default     = "aiwebdemo"
 }
 
 variable "tags" {
@@ -22,7 +22,7 @@ variable "tags" {
   default = {
     Environment = "lab"
     ManagedBy   = "terraform"
-    Application = "Open-WebUI-Ollama"
+    Application = "Open-WebUI"
   }
 }
 

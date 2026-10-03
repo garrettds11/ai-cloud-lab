@@ -43,7 +43,7 @@ acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f
 # not store the API token itself here.
 cloudflare_account_id            = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
 cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
-cloudflare_access_allowed_emails = ["garrettds11@gmail.com"]
+cloudflare_access_allowed_emails = []
 
 # Optional Cloudflare Access settings. The defaults are shown; uncomment to change.
 # cloudflare_access_app_name         = "AI Web Demo" # Shown on the Access login page
@@ -61,9 +61,7 @@ cloudflare_access_allowed_emails = ["garrettds11@gmail.com"]
 enable_cognito                = true
 cognito_domain_prefix         = "aiwebdemo"
 cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
-cognito_extra_users = [
-  { email = "garrettds11@gmail.com", name = "Garrett" },
-]
+cognito_extra_users = []
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false

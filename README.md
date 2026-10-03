@@ -285,7 +285,7 @@ PowerShell multiline:
 ```powershell
 aws ssm send-command `
   --document-name "AWS-RunShellScript" `
-  --targets "Key=tag:Name,Values=ollama-open-webui-lab" `
+  --targets "Key=tag:Name,Values=aiwebdemo" `
   --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' `
   --comment "Pull selected Ollama model" `
   --profile <your-profile> `
@@ -295,7 +295,7 @@ aws ssm send-command `
 PowerShell one-liner:
 
 ```powershell
-aws ssm send-command --document-name "AWS-RunShellScript" --targets "Key=tag:Name,Values=ollama-open-webui-lab" --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' --comment "Pull selected Ollama model" --profile <your-profile> --region us-east-1
+aws ssm send-command --document-name "AWS-RunShellScript" --targets "Key=tag:Name,Values=aiwebdemo" --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' --comment "Pull selected Ollama model" --profile <your-profile> --region us-east-1
 ```
 
 Linux/macOS:
@@ -303,7 +303,7 @@ Linux/macOS:
 ```bash
 aws ssm send-command \
   --document-name "AWS-RunShellScript" \
-  --targets "Key=tag:Name,Values=ollama-open-webui-lab" \
+  --targets "Key=tag:Name,Values=aiwebdemo" \
   --parameters commands='["ollama pull qwen2.5:7b", "ollama list"]' \
   --comment "Pull selected Ollama model" \
   --profile <your-profile> \

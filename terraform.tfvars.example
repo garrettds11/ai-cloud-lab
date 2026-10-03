@@ -2,7 +2,7 @@ aws_region = "us-east-1"
 # Optional. Leave null to use environment variables, SSO, or an instance/CI role.
 aws_profile = null
 
-project_name = "ollama-open-webui-lab"
+project_name = "aiwebdemo"
 
 # AWS tags applied to every resource. Uncommenting this REPLACES the defaults
 # (Environment, ManagedBy, Application), so list every tag you want. Use your own

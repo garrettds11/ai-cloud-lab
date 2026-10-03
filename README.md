@@ -69,8 +69,8 @@ Putting Cloudflare in front adds:
 - **DDoS and bot mitigation, and free edge TLS**, plus optional WAF, rate
   limiting, and analytics.
 
-Terraform then creates an internet-facing ALB with HTTP-to-HTTPS redirect, an
-HTTPS listener on port 443, an EC2 rule allowing the app port only from the ALB,
+Terraform then creates an internet-facing ALB that listens only on HTTPS port 443
+(no public port 80 unless `enable_alb_http_redirect = true`), an EC2 rule allowing the app port only from the ALB,
 a proxied Cloudflare CNAME for `domain_name` pointing at the ALB, and a
 Cloudflare Access application with an email allow policy.
 
@@ -90,8 +90,8 @@ Cloudflare API token in `CLOUDFLARE_API_TOKEN`. Run them through the wrapper in
 `terraform`, or they fail with `403 Missing X-Auth-Email header`.
 
 A few Cloudflare settings are not managed by Terraform. The most important is
-setting SSL/TLS to **Full (strict)**; **Flexible** causes a redirect loop with
-the ALB's HTTP-to-HTTPS redirect. See
+setting SSL/TLS to **Full (strict)**; **Flexible** makes Cloudflare connect over
+HTTP port 80, which the ALB does not open, so visitors get 522 errors. See
 [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md)
 for the full prerequisites, security settings, and trade-offs.
 

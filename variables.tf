@@ -145,6 +145,12 @@ variable "enable_cloudflare_access" {
   default     = false
 }
 
+variable "enable_alb_http_redirect" {
+  description = "Whether the ALB also listens on public port 80 and redirects to HTTPS. Disabled by default because the first HTTP request is unencrypted; enabling it is a usability tradeoff, not a security control."
+  type        = bool
+  default     = false
+}
+
 variable "domain_name" {
   description = "Public DNS name for Open WebUI, such as aiwebdemo.click."
   type        = string

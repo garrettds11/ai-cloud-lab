@@ -29,10 +29,11 @@ provider "aws" {
 provider "cloudflare" {}
 
 locals {
-  aws_cli_profile_arg  = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
-  domain_resources     = var.enable_domain_access ? { domain = true } : {}
-  route53_resources    = var.enable_domain_access && !var.enable_cloudflare_access ? { domain = true } : {}
-  cloudflare_resources = var.enable_cloudflare_access ? { domain = true } : {}
+  aws_cli_profile_arg     = var.aws_profile == null ? "" : " --profile ${var.aws_profile}"
+  domain_resources        = var.enable_domain_access ? { domain = true } : {}
+  route53_resources       = var.enable_domain_access && !var.enable_cloudflare_access ? { domain = true } : {}
+  cloudflare_resources    = var.enable_cloudflare_access ? { domain = true } : {}
+  http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
   domain_certificate_arn = var.acm_certificate_arn != null ? var.acm_certificate_arn : (
     var.enable_domain_access ? data.aws_acm_certificate.domain[0].arn : null
   )
@@ -105,12 +106,15 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    description = "HTTP redirect to HTTPS"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "ingress" {
+    for_each = local.http_redirect_resources
+    content {
+      description = "HTTP redirect to HTTPS"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
 
   egress {
@@ -335,7 +339,7 @@ resource "aws_lb_target_group_attachment" "domain" {
 }
 
 resource "aws_lb_listener" "http_redirect" {
-  for_each          = local.domain_resources
+  for_each          = local.http_redirect_resources
   load_balancer_arn = aws_lb.domain[each.key].arn
   port              = 80
   protocol          = "HTTP"

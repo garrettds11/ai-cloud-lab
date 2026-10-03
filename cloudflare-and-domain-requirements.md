@@ -181,7 +181,7 @@ With domain and Cloudflare access enabled, Terraform creates:
 - An internet-facing AWS Application Load Balancer.
 - An AWS target group pointing to Open WebUI on the EC2 host port, currently 8080.
 - An HTTPS listener on port 443 using `acm_certificate_arn`.
-- An HTTP listener on port 80 that currently redirects to HTTPS.
+- Nothing on public port 80 by default. The optional `enable_alb_http_redirect = true` adds a port 80 listener that redirects to HTTPS; it is off because the first HTTP request is unencrypted.
 - A proxied Cloudflare CNAME from `domain_name` to the ALB DNS name.
 - A Cloudflare Access self-hosted application for `domain_name`.
 - An Access allow policy for `cloudflare_access_allowed_emails`.
@@ -209,7 +209,7 @@ Those actions must be completed before the corresponding Terraform resources can
 
 Do these in the Cloudflare dashboard after the zone is **Active**. They are listed in priority order.
 
-1. **Set SSL/TLS encryption mode to Full (strict).** The ACM certificate on the ALB meets Cloudflare's requirements for this mode: it is unexpired, publicly trusted, and matches the hostname, and the ALB accepts HTTPS on port 443. Do not use **Flexible**: Cloudflare would connect to the ALB over HTTP, the ALB redirects HTTP to HTTPS, and visitors get a redirect loop. Automatic SSL/TLS may choose a mode on its own, so set it explicitly.
+1. **Set SSL/TLS encryption mode to Full (strict).** The ACM certificate on the ALB meets Cloudflare's requirements for this mode: it is unexpired, publicly trusted, and matches the hostname, and the ALB accepts HTTPS on port 443. Do not use **Flexible**: Cloudflare would connect to the ALB over HTTP on port 80, which the ALB does not open by default, so visitors get 522 errors (with `enable_alb_http_redirect = true` they would instead get a redirect loop). Automatic SSL/TLS may choose a mode on its own, so set it explicitly.
 2. **Enforce HTTPS at the edge.** Turn on **Always Use HTTPS** and **Automatic HTTPS Rewrites**, set the minimum TLS version to 1.2, and keep TLS 1.3 enabled. Add HSTS only after the site works correctly over HTTPS, and start with a short max-age.
 3. **Check the Access policy.** Confirm the application covers the whole hostname, that only the intended email addresses are allowed, and that a sign-in from an unlisted address is denied. Review the identity provider settings under Zero Trust > Settings > Authentication.
 4. **Lock the origin to Cloudflare.** The ALB's security group currently allows ports 80 and 443 from the whole internet, and Access is enforced only at Cloudflare's edge. Anyone who learns the ALB's DNS name can reach Open WebUI without going through Access. Cloudflare's guidance lists several ways to close this: restrict the ALB security group to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/), use Authenticated Origin Pulls, or validate the Access JWT at the origin. Restricting the security group to Cloudflare's IP ranges is the simplest. It needs a Terraform change, so track it as a follow-up.

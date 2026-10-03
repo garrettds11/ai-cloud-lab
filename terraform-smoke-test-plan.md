@@ -269,10 +269,21 @@ aws elbv2 describe-target-health `
   --target-group-arn $env:alb_target_group_arn
 ```
 
-The EC2 target should report `healthy`. Then verify both:
+The EC2 target should report `healthy`. Then verify:
 
-- `http://aiwebdemo.click` redirects to HTTPS.
 - `https://aiwebdemo.click` loads Open WebUI and accepts the admin and four demo accounts.
+- The ALB has no public port 80 (the default). Plain `http://` is not a supported
+  application URL; with Cloudflare, **Always Use HTTPS** sends visitors who type
+  `http://` to HTTPS at the edge before they reach AWS.
+
+To confirm the ALB itself no longer listens on port 80, run:
+
+```powershell
+$env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
+curl.exe -I --max-time 10 "http://$env:alb_dns_name"
+```
+
+The request must time out or fail to connect, not return a redirect.
 
 ### Cloudflare Access test
 

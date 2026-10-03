@@ -410,18 +410,40 @@ variable "origin_lockdown_extra_cidrs" {
 }
 
 variable "enable_auto_stop" {
-  description = "Whether EventBridge Scheduler stops the lab instance on a recurring schedule, as a cost guardrail. On by default; set to false to leave the instance running."
+  description = "Whether the lab stops itself when nobody is using it (idle-aware auto-stop with an independent watchdog). On by default; set to false to leave the instance running."
   type        = bool
   default     = true
 }
 
-variable "auto_stop_after_minutes" {
-  description = "How often, in minutes, the schedule stops the instance (1 to 10080). The first stop happens this many minutes after Terraform creates the schedule, and it repeats at the same interval, including after a manual restart. Use a short value only after bootstrap has finished."
+variable "auto_stop_idle_minutes" {
+  description = "Minutes with no active Open WebUI users and no reply being generated before the instance stops itself (1 to 1440). The idle clock starts when first-boot setup finishes and after every restart, so a restart gets the full window. Set a short value only for testing."
   type        = number
   default     = 60
 
   validation {
-    condition     = var.auto_stop_after_minutes >= 1 && var.auto_stop_after_minutes <= 10080 && floor(var.auto_stop_after_minutes) == var.auto_stop_after_minutes
-    error_message = "auto_stop_after_minutes must be a whole number from 1 through 10080."
+    condition     = var.auto_stop_idle_minutes >= 1 && var.auto_stop_idle_minutes <= 1440 && floor(var.auto_stop_idle_minutes) == var.auto_stop_idle_minutes
+    error_message = "auto_stop_idle_minutes must be a whole number from 1 through 1440."
+  }
+}
+
+variable "auto_stop_max_uptime_hours" {
+  description = "Hours of continuous uptime after which an email alert is sent, repeating hourly while it runs. Alert only: an instance with active users is never stopped for this."
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.auto_stop_max_uptime_hours >= 1 && var.auto_stop_max_uptime_hours <= 168 && floor(var.auto_stop_max_uptime_hours) == var.auto_stop_max_uptime_hours
+    error_message = "auto_stop_max_uptime_hours must be a whole number from 1 through 168."
+  }
+}
+
+variable "auto_stop_alert_email" {
+  description = "Email address for auto-stop alerts (instance running too long, or the idle monitor not reporting). AWS sends a confirmation link that must be clicked once. Leave null only if you accept having no alerts."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.auto_stop_alert_email == null || can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.auto_stop_alert_email))
+    error_message = "auto_stop_alert_email must be a valid email address."
   }
 }

@@ -109,30 +109,59 @@ access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 
 ## Cost Guardrail: Auto-Stop
 
-By default (`enable_auto_stop = true`), an EventBridge Scheduler schedule calls
-`ec2:StopInstances` on the lab instance every `auto_stop_after_minutes` minutes
-(default 60; `terraform.tfvars.example` sets 90 for a demo). Both settings are in
-`terraform.tfvars`; set `enable_auto_stop = false` to leave the instance running.
+The lab stops itself when nobody is using it, and it never stops an instance
+that has active users. It is on by default. Four settings in `terraform.tfvars`
+control it:
 
-How it behaves:
+| Setting | Meaning |
+|---|---|
+| `enable_auto_stop` | `true` (default) or `false` to leave the instance running |
+| `auto_stop_idle_minutes` | Minutes of no activity before it stops itself (default 60; the example uses 90) |
+| `auto_stop_max_uptime_hours` | Hours of uptime before an email alert, repeating hourly (default 8) |
+| `auto_stop_alert_email` | Where alerts go; AWS emails a confirmation link to click once |
 
-- It is a **recurring** schedule, not a countdown from instance start. The first
-  stop comes `auto_stop_after_minutes` minutes after Terraform creates the
-  schedule, and it repeats at that interval.
-- A manual restart (`aws ec2 start-instances`) is stopped again at the next
-  scheduled run, which can be sooner than a full interval.
-- **Keep the value well above the bootstrap time on a first deploy.** Setup runs
-  once at first boot (package installs, the model download, Open WebUI). An
-  instance stopped before that finishes does not resume setup when restarted; it
-  must be replaced (`terraform apply -replace=aws_instance.ai_lab`). For a short
-  test such as 5 minutes, deploy with a longer value, wait until Open WebUI is
-  ready, then lower it and apply; only the schedule changes.
+Changing these updates in place (an SSM parameter and a Lambda setting), so it
+does not replace the instance.
+
+**Layer 1: idle monitor on the instance.** A systemd timer runs
+`scripts/ai-lab-idle-check.sh` every minute. The lab counts as active when
+Open WebUI reports a user active in the last 3 minutes (its own definition, read
+from its database) or a reply is being generated (an open connection to Ollama).
+If activity cannot be determined, it counts as active. After
+`auto_stop_idle_minutes` with no activity, the instance powers off and EC2 stops
+it. The idle clock starts when first-boot setup finishes and after every restart,
+so a restarted instance gets a full idle window. It does nothing while setup is
+still running.
+
+**Layer 2: independent watchdog.** An EventBridge rule runs the Lambda function
+`lambda/auto_stop_watchdog.py` every 5 minutes. It stops the instance only if the
+idle monitor already reports it idle but it is still running (the shutdown
+failed), or if the monitor has gone silent and the load balancer shows no
+requests for the whole idle window. Otherwise it emails an alert and leaves the
+instance running: when the monitor is not reporting, and when the instance has run
+longer than `auto_stop_max_uptime_hours`.
+
+What to know:
+
+- **It is a guardrail, not a hard cap.** An instance with active users keeps
+  running past the maximum uptime; you get an email each hour and it stops once
+  everyone is idle.
+- The idle monitor publishes `ActiveUsers`, `IdleMinutes`, `UptimeMinutes` and
+  `Heartbeat` to CloudWatch (namespace `AILab`). To see what it sees on the
+  instance, run `sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check`.
+- An open browser tab with no activity stops counting after about 3 minutes, so
+  it does not keep the lab up.
 - Stopping saves compute charges only. EBS storage, the ALB, and any NAT or
   endpoint charges continue until you destroy the lab.
-- The identity that runs Terraform needs permission to create the scheduler IAM
-  role, pass it to EventBridge Scheduler, and create the schedule.
-- `terraform output auto_stop_schedule` shows the schedule name. The schedule and
-  its role are removed on `terraform destroy`.
+- The Lambda function is packaged with the `hashicorp/archive` provider, so run
+  `terraform init -upgrade` once after pulling this change.
+- The identity that runs Terraform needs permission to create the Lambda
+  function, its IAM roles, the SNS topic, the EventBridge rule, and the SSM
+  parameter.
+- `terraform output auto_stop_watchdog` shows the Lambda function name. Everything
+  is removed on `terraform destroy`.
+- Python tests for the watchdog logic: `python -m unittest discover -s tests`
+  (needs `boto3`).
 
 ## Prerequisites
 

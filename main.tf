@@ -10,6 +10,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -230,6 +234,9 @@ resource "aws_instance" "ai_lab" {
 
   iam_instance_profile = aws_iam_instance_profile.ssm.name
 
+  # The idle monitor powers the instance off from inside; EC2 must stop it (not terminate it).
+  instance_initiated_shutdown_behavior = "stop"
+
   # Needed during bootstrap for packages, Docker image pulls, Ollama, and model downloads.
   # Open WebUI and Ollama are not exposed by security group ingress.
   associate_public_ip_address = true
@@ -247,7 +254,7 @@ resource "aws_instance" "ai_lab" {
     delete_on_termination = true
   }
 
-  user_data = replace(templatefile("${path.module}/cloud-init.sh.tpl", {
+  user_data_base64 = base64gzip(replace(templatefile("${path.module}/cloud-init.sh.tpl", {
     ollama_model                         = var.ollama_model
     open_webui_admin_email               = var.open_webui_admin_email
     open_webui_admin_name                = var.open_webui_admin_name
@@ -269,7 +276,9 @@ resource "aws_instance" "ai_lab" {
     open_webui_ollama_base_url           = "http://127.0.0.1:11434"
     open_webui_url                       = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
     aws_region                           = var.aws_region
-  }), "\r\n", "\n")
+    auto_stop_parameter_name             = local.auto_stop_parameter_name
+    auto_stop_script_b64                 = base64encode(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
+  }), "\r\n", "\n"))
 
   user_data_replace_on_change = true
 
@@ -314,71 +323,9 @@ resource "aws_instance" "ai_lab" {
     aws_iam_role_policy_attachment.ssm,
     aws_iam_role_policy.open_webui_admin_password,
     aws_iam_role_policy.cognito_client,
+    aws_iam_role_policy.auto_stop_agent,
     aws_cognito_user_pool_domain.lab
   ]
-}
-
-# Cost guardrail: EventBridge Scheduler stops the instance every
-# auto_stop_after_minutes minutes. Stopping an already stopped instance is harmless.
-resource "aws_iam_role" "auto_stop" {
-  for_each    = local.auto_stop_resources
-  name_prefix = "${var.project_name}-stop-"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "scheduler.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      }
-    ]
-  })
-
-  tags = {
-    Name = "${var.project_name}-auto-stop-role"
-  }
-}
-
-resource "aws_iam_role_policy" "auto_stop" {
-  for_each = local.auto_stop_resources
-  name     = "${var.project_name}-stop"
-  role     = aws_iam_role.auto_stop[each.key].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "ec2:StopInstances"
-        Resource = aws_instance.ai_lab.arn
-      }
-    ]
-  })
-}
-
-resource "aws_scheduler_schedule" "auto_stop" {
-  for_each                     = local.auto_stop_resources
-  name                         = "${var.project_name}-auto-stop"
-  schedule_expression          = "rate(${var.auto_stop_after_minutes} ${var.auto_stop_after_minutes == 1 ? "minute" : "minutes"})"
-  schedule_expression_timezone = "UTC"
-  state                        = "ENABLED"
-
-  flexible_time_window {
-    mode = "OFF"
-  }
-
-  target {
-    arn      = "arn:aws:scheduler:::aws-sdk:ec2:stopInstances"
-    role_arn = aws_iam_role.auto_stop[each.key].arn
-    input = jsonencode({
-      InstanceIds = [aws_instance.ai_lab.id]
-    })
-  }
-
-  depends_on = [aws_iam_role_policy.auto_stop]
 }
 
 data "aws_route53_zone" "public" {

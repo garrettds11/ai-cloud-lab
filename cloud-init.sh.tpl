@@ -214,6 +214,7 @@ apt-get install -y \
     docker.io \
     iptables \
     snapd \
+    sqlite3 \
     unzip
 
 # Ubuntu 24.04 does not provide the AWS CLI package in every enabled APT
@@ -345,6 +346,44 @@ if [[ "${open_webui_local_demo_users_enabled}" == "true" ]]; then
 else
     echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
 fi
+
+# Idle-aware auto-stop: a systemd timer runs the idle monitor every minute. It does
+# nothing until the ready file exists, so it cannot stop the instance mid-bootstrap,
+# and it reads its on/off switch and timeout from an SSM parameter at run time.
+mkdir -p /etc/ai-lab
+cat > /etc/ai-lab/auto-stop.env <<'EOF'
+OPEN_WEBUI_VOLUME=${open_webui_docker_volume}
+OLLAMA_PORT=11434
+AUTO_STOP_PARAMETER=${auto_stop_parameter_name}
+EOF
+
+printf '%s' '${auto_stop_script_b64}' | base64 --decode > /usr/local/sbin/ai-lab-idle-check
+chmod 0755 /usr/local/sbin/ai-lab-idle-check
+
+cat > /etc/systemd/system/ai-lab-idle-check.service <<'EOF'
+[Unit]
+Description=Stop the AI lab when nobody is using it
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ai-lab-idle-check
+EOF
+
+cat > /etc/systemd/system/ai-lab-idle-check.timer <<'EOF'
+[Unit]
+Description=Run the AI lab idle check every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now ai-lab-idle-check.timer
 
 # Convenience diagnostic script.
 cat > /usr/local/bin/ai-lab-status <<'EOF'

@@ -85,10 +85,12 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # enable_origin_lockdown = true
 # origin_lockdown_extra_cidrs = ["203.0.113.10/32"] # Recovery only; leave empty normally
 
-# Cost guardrail: EventBridge Scheduler stops the instance every
-# auto_stop_after_minutes minutes, including after a manual restart. The first
-# stop comes that many minutes after Terraform creates the schedule, so keep the
-# value well above the bootstrap time (model download) on a first deploy. Set
-# enable_auto_stop = false to turn it off.
-enable_auto_stop        = true
-auto_stop_after_minutes = 90
+# Cost guardrail: the lab stops itself when nobody is using it. It stops only after
+# auto_stop_idle_minutes with no active Open WebUI user and no reply being
+# generated, and an independent watchdog emails auto_stop_alert_email if it is
+# still running after auto_stop_max_uptime_hours or stops reporting. An instance
+# with active users is never stopped. Set enable_auto_stop = false to turn it off.
+enable_auto_stop           = true
+auto_stop_idle_minutes     = 90
+auto_stop_max_uptime_hours = 8
+auto_stop_alert_email      = "you@example.com" # Replace; AWS sends a confirmation link

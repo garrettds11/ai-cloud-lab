@@ -32,7 +32,14 @@ locals {
   http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
   cognito_resources       = var.enable_cognito ? { domain = true } : {}
   cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
-  cognito_users           = { for user in concat(var.open_webui_demo_users, var.cognito_extra_users) : user.email => user }
+  # Everyone who can sign in through Cognito: the Open WebUI administrator, the demo
+  # users, and any extra users. The grouping (...) and [0] drop duplicate emails.
+  cognito_user_list = concat(
+    [{ email = var.open_webui_admin_email, name = var.open_webui_admin_name }],
+    var.open_webui_demo_users,
+    var.cognito_extra_users
+  )
+  cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
   open_webui_banners = var.security_banner_text == "" ? [] : [{
     id          = "security-notice"
     type        = "warning"
@@ -240,6 +247,8 @@ resource "aws_instance" "ai_lab" {
     open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
     open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
     open_webui_local_login_enabled       = var.open_webui_enable_local_login ? "true" : "false"
+    open_webui_local_demo_users_enabled  = var.open_webui_enable_local_login && !var.enable_cognito ? "true" : "false"
+    open_webui_default_user_role         = var.open_webui_default_user_role
     open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
     cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
     cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""

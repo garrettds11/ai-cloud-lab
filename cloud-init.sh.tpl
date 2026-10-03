@@ -325,6 +325,7 @@ docker run -d \
     -e ENABLE_PASSWORD_AUTH="${open_webui_local_login_enabled}" \
     -e ENABLE_SIGNUP=false \
     -e ENABLE_OAUTH_SIGNUP="${open_webui_oidc_enabled}" \
+    -e DEFAULT_USER_ROLE="${open_webui_default_user_role}" \
     -e WEBUI_BANNERS="$webui_banners" \
     -e ENABLE_OPENAI_API=false \
     -e WEBUI_ADMIN_EMAIL="${open_webui_admin_email}" \
@@ -335,12 +336,14 @@ docker run -d \
 
 wait_for_open_webui
 
-# Demo users are created through Open WebUI's password API, so they are only
-# provisioned when local password sign-in is enabled.
-if [[ "${open_webui_local_login_enabled}" == "true" ]]; then
+# The demo users are local Open WebUI accounts only when Cognito is off. With
+# Cognito on they exist only in Cognito and get an Open WebUI account the first
+# time they sign in. Local provisioning uses the password API, so it also needs
+# local password sign-in enabled.
+if [[ "${open_webui_local_demo_users_enabled}" == "true" ]]; then
     provision_demo_users
 else
-    echo "Local password sign-in is disabled; skipping local demo-user provisioning."
+    echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
 fi
 
 # Convenience diagnostic script.

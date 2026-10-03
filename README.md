@@ -133,20 +133,29 @@ To rotate an existing lab, change the password in Open WebUI first, then update
 the matching value in the AWS console. Changing the secret alone does not change
 the already-initialized Open WebUI account.
 
-The bootstrap then creates four ordinary local demo accounts using:
+The four demo users use:
 
 - the password in `open_webui_demo_user_password_secret_arn`
-- `open_webui_demo_users` (exactly four local demo accounts by default)
+- `open_webui_demo_users` (exactly four demo users by default)
 
 The demo-user password must be stored in a second pre-created Secrets Manager
-secret and is retrieved through the EC2 role during bootstrap. Neither password
-is kept in Terraform variables, user-data, or the repository.
+secret and is retrieved through the EC2 role during bootstrap or by
+`scripts/set-cognito-passwords.ps1`. Neither password is kept in Terraform
+variables, user-data, or the repository.
 
-The four demo accounts are created as local Open WebUI accounts with password sign-in, and they all receive the demo password. When `enable_cognito = true`, the same emails also exist in Cognito, and Open WebUI merges a Cognito sign-in into the local account with the same email. The local password and the Cognito password are separate after creation, so changing one does not change the other.
+### Where each account lives
+
+| Account | `enable_cognito = true` (default) | `enable_cognito = false` |
+|---|---|---|
+| Administrator (`open_webui_admin_email`) | Local Open WebUI account **and** a Cognito user with the same email | Local Open WebUI account only |
+| Demo users (`open_webui_demo_users`) | Cognito users only | Local Open WebUI accounts |
+| Extra users (`cognito_extra_users`) | Cognito users only | Not used |
+
+With Cognito on, Open WebUI creates an account for each Cognito-only user the first time they choose **Continue with Cognito**. New accounts get the role in `open_webui_default_user_role` (default `user`); set it to `pending` if an administrator should approve each person in **Admin Panel > Users**. When a Cognito sign-in uses the same email as an existing local account (the administrator), Open WebUI signs you in to that account, so the administrator keeps the admin role. `scripts/set-cognito-passwords.ps1` gives the administrator's Cognito user the admin password secret and everyone else the demo-user password secret. Local and Cognito passwords are separate after creation, so changing one does not change the other.
 
 ### Local accounts and turning them off
 
-Local accounts are Open WebUI's own email and password logins: the administrator (`open_webui_admin_email`) and the demo users. They are unrelated to AWS Systems Manager, which uses IAM and never these accounts. By default they stay enabled so the lab works without Cognito and so there is a break-glass administrator login. Sign-in still passes through Cloudflare Access first when it is enabled.
+Local accounts are Open WebUI's own email and password logins. They are unrelated to AWS Systems Manager, which uses IAM and never these accounts. By default the administrator's local login stays on as a break-glass sign-in. Sign-in still passes through Cloudflare Access first when it is enabled.
 
 To allow Cognito sign-in only, set this in `terraform.tfvars`:
 
@@ -155,9 +164,7 @@ enable_cognito                = true
 open_webui_enable_local_login = false
 ```
 
-That setting (a) hides the password form and turns off password authentication in Open WebUI, and (b) skips creating the local demo users, so every person must be a Cognito user (`open_webui_demo_users` and `cognito_extra_users`). Terraform refuses the combination with `enable_cognito = false`. Changing it replaces the EC2 instance, so Open WebUI's saved data resets. The administrator account is still created at first start; to use it, add a Cognito user with the same email as `open_webui_admin_email` (for example in `cognito_extra_users`) so the Cognito sign-in merges into the admin account. In code, the switch is `open_webui_enable_local_login` in `variables.tf`, and it sets `ENABLE_LOGIN_FORM` and `ENABLE_PASSWORD_AUTH` in `cloud-init.sh.tpl`.
-
-A user who signs in through Cognito and has no matching local account gets a new Open WebUI account that waits for administrator approval ("Account Activation Pending") until an admin activates it in **Admin Panel > Users**.
+That setting hides the password form and turns off password authentication in Open WebUI. The administrator can then sign in only through Cognito, which still works because the administrator is also a Cognito user. Terraform refuses the combination with `enable_cognito = false`. Changing it replaces the EC2 instance, so Open WebUI's saved data resets. In code, the switch is `open_webui_enable_local_login` in `variables.tf`, and it sets `ENABLE_LOGIN_FORM` and `ENABLE_PASSWORD_AUTH` in `cloud-init.sh.tpl`.
 
 PowerShell:
 

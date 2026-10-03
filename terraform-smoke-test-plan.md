@@ -103,8 +103,9 @@ aws secretsmanager get-secret-value `
   --profile $env:AWS_PROFILE
 ```
 
-The first value is used for `admin@example.local`; the second is the temporary
-password shared by the four demo accounts. Each demo user should change it from
+The first value is used for `admin@example.local`, both its local Open WebUI
+account and its Cognito user; the second is the password shared by the four demo
+users. With `enable_cognito = false`, each demo user should change it from
 Profile after first login.
 
 When Cloudflare resources are enabled, Terraform retrieves the Cloudflare API
@@ -345,8 +346,13 @@ Then, in a private window:
 2. Sign in with `demo1@example.local` and the demo password. You must reach Open
    WebUI.
 3. If Open WebUI shows its own login page, choose **Continue with Cognito**. It
-   must sign you in as the matching Open WebUI account without asking for a password.
-4. Sign in as a user who is not in the Cognito pool. Access must deny it.
+   must sign you in without asking for a password. The demo user has no local
+   account, so Open WebUI creates it now with the `open_webui_default_user_role`
+   role (default `user`, so there is no activation wait).
+4. Sign out, then repeat with `admin@example.local` and the administrator
+   password. Open WebUI must open the existing local admin account, and **Admin
+   Panel** must be available.
+5. Sign in as a user who is not in the Cognito pool. Access must deny it.
 
 ### SSM-only test
 
@@ -391,7 +397,7 @@ admin@example.local
 - Password is set in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
 
-The bootstrap also creates these four local demo accounts:
+The four demo users are:
 
 ```
 demo1@example.local
@@ -406,17 +412,21 @@ demo3@example.local
 demo4@example.local
 ```
 
-They all start with the value stored in the Secrets Manager secret identified by
+They all use the value stored in the Secrets Manager secret identified by
 `open_webui_demo_user_password_secret_arn`.
 
-Have each user sign in, open Profile, and change that temporary password before
-using the account. 
+Where they sign in depends on `enable_cognito`:
 
-> These are local Open WebUI accounts with password sign-in. When
-> `enable_cognito = true`, the same emails also exist in Cognito and the Cognito
-> sign-in merges into them. To turn local password sign-in off, set
-> `open_webui_enable_local_login = false` (see "Local accounts and turning them
-> off" in the README). That also skips creating these local demo users.
+- **`true` (default):** the admin is a local Open WebUI account and a Cognito
+  user. The demo users are Cognito users only, with no local account. Sign in
+  with **Continue with Cognito**; run `.\scripts\set-cognito-passwords.ps1` after
+  `apply` first (see "Cognito sign-in test").
+- **`false`:** the demo users are local Open WebUI accounts that sign in with
+  the password form. Have each user open Profile and change that temporary
+  password before using the account.
+
+To turn local password sign-in off, set `open_webui_enable_local_login = false`
+(see "Where each account lives" in the README).
 
 Change the temporary password immediately after confirming access.
 

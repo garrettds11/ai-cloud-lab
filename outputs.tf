@@ -75,6 +75,11 @@ output "cognito_hosted_login_domain" {
   value       = var.enable_cognito ? "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com" : null
 }
 
+output "open_webui_admin_email" {
+  description = "Email of the Open WebUI administrator. Used by scripts/set-cognito-passwords.ps1."
+  value       = var.open_webui_admin_email
+}
+
 output "cognito_user_emails" {
   description = "Emails of the Cognito users Terraform creates. Used by scripts/set-cognito-passwords.ps1."
   value       = var.enable_cognito ? sort(keys(local.cognito_users)) : []

@@ -73,7 +73,7 @@ variable "open_webui_admin_password_secret_arn" {
 }
 
 variable "open_webui_demo_users" {
-  description = "Four local Open WebUI demo accounts created after the admin account. Each object contains an email and display name."
+  description = "Four demo users. They are Cognito users when enable_cognito is true and local Open WebUI accounts otherwise. Each object contains an email and display name."
   type = list(object({
     email = string
     name  = string
@@ -309,4 +309,15 @@ variable "open_webui_enable_local_login" {
   description = "Whether Open WebUI accepts email and password sign-in for its local accounts (the admin account and the demo users). Set to false to allow sign-in only through Cognito. Requires enable_cognito = true. When false, the demo users are not created as local accounts, so everyone must exist as a Cognito user (see cognito_extra_users). Changing it replaces the EC2 instance on the next apply."
   type        = bool
   default     = true
+}
+
+variable "open_webui_default_user_role" {
+  description = "Role given to people who first sign in to Open WebUI through Cognito and have no local account: user (can use the lab immediately) or pending (an administrator must activate each person in Admin Panel > Users). The Cognito user pool only allows administrator-created users, so user is the default."
+  type        = string
+  default     = "user"
+
+  validation {
+    condition     = contains(["user", "pending"], var.open_webui_default_user_role)
+    error_message = "open_webui_default_user_role must be user or pending."
+  }
 }

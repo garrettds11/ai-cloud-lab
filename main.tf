@@ -18,14 +18,7 @@ provider "aws" {
   profile = var.aws_profile
 
   default_tags {
-    tags = merge(
-      {
-        Project     = var.project_name
-        Environment = "lab"
-        ManagedBy   = "terraform"
-      },
-      var.tags
-    )
+    tags = merge({ Project = var.project_name }, var.tags)
   }
 }
 
@@ -271,8 +264,7 @@ resource "aws_instance" "ai_lab" {
   }
 
   tags = {
-    Name        = var.project_name
-    Application = "Open-WebUI-Ollama"
+    Name = var.project_name
   }
 
   depends_on = [

@@ -17,9 +17,13 @@ variable "project_name" {
 }
 
 variable "tags" {
-  description = "Extra tags applied to every AWS resource, such as Owner or CostCenter. Keys here override the built-in Project, Environment, and ManagedBy tags."
+  description = "Tags applied to every AWS resource. Setting this in terraform.tfvars replaces these defaults entirely, so list every tag you want. The Project tag always comes from project_name unless you set Project here. Each resource's Name tag is derived from project_name."
   type        = map(string)
-  default     = {}
+  default = {
+    Environment = "lab"
+    ManagedBy   = "terraform"
+    Application = "Open-WebUI-Ollama"
+  }
 }
 
 variable "instance_type" {

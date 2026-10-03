@@ -4,10 +4,13 @@ aws_profile = null
 
 project_name = "ollama-open-webui-lab"
 
-# Optional extra tags for every AWS resource. These add to, and can override,
-# the built-in Project, Environment, and ManagedBy tags.
+# AWS tags for every resource. Uncommenting this REPLACES the defaults shown
+# below, so list every tag you want. Project always comes from project_name
+# unless you set it here. Each resource's Name tag is derived from project_name.
 # tags = {
-#   Environment = "demo"
+#   Environment = "lab"
+#   ManagedBy   = "terraform"
+#   Application = "Open-WebUI-Ollama"
 #   Owner       = "your-name"
 #   CostCenter  = "ai-lab"
 # }

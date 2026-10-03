@@ -117,11 +117,12 @@ resource "aws_security_group" "alb" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "HTTPS from the Internet"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description      = var.enable_origin_lockdown ? "HTTPS from Cloudflare only" : "HTTPS from the Internet"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = var.enable_origin_lockdown ? concat(var.cloudflare_ipv4_cidrs, var.origin_lockdown_extra_cidrs) : ["0.0.0.0/0"]
+    ipv6_cidr_blocks = var.enable_origin_lockdown ? var.cloudflare_ipv6_cidrs : []
   }
 
   dynamic "ingress" {
@@ -145,6 +146,13 @@ resource "aws_security_group" "alb" {
 
   tags = {
     Name = "${var.project_name}-alb-sg"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_origin_lockdown || var.enable_cloudflare_access
+      error_message = "enable_origin_lockdown requires enable_cloudflare_access, because only Cloudflare traffic is allowed through."
+    }
   }
 }
 

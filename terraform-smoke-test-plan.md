@@ -284,6 +284,29 @@ curl.exe -I --max-time 10 "http://$env:alb_dns_name"
 
 The request must time out or fail to connect, not return a redirect.
 
+### Origin lockdown test
+
+Skip this section unless `enable_origin_lockdown = true`. Before enabling it,
+confirm the public site works, and run the direct check below once to see the
+"before" result: it connects and shows the Open WebUI login page.
+
+After applying with lockdown on, from a network that is not in
+`origin_lockdown_extra_cidrs`:
+
+```powershell
+$env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
+curl.exe -k -I --max-time 10 -H "Host: aiwebdemo.click" "https://$env:alb_dns_name"
+```
+
+The request must time out or fail to connect. It must not return a response from
+Open WebUI. Then confirm the public path still works:
+
+```powershell
+curl.exe -I https://aiwebdemo.click
+```
+
+This should still return a `302` from Cloudflare Access.
+
 ### Cloudflare Access test
 
 When `TF_VAR_enable_cloudflare_access` is `true`, Cloudflare Access sits in

@@ -66,6 +66,9 @@ Putting Cloudflare in front adds:
   `cloudflare_access_allowed_emails` get through Cloudflare Access. Everyone
   else is stopped at Cloudflare's edge.
 - **A hidden origin:** the public hostname resolves to Cloudflare, not to the ALB.
+  The ALB is still reachable directly unless you set
+  `enable_origin_lockdown = true`, which limits it to Cloudflare's IP ranges (see
+  "Origin lockdown" in `cloudflare-and-domain-requirements.md`).
 - **DDoS and bot mitigation, and free edge TLS**, plus optional WAF, rate
   limiting, and analytics.
 

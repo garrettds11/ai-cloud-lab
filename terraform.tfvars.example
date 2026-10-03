@@ -76,3 +76,11 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # sign in with a password. Set to false to allow sign-in only through Cognito.
 # Requires enable_cognito = true. Changing it replaces the EC2 instance.
 # open_webui_enable_local_login = false
+
+# Optional: accept HTTPS at the ALB only from Cloudflare's IP ranges, so nobody can
+# bypass Cloudflare Access by connecting to the ALB directly. Requires
+# enable_cloudflare_access. Turn it on only after the site works through Cloudflare.
+# The ranges are in variables.tf (cloudflare_ipv4_cidrs, cloudflare_ipv6_cidrs);
+# override them here when Cloudflare publishes changes.
+# enable_origin_lockdown = true
+# origin_lockdown_extra_cidrs = ["203.0.113.10/32"] # Recovery only; leave empty normally

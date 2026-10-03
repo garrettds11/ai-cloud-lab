@@ -212,11 +212,31 @@ Do these in the Cloudflare dashboard after the zone is **Active**. They are list
 1. **Set SSL/TLS encryption mode to Full (strict).** The ACM certificate on the ALB meets Cloudflare's requirements for this mode: it is unexpired, publicly trusted, and matches the hostname, and the ALB accepts HTTPS on port 443. Do not use **Flexible**: Cloudflare would connect to the ALB over HTTP on port 80, which the ALB does not open by default, so visitors get 522 errors (with `enable_alb_http_redirect = true` they would instead get a redirect loop). Automatic SSL/TLS may choose a mode on its own, so set it explicitly.
 2. **Enforce HTTPS at the edge.** Turn on **Always Use HTTPS** and **Automatic HTTPS Rewrites**, set the minimum TLS version to 1.2, and keep TLS 1.3 enabled. Add HSTS only after the site works correctly over HTTPS, and start with a short max-age.
 3. **Check the Access policy.** Confirm the application covers the whole hostname, that only the intended email addresses are allowed, and that a sign-in from an unlisted address is denied. Review the identity provider settings under Zero Trust > Settings > Authentication.
-4. **Lock the origin to Cloudflare.** The ALB's security group currently allows ports 80 and 443 from the whole internet, and Access is enforced only at Cloudflare's edge. Anyone who learns the ALB's DNS name can reach Open WebUI without going through Access. Cloudflare's guidance lists several ways to close this: restrict the ALB security group to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/), use Authenticated Origin Pulls, or validate the Access JWT at the origin. Restricting the security group to Cloudflare's IP ranges is the simplest. It needs a Terraform change, so track it as a follow-up.
+4. **Lock the origin to Cloudflare.** By default the ALB's security group allows port 443 from the whole internet, and Access is enforced only at Cloudflare's edge. Anyone who learns the ALB's DNS name can reach Open WebUI's login page without going through Access or the WAF. Set `enable_origin_lockdown = true` to restrict the ALB to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/). See "Origin lockdown" below for the rollout order and recovery path. Authenticated Origin Pulls or validating the Access JWT at the origin are stronger options that this repo does not implement.
 5. **Turn on WAF protections and bot defenses.** Enable the managed WAF rules and Bot Fight Mode if the plan includes them. Consider a rate-limiting rule for the sign-in path. With Access in front, these are a second layer rather than the first.
 6. **Publish email protections even though the domain sends no mail.** This stops others from spoofing the domain: a null MX record (`0 .`), an SPF record of `v=spf1 -all`, and a DMARC record such as `v=DMARC1; p=reject`.
 7. **Consider DNSSEC.** Enable it in Cloudflare and add the DS record at the registrar, if the registrar supports it for the domain's TLD.
 8. **Protect the accounts.** Use two-factor authentication on the Cloudflare account and on the AWS and registrar accounts. Keep the API token scoped, set an expiry, and rotate the Secrets Manager copy when it changes. Keep the registrar's transfer lock on.
+
+## Origin lockdown
+
+Set `enable_origin_lockdown = true` in `terraform.tfvars` to make the ALB accept HTTPS only from Cloudflare's published IPv4 and IPv6 ranges. Direct requests to the ALB's `*.elb.amazonaws.com` name then time out instead of reaching Open WebUI. The instance's own security group already accepts the application port only from the ALB, and the ALB has no public port 80 by default. The feature needs `enable_cloudflare_access = true` and no paid Cloudflare plan.
+
+The ranges are the `cloudflare_ipv4_cidrs` and `cloudflare_ipv6_cidrs` variables in `variables.tf`, copied from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6. Override them in `terraform.tfvars` when Cloudflare publishes changes.
+
+**Safe rollout order**
+
+1. Confirm the site works through Cloudflare: `nslookup <domain>` returns Cloudflare addresses, the Access sign-in works, and Open WebUI loads.
+2. Run the direct-origin check once and note that it still connects (the "before" result).
+3. Set `enable_origin_lockdown = true`, then plan and apply.
+4. Re-run the public check and the direct-origin check (see the smoke test). The public site must still work and the direct request must time out.
+
+**Recovery**
+
+- If visitors get Cloudflare 522 or 523 errors after Cloudflare adds ranges, copy the current lists into `cloudflare_ipv4_cidrs` and `cloudflare_ipv6_cidrs` and apply again.
+- If you are locked out of direct testing or need a short-term way in, add your address as a `/32` to `origin_lockdown_extra_cidrs` and apply; remove it afterwards.
+- As a last resort, set `enable_origin_lockdown = false` and apply. That reopens the ALB to the internet, so treat it as temporary and turn lockdown back on once the ranges are fixed.
+- Editing the security group in the AWS console also works in an emergency, but Terraform reverts the change at the next apply.
 
 ## Optional: Amazon Cognito sign-in
 

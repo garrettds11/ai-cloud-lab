@@ -345,3 +345,66 @@ variable "open_webui_default_user_role" {
     error_message = "open_webui_default_user_role must be user or pending."
   }
 }
+
+variable "enable_origin_lockdown" {
+  description = "When true, the ALB accepts HTTPS only from Cloudflare's published IP ranges (plus origin_lockdown_extra_cidrs), so visitors cannot bypass Cloudflare Access and the WAF by connecting to the ALB directly. Requires enable_cloudflare_access. Verify the site works through Cloudflare before turning it on."
+  type        = bool
+  default     = false
+}
+
+variable "cloudflare_ipv4_cidrs" {
+  description = "Cloudflare's published IPv4 ranges (https://www.cloudflare.com/ips-v4), used when enable_origin_lockdown is true. Update this list when Cloudflare publishes changes."
+  type        = list(string)
+  default = [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
+  ]
+
+  validation {
+    condition     = alltrue([for cidr in var.cloudflare_ipv4_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "cloudflare_ipv4_cidrs must contain valid IPv4 CIDR ranges."
+  }
+}
+
+variable "cloudflare_ipv6_cidrs" {
+  description = "Cloudflare's published IPv6 ranges (https://www.cloudflare.com/ips-v6), used when enable_origin_lockdown is true. The ALB is IPv4-only today, so these ranges are included for completeness."
+  type        = list(string)
+  default = [
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32",
+  ]
+
+  validation {
+    condition     = alltrue([for cidr in var.cloudflare_ipv6_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "cloudflare_ipv6_cidrs must contain valid IPv6 CIDR ranges."
+  }
+}
+
+variable "origin_lockdown_extra_cidrs" {
+  description = "Extra IPv4 CIDRs allowed to reach the ALB when enable_origin_lockdown is true, for example your own address as a /32 during recovery. Leave empty for normal use."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.origin_lockdown_extra_cidrs : can(cidrhost(cidr, 0)) && cidr != "0.0.0.0/0"])
+    error_message = "origin_lockdown_extra_cidrs must be valid CIDRs and must not be 0.0.0.0/0."
+  }
+}

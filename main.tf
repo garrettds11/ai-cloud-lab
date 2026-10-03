@@ -33,6 +33,14 @@ locals {
   cognito_resources       = var.enable_cognito ? { domain = true } : {}
   cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
   cognito_users           = { for user in concat(var.open_webui_demo_users, var.cognito_extra_users) : user.email => user }
+  open_webui_banners = var.security_banner_text == "" ? [] : [{
+    id          = "security-notice"
+    type        = "warning"
+    title       = "Security and acceptable use notice"
+    content     = var.security_banner_text
+    dismissible = false
+    timestamp   = 0
+  }]
   access_allowed_emails = var.enable_cognito ? toset(concat(
     tolist(var.cloudflare_access_allowed_emails),
     [for user in values(local.cognito_users) : user.email]
@@ -231,6 +239,7 @@ resource "aws_instance" "ai_lab" {
     open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
     open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
     open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
+    open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
     cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
     cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
     open_webui_container_image           = var.open_webui_container_image

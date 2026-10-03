@@ -1,0 +1,30 @@
+/* Cognito hosted UI (classic) styling. Only a fixed set of classes and properties
+   is accepted, and the file must stay under 3 KB. Text cannot be changed here. */
+.logo-customizable {
+  max-width: 40%;
+  max-height: 120px;
+}
+
+.banner-customizable {
+  padding: 24px 0;
+  background-color: #ffffff;
+}
+
+.background-customizable {
+  background-color: #f3f3f3;
+}
+
+.submitButton-customizable {
+  background-color: #000000;
+  border-color: #000000;
+  color: #ffffff;
+}
+
+.submitButton-customizable:hover {
+  background-color: #333333;
+  border-color: #333333;
+}
+
+.inputField-customizable:focus {
+  border-color: #000000;
+}

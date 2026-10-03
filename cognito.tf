@@ -82,6 +82,20 @@ resource "aws_cognito_user_pool_client" "lab" {
   logout_urls = ["https://${var.domain_name}"]
 }
 
+# Logo and colors for the Cognito sign-in page. The classic hosted UI only accepts
+# a logo image and a limited CSS file; it cannot show custom text. Edit
+# branding/cognito.css and branding/logo.png to change the look.
+resource "aws_cognito_user_pool_ui_customization" "lab" {
+  for_each = local.cognito_resources
+
+  user_pool_id = aws_cognito_user_pool.lab[each.key].id
+  client_id    = aws_cognito_user_pool_client.lab[each.key].id
+  css          = file("${path.module}/branding/cognito.css")
+  image_file   = filebase64("${path.module}/branding/logo.png")
+
+  depends_on = [aws_cognito_user_pool_domain.lab]
+}
+
 # Users are created without passwords and with the email marked verified, so no
 # email is sent (the demo addresses cannot receive mail). Set passwords with
 # scripts/set-cognito-passwords.ps1.

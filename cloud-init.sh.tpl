@@ -305,6 +305,10 @@ if [[ "${open_webui_oidc_enabled}" == "true" ]]; then
     )
 fi
 
+# Security notice banner shown in Open WebUI. Passed through base64 so quotes and
+# apostrophes in the text cannot break the shell.
+webui_banners="$(echo '${open_webui_banners_b64}' | base64 -d)"
+
 docker volume create "${open_webui_docker_volume}"
 docker pull "${open_webui_container_image}"
 docker rm -f "${open_webui_container_name}" 2>/dev/null || true
@@ -321,6 +325,7 @@ docker run -d \
     -e ENABLE_PASSWORD_AUTH=true \
     -e ENABLE_SIGNUP=false \
     -e ENABLE_OAUTH_SIGNUP="${open_webui_oidc_enabled}" \
+    -e WEBUI_BANNERS="$webui_banners" \
     -e ENABLE_OPENAI_API=false \
     -e WEBUI_ADMIN_EMAIL="${open_webui_admin_email}" \
     -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \

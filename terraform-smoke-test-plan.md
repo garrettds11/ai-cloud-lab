@@ -285,36 +285,43 @@ The request must time out or fail to connect, not return a redirect.
 
 ### Cloudflare Access test
 
-When `TF_VAR_enable_cloudflare_access` is `true`, the Access check comes before
-the Open WebUI login, and it is a separate login from Open WebUI's own. New
-Cloudflare Zero Trust accounts offer the **Cloudflare** identity provider as the
-login method, so you sign in with a Cloudflare account, not a one-time PIN.
-Before testing, confirm that:
+When `TF_VAR_enable_cloudflare_access` is `true`, Cloudflare Access sits in
+front of Open WebUI and checks every visitor before the Open WebUI login page
+loads. The login method depends on the other settings:
 
-- **Zero Trust > Integrations > Identity providers** lists the login method you
-  expect (Cloudflare, or One-time PIN if you added it).
-- The email on the Cloudflare account you will sign in with is in
-  `cloudflare_access_allowed_emails`. Access allows only those emails, so a
-  Cloudflare account with a different email is denied.
+- **`enable_cognito = true` (this repo's default):** Cognito is the only login
+  method on the Access app, so Access sends you straight to the Cognito sign-in
+  page. There is no Access method-choice page and no one-time PIN.
+- **`enable_cognito = false`:** Access shows the login methods you configured in
+  Zero Trust. New accounts offer only the **Cloudflare** identity provider, which
+  is limited to members of your Cloudflare account. Add One-time PIN under
+  **Zero Trust > Integrations > Identity providers** if other people need to sign
+  in.
+
+In both cases the email must be in the Access policy: with Cognito, that is every
+Cognito user's email plus `cloudflare_access_allowed_emails`; without Cognito, it
+is `cloudflare_access_allowed_emails` only.
 
 Run these from a browser:
 
-1. In a private window, open https://aiwebdemo.click. You must land on the
-   Cloudflare Access sign-in page, not the Open WebUI login page.
-2. Sign in with a Cloudflare account whose email is **not** in
-   `cloudflare_access_allowed_emails` (or a different identity). Access must
-   deny it.
-3. Choose **Cloudflare** and sign in with the approved account. You must reach
-   the Open WebUI login page.
-4. Sign in to Open WebUI, send a chat message, and confirm the reply streams in
-   (this exercises API calls and websockets through Cloudflare).
+1. In a private window, open https://aiwebdemo.click. You must land on a
+   sign-in page (Cognito, or the Access page when Cognito is off), not the Open
+   WebUI login page.
+2. Sign in with a user that is **not** in the Access policy, if you have one.
+   Access must deny it.
+3. Sign in with an approved user. You must reach the Open WebUI login page.
+   With Cognito, choose **Continue with Cognito**; it reuses the Cognito
+   session, so there is no second password prompt.
+4. In Open WebUI, confirm the security and acceptable use banner shows at the
+   top (see `security_banner_text`), send a chat message, and confirm the reply
+   streams in (this exercises API calls and websockets through Cloudflare).
 5. Confirm the apex record is proxied: `nslookup aiwebdemo.click` must return
    Cloudflare addresses, not the ALB address.
 6. In the Cloudflare dashboard, confirm SSL/TLS is **Full (strict)** and that
    Security > WAF shows the Free Managed Ruleset enabled.
 
-This should return a `302` to
-`cloudflareaccess.com` rather than an Open WebUI page.
+This should return a `302` to Cognito or `cloudflareaccess.com` rather than an
+Open WebUI page.
 
 ```Powershell
 curl.exe -I https://aiwebdemo.click

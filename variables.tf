@@ -298,3 +298,9 @@ variable "allowed_ssh_cidr" {
     error_message = "allowed_ssh_cidr must be a valid CIDR and must not be 0.0.0.0/0."
   }
 }
+
+variable "security_banner_text" {
+  description = "Security and acceptable use notice shown as a banner at the top of Open WebUI after sign-in. Set to an empty string to show no banner. Edit it in terraform.tfvars; changing it replaces the EC2 instance on the next apply."
+  type        = string
+  default     = "This system is for authorized users only. Activity may be monitored and logged. By using this lab you agree to use it only for approved purposes: do not enter confidential, regulated, or personal data, do not create illegal, harmful, or abusive content, and do not try to bypass security controls. Misuse may result in loss of access."
+}

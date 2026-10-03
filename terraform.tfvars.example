@@ -34,6 +34,10 @@ cloudflare_account_id            = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
 cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
 cloudflare_access_allowed_emails = ["garrettds11@gmail.com"]
 
+# Optional Cloudflare Access settings. The defaults are shown; uncomment to change.
+# cloudflare_access_app_name         = "AI Web Demo" # Shown on the Access login page
+# cloudflare_access_session_duration = "4h"          # How long a login lasts
+
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

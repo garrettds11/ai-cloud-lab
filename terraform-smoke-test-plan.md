@@ -288,14 +288,26 @@ The request must time out or fail to connect, not return a redirect.
 ### Cloudflare Access test
 
 When `TF_VAR_enable_cloudflare_access` is `true`, the Access check comes before
-the Open WebUI login. Run these from a browser:
+the Open WebUI login, and it is a separate login from Open WebUI's own. New
+Cloudflare Zero Trust accounts offer the **Cloudflare** identity provider as the
+login method, so you sign in with a Cloudflare account, not a one-time PIN.
+Before testing, confirm that:
+
+- **Zero Trust > Integrations > Identity providers** lists the login method you
+  expect (Cloudflare, or One-time PIN if you added it).
+- The email on the Cloudflare account you will sign in with is in
+  `cloudflare_access_allowed_emails`. Access allows only those emails, so a
+  Cloudflare account with a different email is denied.
+
+Run these from a browser:
 
 1. In a private window, open `https://aiwebdemo.click`. You must land on the
    Cloudflare Access sign-in page, not the Open WebUI login page.
-2. Enter an email that is **not** in `cloudflare_access_allowed_emails`. Access
-   must not accept it (no code arrives, or access is denied).
-3. Enter an approved email, then the one-time PIN Cloudflare emails to it. You
-   must reach the Open WebUI login page.
+2. Sign in with a Cloudflare account whose email is **not** in
+   `cloudflare_access_allowed_emails` (or a different identity). Access must
+   deny it.
+3. Choose **Cloudflare** and sign in with the approved account. You must reach
+   the Open WebUI login page.
 4. Sign in to Open WebUI, send a chat message, and confirm the reply streams in
    (this exercises API calls and websockets through Cloudflare).
 5. Confirm the apex record is proxied: `nslookup aiwebdemo.click` must return

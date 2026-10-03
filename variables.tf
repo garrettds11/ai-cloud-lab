@@ -304,3 +304,9 @@ variable "security_banner_text" {
   type        = string
   default     = "This system is for authorized users only. Activity may be monitored and logged. By using this lab you agree to use it only for approved purposes: do not enter confidential, regulated, or personal data, do not create illegal, harmful, or abusive content, and do not try to bypass security controls. Misuse may result in loss of access."
 }
+
+variable "open_webui_enable_local_login" {
+  description = "Whether Open WebUI accepts email and password sign-in for its local accounts (the admin account and the demo users). Set to false to allow sign-in only through Cognito. Requires enable_cognito = true. When false, the demo users are not created as local accounts, so everyone must exist as a Cognito user (see cognito_extra_users). Changing it replaces the EC2 instance on the next apply."
+  type        = bool
+  default     = true
+}

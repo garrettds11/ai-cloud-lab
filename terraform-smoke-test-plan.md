@@ -366,11 +366,7 @@ aws ssm start-session `
   --parameters portNumber="8080",localPortNumber="8080"
 ```
 
-Open:
-
-```text
-http://localhost:8080
-```
+Open: http://localhost:8080
 
 If local port 8080 is already in use, keep the remote port at 8080 and use a
 different local port:
@@ -386,24 +382,41 @@ Then open http://localhost:8081.
 
 ### Login with the admin and four demo accounts
 
-Initial login credentials:
+Initial login credentials are as follows unless you changed `open_webui_admin_email`:
 
-- Email: `admin@example.local` unless you changed `open_webui_admin_email`.
-- Password: the current value in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
+```
+admin@example.local
+``` 
+
+- Password is set in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
 - Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
 
 The bootstrap also creates these four local demo accounts:
 
-- `demo1@example.local`
-- `demo2@example.local`
-- `demo3@example.local`
-- `demo4@example.local`
+```
+demo1@example.local
+```
+```
+demo2@example.local
+```
+```
+demo3@example.local
+```
+```
+demo4@example.local
+```
 
 They all start with the value stored in the Secrets Manager secret identified by
 `open_webui_demo_user_password_secret_arn`.
+
 Have each user sign in, open Profile, and change that temporary password before
-using the account. These are local Open WebUI accounts; Cognito/OIDC is not
-required for this demonstrable use case.
+using the account. 
+
+> These are local Open WebUI accounts with password sign-in. When
+> `enable_cognito = true`, the same emails also exist in Cognito and the Cognito
+> sign-in merges into them. To turn local password sign-in off, set
+> `open_webui_enable_local_login = false` (see "Local accounts and turning them
+> off" in the README). That also skips creating these local demo users.
 
 Change the temporary password immediately after confirming access.
 

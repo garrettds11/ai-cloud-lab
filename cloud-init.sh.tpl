@@ -321,8 +321,8 @@ docker run -d \
     -e OLLAMA_BASE_URL="${open_webui_ollama_base_url}" \
     -e WEBUI_URL="${open_webui_url}" \
     -e WEBUI_AUTH=true \
-    -e ENABLE_LOGIN_FORM=true \
-    -e ENABLE_PASSWORD_AUTH=true \
+    -e ENABLE_LOGIN_FORM="${open_webui_local_login_enabled}" \
+    -e ENABLE_PASSWORD_AUTH="${open_webui_local_login_enabled}" \
     -e ENABLE_SIGNUP=false \
     -e ENABLE_OAUTH_SIGNUP="${open_webui_oidc_enabled}" \
     -e WEBUI_BANNERS="$webui_banners" \
@@ -334,7 +334,14 @@ docker run -d \
     "${open_webui_container_image}"
 
 wait_for_open_webui
-provision_demo_users
+
+# Demo users are created through Open WebUI's password API, so they are only
+# provisioned when local password sign-in is enabled.
+if [[ "${open_webui_local_login_enabled}" == "true" ]]; then
+    provision_demo_users
+else
+    echo "Local password sign-in is disabled; skipping local demo-user provisioning."
+fi
 
 # Convenience diagnostic script.
 cat > /usr/local/bin/ai-lab-status <<'EOF'

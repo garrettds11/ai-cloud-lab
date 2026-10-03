@@ -239,6 +239,7 @@ resource "aws_instance" "ai_lab" {
     open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
     open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
     open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
+    open_webui_local_login_enabled       = var.open_webui_enable_local_login ? "true" : "false"
     open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
     cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
     cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
@@ -273,6 +274,11 @@ resource "aws_instance" "ai_lab" {
         length(local.access_allowed_emails) > 0
       )
       error_message = "Cloudflare access requires enable_domain_access, cloudflare_account_id, cloudflare_api_token_secret_arn, and at least one allowed email."
+    }
+
+    precondition {
+      condition     = var.open_webui_enable_local_login || var.enable_cognito
+      error_message = "open_webui_enable_local_login = false requires enable_cognito = true, otherwise nobody could sign in."
     }
 
     precondition {

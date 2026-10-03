@@ -73,3 +73,8 @@ allowed_ssh_cidr = null
 # Security and acceptable use notice shown at the top of Open WebUI after sign-in.
 # Set to "" for no banner. Changing it replaces the EC2 instance on the next apply.
 security_banner_text = "This system is for authorized users only. Activity may be monitored and logged. By using this lab you agree to use it only for approved purposes: do not enter confidential, regulated, or personal data, do not create illegal, harmful, or abusive content, and do not try to bypass security controls. Misuse may result in loss of access."
+
+# Open WebUI also has local accounts (the admin and the four demo users) that can
+# sign in with a password. Set to false to allow sign-in only through Cognito.
+# Requires enable_cognito = true. Changing it replaces the EC2 instance.
+# open_webui_enable_local_login = false

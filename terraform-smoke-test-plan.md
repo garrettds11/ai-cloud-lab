@@ -192,10 +192,15 @@ using another account, domain, zone, certificate, or Cloudflare account.
 
 ```powershell
 Invoke-TerraformWithCloudflareToken -Arguments @("init")
-Invoke-TerraformWithCloudflareToken -Arguments @("fmt", "-check", "-recursive")
+Invoke-TerraformWithCloudflareToken -Arguments @("fmt", "-recursive")
 Invoke-TerraformWithCloudflareToken -Arguments @("validate")
 Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-out=ai-lab.tfplan")
 ```
+
+`fmt -recursive` rewrites whitespace and alignment in place, including in your
+local `terraform.tfvars`, so the later steps do not fail on formatting. It
+changes no values. Use `fmt -check -recursive` only in CI, where the files must
+not be modified.
 
 ## 3. Deploy
 

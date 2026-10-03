@@ -54,7 +54,9 @@ The Cloudflare encryption mode is a Cloudflare dashboard setting. Terraform does
 | AWS Certificate Manager | Provides the origin certificate used by the ALB HTTPS listener | Yes for the current AWS ALB design | `var.acm_certificate_arn`, `aws_lb_listener.https` |
 | AWS Application Load Balancer | Public AWS entry point and HTTPS termination at the origin | Yes | `aws_lb.domain`, listeners, target group, security group |
 | EC2 | Runs Open WebUI and Ollama | Yes | `aws_instance.ai_lab` |
-| AWS Secrets Manager | Stores the Open WebUI passwords and Cloudflare API token | Yes for the current secure bootstrap flow | Secret ARNs in variables; secrets are pre-created outside Terraform |
+| AWS Secrets Manager | Stores the Open WebUI administrator and demo-user passwords and the Cloudflare API token | Yes for the current secure bootstrap flow | Secret ARNs in variables; secrets are pre-created outside Terraform |
+| Amazon Cognito (optional) | User directory and hosted sign-in page for Cloudflare Access and Open WebUI | Only when `enable_cognito = true` | `cognito.tf`, `cloudflare_zero_trust_access_identity_provider` |
+| Auto-stop (on by default) | Stops the instance when nobody is using it and emails alerts through SNS | No; independent of domain access | `auto_stop.tf` (SSM parameter, Lambda watchdog, EventBridge rule, SNS topic) |
 
 ## What an administrator must provide
 
@@ -65,10 +67,18 @@ The administrator needs:
 1. An AWS profile or another AWS credential source with permission to create and destroy the lab.
 2. An AWS region. The current example uses `us-east-1`.
 3. An existing Secrets Manager secret for the Open WebUI administrator password.
-4. An existing Secrets Manager secret for the demo users' temporary password.
+4. An existing Secrets Manager secret for the demo users' password.
 5. An issued ACM certificate covering the public hostname, in the same AWS region as the ALB.
+6. When Cloudflare is enabled, an existing Secrets Manager secret for the Cloudflare API token (see [Cloudflare details](#cloudflare-details)).
+7. An email address that can receive auto-stop alerts (`auto_stop_alert_email`). After the apply, AWS sends one confirmation link to it and no alerts arrive until it is clicked. Auto-stop is on by default; `auto_stop_idle_minutes = 0` turns it off, and then no address is needed.
 
-The two Open WebUI password secrets are read by the EC2 instance through its IAM role. Terraform does not create, rotate, update, or destroy those secrets.
+Terraform does not create, rotate, update, or destroy any of the secrets. Create them first, in the same region, as plain text or as a one-key JSON object. Who reads them:
+
+- The **EC2 instance** reads the administrator password through its IAM role to create the local administrator account. It reads the demo-user password only when local demo accounts are created (Cognito off, or local sign-in on without Cognito).
+- **`scripts/set-cognito-passwords.ps1`**, which you run after `apply` when Cognito is on, reads both password secrets with your own AWS credentials. The administrator gets the administrator secret and every other Cognito user gets the demo-user secret. Cognito's password policy requires at least 8 characters including a lowercase letter and a number, so both passwords must meet it.
+- The **PowerShell Terraform wrapper** reads the Cloudflare token secret and exposes it only for the run.
+
+The identity that runs Terraform needs permission to create the EC2, IAM, security group, load balancer, SSM parameter, Lambda, SNS and EventBridge resources (and the Cognito resources when enabled), to read the ACM certificate, and to read the secrets.
 
 Relevant variables in `terraform.tfvars`:
 
@@ -78,6 +88,8 @@ aws_profile                             = null
 open_webui_admin_password_secret_arn    = "arn:aws:secretsmanager:..."
 open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:..."
 acm_certificate_arn                     = "arn:aws:acm:us-east-1:...:certificate/..."
+auto_stop_idle_minutes                  = 90 # 0 turns auto-stop off
+auto_stop_alert_email                   = "you@yourdomain.com"
 ```
 
 The actual AWS profile is selected in the PowerShell environment used for the smoke test. Keep the AWS CLI profile and `TF_VAR_aws_profile` value aligned.
@@ -154,10 +166,20 @@ The administrator needs:
 3. The domain delegated to Cloudflare nameservers.
 4. A Cloudflare account ID.
 5. A Cloudflare API token (see below).
-6. The email addresses allowed through the Cloudflare Access application.
-7. Cloudflare Zero Trust (Access) enabled for the account before applying the Access resource.
+6. Cloudflare Zero Trust (Access) enabled for the account before applying the Access resource, with a team domain such as `your-team.cloudflareaccess.com` (the host shown on the Access login page). Terraform needs it as `cloudflare_access_team_domain` when Cognito is on.
+7. A sign-in method for Access. Either Cognito (`enable_cognito = true`, see [Optional: Amazon Cognito sign-in](#optional-amazon-cognito-sign-in)), where Terraform creates the Access login method for you, or a method you already configured under Zero Trust > Settings > Authentication, such as One-time PIN.
+8. The email addresses allowed through the Access application. Without Cognito these are exactly `cloudflare_access_allowed_emails`, and at least one is required. With Cognito the policy also allows every Cognito user's email, so the list can stay empty.
 
-The API token should be limited to this account and zone, with an expiry date. The Terraform resources in this project need permission to read the zone, edit its DNS records, and edit Access applications and policies: **Zone: Zone Read**, **Zone: DNS Edit**, and **Account: Access: Apps and Policies Edit**. If you enable Cognito (below), the token also needs **Account: Access: Organizations, Identity Providers, and Groups Edit** so Terraform can add the Cognito login method.
+The API token should be limited to this account and zone, with an expiry date. Create it at <https://dash.cloudflare.com/profile/api-tokens> with these permissions:
+
+| Scope | Permission | Needed for |
+| --- | --- | --- |
+| Zone (this domain) | **Zone: Zone Read** | Looking up the zone |
+| Zone (this domain) | **Zone: DNS Edit** | The proxied record for the hostname |
+| Account | **Account: Access: Apps and Policies Edit** | The Access application and its allow policy |
+| Account | **Account: Access: Organizations, Identity Providers, and Groups Edit** | The Cognito login method. Needed only when `enable_cognito = true`; without it the apply fails with a 403 when creating the identity provider |
+
+Editing the permissions of an existing token does not change its value, so the secret in Secrets Manager does not need to be updated. If the 403 persists right after a permission change, wait a minute and plan again.
 
 The token itself must not be committed to the repository. In this project it is stored in AWS Secrets Manager and retrieved by the PowerShell Terraform wrapper into the temporary `CLOUDFLARE_API_TOKEN` environment variable.
 
@@ -169,7 +191,8 @@ enable_cloudflare_access = true
 domain_name               = "aiwebdemo.click"
 cloudflare_account_id     = "<32-character Cloudflare account ID>"
 cloudflare_api_token_secret_arn = "arn:aws:secretsmanager:..."
-cloudflare_access_allowed_emails = ["admin@example.com"]
+cloudflare_access_allowed_emails = [] # With Cognito; otherwise list the allowed emails
+cloudflare_access_team_domain    = "your-team.cloudflareaccess.com" # Used with Cognito
 ```
 
 The API token secret should contain either the raw token or a one-key JSON object with the key `CLOUDFLARE_API_TOKEN`. The smoke-test wrapper supports both forms and trims whitespace from the key and token value.
@@ -200,7 +223,9 @@ Terraform does not currently:
 - Create a Cloudflare account or add a domain to it.
 - Set the Cloudflare SSL/TLS encryption mode or any other zone setting.
 - Configure Cloudflare WAF, rate limiting, or email-related DNS records.
-- Restrict the ALB to Cloudflare traffic.
+- Restrict the ALB to Cloudflare traffic, unless you set `enable_origin_lockdown = true`.
+- Set the Cognito users' passwords (run `scripts/set-cognito-passwords.ps1` after `apply`).
+- Confirm the auto-stop email subscription (click the AWS confirmation link once).
 - Configure a Cloudflare Tunnel.
 
 Those actions must be completed before the corresponding Terraform resources can succeed, or by hand afterward.
@@ -249,31 +274,55 @@ With Cognito enabled, Terraform creates:
 
 - A Cognito user pool with no self-service sign-up, a hosted sign-in domain
   (`cognito_domain_prefix`), and one app client used by Cloudflare and Open WebUI.
-- A Cognito user for each of the `open_webui_demo_users` plus any
-  `cognito_extra_users`. They are created without passwords and with the email
-  marked verified, so no email is sent. Run `scripts/set-cognito-passwords.ps1`
-  after `apply` to set each password from your existing demo-user password secret.
+- A Cognito user for the Open WebUI administrator (`open_webui_admin_email`), one
+  for each of the `open_webui_demo_users`, and one for each of the optional
+  `cognito_extra_users`; duplicate emails are merged. They are created without
+  passwords and with the email marked verified, so no email is sent. Run
+  `scripts/set-cognito-passwords.ps1` after `apply` (and again after adding users):
+  the administrator gets the administrator password secret and everyone else gets the
+  demo-user password secret.
 - A Cloudflare Access login method of type OpenID Connect that points at the pool.
   The Access application offers only this login method and sends visitors straight
   to it. The Access policy allows the emails of the Cognito users.
 - Open WebUI single sign-on through the same pool. The container reads the app
   client secret from Cognito at boot through the instance role, so the secret is
-  not in user-data. Existing local demo accounts with the same email are merged
-  with the Cognito sign-in. The Open WebUI password form stays enabled so the
-  local administrator account still works.
+  not in user-data. An Open WebUI account is matched to the Cognito sign-in by email,
+  so the administrator's local account and Cognito sign-in reach the same account.
+  New Cognito users get the role in `open_webui_default_user_role` (`user` by
+  default; `pending` makes an administrator approve each new user first).
+- The administrator is the only person with a local Open WebUI password. Demo
+  users exist only in Cognito. The password form stays on for the administrator
+  while `open_webui_enable_local_login` is `true` (the default). Set it to `false`
+  to allow Cognito sign-in only; it requires `enable_cognito = true` and replaces the
+  EC2 instance. The README section "Local accounts and turning them off" explains
+  who can sign in each way.
 
 Requirements and cautions:
 
+- `enable_cognito` requires `enable_domain_access`, because the sign-in callbacks use
+  the public domain name, and `enable_cloudflare_access` for the Access login method.
 - Set `cloudflare_access_team_domain` to the host shown on the Access login page
   (for example `your-team.cloudflareaccess.com`). Terraform adds
   `https://<team domain>/cdn-cgi/access/callback` as a Cognito callback URL.
+- The Cloudflare API token needs the **Identity Providers** permission listed under
+  [Cloudflare details](#cloudflare-details), or creating the login method fails with a 403.
 - `cognito_domain_prefix` must be unique within the AWS region.
 - The app client secret is stored in Terraform state, as is the Cloudflare login
   method that uses it. Keep the state file private.
-- Add yourself with `cognito_extra_users` if you are not one of the demo users;
-  otherwise Access will not let your own email through.
+- The administrator's email is added automatically. Use `cognito_extra_users` only for
+  other people who need access; they are created the same way and get the demo-user
+  password.
 - Cognito users with `example.local` addresses cannot receive mail, so password
   resets are administrator-only by design.
+
+### Sign-in banner and branding
+
+- `security_banner_text` sets the security and acceptable-use banner. Open WebUI
+  shows it inside the app after sign-in, because Cognito's hosted sign-in page can only
+  change its logo and styling, not add text.
+- The Cognito sign-in page logo and styling come from the files in `branding/`; see
+  `branding/README.md` for how to replace them. Keep Open WebUI's own branding visible
+  unless you meet the Open WebUI license terms for removing it.
 
 ## Can the providers be swapped?
 
@@ -312,18 +361,20 @@ Moving the application to another hosting provider would require a separate Terr
 ## Recommended prerequisite order
 
 1. Choose the AWS account and region.
-2. Create the two AWS Secrets Manager secrets.
+2. Create the two Open WebUI password secrets (administrator and demo user) in AWS Secrets Manager.
 3. Obtain and validate the ACM certificate in the ALB region.
 4. Register the domain.
 5. Add the domain to Cloudflare and note the two assigned nameservers.
 6. Change the nameservers at the registrar (not in a hosted zone) to the Cloudflare pair.
 7. Wait for the Cloudflare zone to become **Active**.
 8. Create the ACM validation CNAME in Cloudflare as DNS-only.
-9. Enable Cloudflare Zero Trust (Access).
-10. Create a scoped Cloudflare API token and store it in Secrets Manager.
-11. Copy and edit `terraform.tfvars.example`.
-12. Run the smoke test plan from initialization through apply.
-13. Set the Cloudflare SSL/TLS mode to Full (strict) and review the other security settings above.
-14. Verify the ALB target health and the public HTTPS URL.
+9. Enable Cloudflare Zero Trust (Access) and note the team domain.
+10. Create a scoped Cloudflare API token, with the Identity Providers permission if you will use Cognito, and store it in Secrets Manager.
+11. Choose the email address for auto-stop alerts.
+12. Copy `terraform.tfvars.example` to `terraform.tfvars` and replace every value that belongs to the author's account, such as the account ID, secret and certificate ARNs, domain, and team domain.
+13. Run the smoke test plan from initialization through apply.
+14. After the apply: run `scripts/set-cognito-passwords.ps1` if Cognito is on, and click the SNS confirmation link in the alert mailbox.
+15. Set the Cloudflare SSL/TLS mode to Full (strict) and review the other security settings above.
+16. Verify the ALB target health and the public HTTPS URL.
 
 The lab can remain destroyed while waiting for domain delegation or Cloudflare activation. Those control-plane prerequisites do not require an EC2 instance or load balancer to be running.

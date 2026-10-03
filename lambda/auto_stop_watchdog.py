@@ -1,18 +1,16 @@
 """Independent watchdog for the AI lab auto-stop.
 
-Runs every few minutes from EventBridge. It never stops an instance that people
-are using, and it flags an instance that has been left running:
+Runs every few minutes from EventBridge and backs up the on-instance monitor. It has
+two independent controls, each off when set to 0:
 
-* The instance-side agent normally powers the instance off when nobody is active.
+* Hard time limit (MAX_UPTIME_MINUTES). Warn shortly before the limit, and stop the
+  instance just after it if the instance has not stopped itself. People being active
+  does not prevent this.
+* Idle shutdown (IDLE_MINUTES). It never stops an instance that people are using.
   If the agent reports the lab idle well past the limit but the instance is still
-  running, the shutdown failed, so stop it here.
-* If the agent has gone silent, activity cannot be read from the instance. Stop it
-  only when the load balancer also shows no requests for the whole idle window;
-  otherwise send an alert and leave it running.
-* Maximum uptime. With ENFORCE_MAX_UPTIME the limit is a hard cap: send a warning 30
-  minutes before it and stop the instance shortly after it if the agent has not
-  (people being active does not prevent this). Without it, only send an alert once
-  the limit passes, repeating hourly, and never stop for this reason.
+  running, the shutdown failed, so stop it. If the agent has gone silent, activity
+  cannot be read from the instance: stop it only when the load balancer also shows
+  no requests for the whole idle window, otherwise send an alert.
 """
 
 import datetime
@@ -22,16 +20,14 @@ import os
 import boto3
 
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "")
-IDLE_MINUTES = int(os.environ.get("IDLE_MINUTES", "60"))
-MAX_UPTIME_MINUTES = int(os.environ.get("MAX_UPTIME_HOURS", "8")) * 60
-ENFORCE_MAX_UPTIME = os.environ.get("ENFORCE_MAX_UPTIME", "false").lower() == "true"
+IDLE_MINUTES = int(os.environ.get("IDLE_MINUTES", "0"))  # 0 = idle shutdown off
+MAX_UPTIME_MINUTES = int(os.environ.get("MAX_UPTIME_MINUTES", "0"))  # 0 = no hard limit
 CHECK_MINUTES = int(os.environ.get("CHECK_MINUTES", "5"))
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 ALB_DIMENSION = os.environ.get("ALB_DIMENSION", "")  # e.g. app/name/1234567890abcdef
 
-WARN_BEFORE_MINUTES = 30  # warning email before an enforced maximum uptime
-STOP_GRACE_MINUTES = 5  # extra idle time before the watchdog steps in after the agent
-SETUP_GRACE_MINUTES = 30  # leave a freshly started instance alone while it sets up
+STOP_GRACE_MINUTES = 5  # extra time before the watchdog steps in after the agent
+SETUP_GRACE_MINUTES = 30  # leave a freshly started instance alone for idle checks while it sets up
 SILENT_AFTER_MINUTES = 10  # no heartbeat for this long means the agent is silent
 
 ec2 = boto3.client("ec2")
@@ -41,6 +37,11 @@ sns = boto3.client("sns")
 
 def _now():
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _warn_before_minutes():
+    """How long before the hard limit the warning email goes out."""
+    return 30 if MAX_UPTIME_MINUTES >= 60 else 10
 
 
 def _agent_points(metric, statistic, now, minutes):
@@ -93,11 +94,6 @@ def lambda_handler(event, context):
     uptime = (now - instance["LaunchTime"]).total_seconds() / 60
     result = {"state": state, "uptime_minutes": round(uptime), "action": "none"}
 
-    if uptime < SETUP_GRACE_MINUTES:
-        result["note"] = "within setup grace period"
-        print(json.dumps(result))
-        return result
-
     heartbeats = _agent_points("Heartbeat", "Sum", now, SILENT_AFTER_MINUTES)
     idle_points = _agent_points("IdleMinutes", "Maximum", now, SILENT_AFTER_MINUTES)
     user_points = _agent_points("ActiveUsers", "Maximum", now, SILENT_AFTER_MINUTES)
@@ -106,51 +102,44 @@ def lambda_handler(event, context):
     active_users = user_points[-1]["Maximum"] if user_points else None
     result.update({"agent_alive": agent_alive, "idle_minutes": idle, "active_users": active_users})
 
-    if agent_alive and idle is not None and idle >= IDLE_MINUTES + STOP_GRACE_MINUTES:
-        # The agent says nobody is active but the instance is still up: its own
-        # shutdown failed. Safe to stop, because the idle count already excludes
-        # active users.
-        _stop(f"agent reports {idle:.0f} idle minutes (limit {IDLE_MINUTES}) but the instance is still running")
-        result["action"] = "stop"
-    elif not agent_alive and uptime >= IDLE_MINUTES:
-        requests = _alb_requests(now, IDLE_MINUTES)
-        if requests == 0:
-            _stop(f"agent silent and no load balancer requests for {IDLE_MINUTES} minutes")
-            result["action"] = "stop"
-        else:
-            reason = "no load balancer metric to confirm it is unused" if requests is None else "load balancer still shows requests"
-            _alert(
-                "AI lab idle monitor is not reporting",
-                f"Instance {INSTANCE_ID} has run {uptime:.0f} minutes and its idle monitor has been silent for "
-                f"{SILENT_AFTER_MINUTES}+ minutes. It was not stopped because {reason}. Check the instance.",
-            )
-            result["action"] = "alert"
-
-    if ENFORCE_MAX_UPTIME and result["action"] != "stop":
+    # Hard time limit: applies from boot, including while the instance is still setting up.
+    if MAX_UPTIME_MINUTES > 0:
+        warn_before = _warn_before_minutes()
         if uptime >= MAX_UPTIME_MINUTES + STOP_GRACE_MINUTES:
             # The agent should have powered off at the limit; this is the backstop.
-            _stop(f"instance has run {uptime:.0f} minutes (enforced maximum {MAX_UPTIME_MINUTES})")
+            _stop(f"instance has run {uptime:.0f} minutes (hard limit {MAX_UPTIME_MINUTES})")
             result["action"] = "stop"
-        elif 0 <= uptime - (MAX_UPTIME_MINUTES - WARN_BEFORE_MINUTES) < CHECK_MINUTES:
+        elif 0 <= uptime - (MAX_UPTIME_MINUTES - warn_before) < CHECK_MINUTES:
             who = "unknown" if active_users is None else f"{active_users:.0f}"
             _alert(
-                "AI lab will stop in about 30 minutes",
-                f"Instance {INSTANCE_ID} reaches its maximum uptime of {MAX_UPTIME_MINUTES // 60}h in about "
-                f"{WARN_BEFORE_MINUTES} minutes and will be stopped even if people are using it "
+                f"AI lab will stop in about {warn_before} minutes",
+                f"Instance {INSTANCE_ID} reaches its hard time limit of {MAX_UPTIME_MINUTES} minutes in about "
+                f"{warn_before} minutes and will be stopped even if people are using it "
                 f"(active Open WebUI users: {who}). Start it again afterwards to continue.",
             )
             result["alerted"] = True
-    elif result["action"] != "stop" and uptime >= MAX_UPTIME_MINUTES:
-        # Repeat roughly once an hour.
-        if (uptime - MAX_UPTIME_MINUTES) % 60 < CHECK_MINUTES:
-            who = "unknown" if active_users is None else f"{active_users:.0f}"
-            _alert(
-                "AI lab instance has been running a long time",
-                f"Instance {INSTANCE_ID} has run {uptime / 60:.1f} hours (alert threshold {MAX_UPTIME_MINUTES // 60}h). "
-                f"Active Open WebUI users: {who}. It is not stopped while anyone is active and stops "
-                f"after {IDLE_MINUTES} idle minutes.",
-            )
-            result["alerted"] = True
+
+    # Idle shutdown: leave a freshly started instance alone while it sets up.
+    if result["action"] != "stop" and IDLE_MINUTES > 0 and uptime >= SETUP_GRACE_MINUTES:
+        if agent_alive and idle is not None and idle >= IDLE_MINUTES + STOP_GRACE_MINUTES:
+            # The agent says nobody is active but the instance is still up: its own
+            # shutdown failed. Safe to stop, because the idle count already excludes
+            # active users.
+            _stop(f"agent reports {idle:.0f} idle minutes (limit {IDLE_MINUTES}) but the instance is still running")
+            result["action"] = "stop"
+        elif not agent_alive and uptime >= IDLE_MINUTES:
+            requests = _alb_requests(now, IDLE_MINUTES)
+            if requests == 0:
+                _stop(f"agent silent and no load balancer requests for {IDLE_MINUTES} minutes")
+                result["action"] = "stop"
+            else:
+                reason = "no load balancer metric to confirm it is unused" if requests is None else "load balancer still shows requests"
+                _alert(
+                    "AI lab idle monitor is not reporting",
+                    f"Instance {INSTANCE_ID} has run {uptime:.0f} minutes and its idle monitor has been silent for "
+                    f"{SILENT_AFTER_MINUTES}+ minutes. It was not stopped because {reason}. Check the instance.",
+                )
+                result["action"] = "alert"
 
     print(json.dumps(result))
     return result

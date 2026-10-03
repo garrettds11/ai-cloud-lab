@@ -35,7 +35,8 @@ locals {
   cloudflare_resources    = var.enable_cloudflare_access ? { domain = true } : {}
   http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
   cognito_resources       = var.enable_cognito ? { domain = true } : {}
-  auto_stop_resources     = var.auto_stop_idle_minutes > 0 ? { auto_stop = true } : {}
+  auto_stop_enabled       = var.auto_stop_idle_minutes > 0 || var.auto_stop_max_uptime_minutes > 0
+  auto_stop_resources     = local.auto_stop_enabled ? { auto_stop = true } : {}
   cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
   # Everyone who can sign in through Cognito: the Open WebUI administrator, the demo
   # users, and any extra users. The grouping (...) and [0] drop duplicate emails.

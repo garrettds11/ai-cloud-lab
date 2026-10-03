@@ -70,7 +70,7 @@ The administrator needs:
 4. An existing Secrets Manager secret for the demo users' password.
 5. An issued ACM certificate covering the public hostname, in the same AWS region as the ALB.
 6. When Cloudflare is enabled, an existing Secrets Manager secret for the Cloudflare API token (see [Cloudflare details](#cloudflare-details)).
-7. An email address that can receive auto-stop alerts (`auto_stop_alert_email`). After the apply, AWS sends one confirmation link to it and no alerts arrive until it is clicked. Auto-stop is on by default; `auto_stop_idle_minutes = 0` turns it off, and then no address is needed.
+7. An email address that can receive auto-stop alerts (`auto_stop_alert_email`). After the apply, AWS sends one confirmation link to it and no alerts arrive until it is clicked. Auto-stop is on by default; with both `auto_stop_idle_minutes` and `auto_stop_max_uptime_minutes` set to `0` it is off, and then no address is needed.
 
 Terraform does not create, rotate, update, or destroy any of the secrets. Create them first, in the same region, as plain text or as a one-key JSON object. Who reads them:
 
@@ -88,7 +88,8 @@ aws_profile                             = null
 open_webui_admin_password_secret_arn    = "arn:aws:secretsmanager:..."
 open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:..."
 acm_certificate_arn                     = "arn:aws:acm:us-east-1:...:certificate/..."
-auto_stop_idle_minutes                  = 90 # 0 turns auto-stop off
+auto_stop_idle_minutes                  = 0  # Demo: no idle shutdown
+auto_stop_max_uptime_minutes            = 90 # Demo: hard stop 90 minutes after boot
 auto_stop_alert_email                   = "you@yourdomain.com"
 ```
 

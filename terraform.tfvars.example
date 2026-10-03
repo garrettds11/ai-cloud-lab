@@ -85,14 +85,16 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # enable_origin_lockdown = true
 # origin_lockdown_extra_cidrs = ["203.0.113.10/32"] # Recovery only; leave empty normally
 
-# Cost guardrail: the lab stops itself when nobody is using it.
-# auto_stop_idle_minutes is the switch and the timeout: 0 turns auto-stop off; 1 or
-# more stops the instance after that many minutes with no active Open WebUI user and
-# no reply being generated. auto_stop_max_uptime_hours is the longest it may run after
-# it starts. With auto_stop_enforce_max_uptime = true it stops then even if people are
-# still using it (right for a demo lab that is not in production); with false it only
-# emails auto_stop_alert_email every hour and never stops active users.
-auto_stop_idle_minutes       = 90
-auto_stop_max_uptime_hours   = 8
-auto_stop_enforce_max_uptime = true
+# Cost guardrail: the lab stops itself with two independent controls. Set either to
+# 0 to turn that control off.
+#   auto_stop_idle_minutes:       stops the instance after that many minutes with no
+#                                 active Open WebUI user and no reply being generated.
+#                                 Active users are never stopped by this.
+#   auto_stop_max_uptime_minutes: a hard time limit. The instance stops that many
+#                                 minutes after it boots even if people are using it,
+#                                 and an email warns shortly before.
+# Demo: idle 0 and limit 90, so it always stops 90 minutes after boot.
+# Production: idle 60 and limit 0, so it stops only when nobody is using it.
+auto_stop_idle_minutes       = 0
+auto_stop_max_uptime_minutes = 90
 auto_stop_alert_email        = "you@example.com" # Replace; AWS sends a confirmation link

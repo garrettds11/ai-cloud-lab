@@ -66,8 +66,8 @@ output "ssm_shell_command" {
 }
 
 output "auto_stop_watchdog" {
-  description = "Name of the auto-stop watchdog Lambda function when auto-stop is on (auto_stop_idle_minutes above 0)."
-  value       = var.auto_stop_idle_minutes > 0 ? aws_lambda_function.auto_stop_watchdog["auto_stop"].function_name : null
+  description = "Name of the auto-stop watchdog Lambda function when auto-stop is on (an idle timeout or a maximum uptime is set)."
+  value       = local.auto_stop_enabled ? aws_lambda_function.auto_stop_watchdog["auto_stop"].function_name : null
 }
 
 output "cognito_user_pool_id" {

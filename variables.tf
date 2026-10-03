@@ -410,31 +410,25 @@ variable "origin_lockdown_extra_cidrs" {
 }
 
 variable "auto_stop_idle_minutes" {
-  description = "Auto-stop switch and idle timeout. 0 turns auto-stop off. 1 to 1440 turns it on: the instance stops itself after this many minutes with no active Open WebUI users and no reply being generated. The idle clock starts when first-boot setup finishes and after every restart, so a restart gets the full window. Use a short value only for testing."
+  description = "Idle shutdown. 0 turns it off. 1 to 1440 stops the instance after this many minutes with no active Open WebUI users and no reply being generated; people who are active are never stopped by this. The idle clock starts when first-boot setup finishes and after every restart. Independent of auto_stop_max_uptime_minutes."
   type        = number
   default     = 60
 
   validation {
     condition     = var.auto_stop_idle_minutes >= 0 && var.auto_stop_idle_minutes <= 1440 && floor(var.auto_stop_idle_minutes) == var.auto_stop_idle_minutes
-    error_message = "auto_stop_idle_minutes must be a whole number from 0 (auto-stop off) through 1440."
+    error_message = "auto_stop_idle_minutes must be a whole number from 0 (idle shutdown off) through 1440."
   }
 }
 
-variable "auto_stop_max_uptime_hours" {
-  description = "Longest the instance may stay up after it starts, in hours (1 to 168). What happens at the limit depends on auto_stop_enforce_max_uptime. Ignored when auto_stop_idle_minutes is 0."
+variable "auto_stop_max_uptime_minutes" {
+  description = "Hard time limit. 0 (default) means no limit. 15 or more stops the instance this many minutes after it boots even if people are still using it, after an email warning shortly before. Right for a demo, for example 90. Independent of auto_stop_idle_minutes."
   type        = number
-  default     = 8
+  default     = 0
 
   validation {
-    condition     = var.auto_stop_max_uptime_hours >= 1 && var.auto_stop_max_uptime_hours <= 168 && floor(var.auto_stop_max_uptime_hours) == var.auto_stop_max_uptime_hours
-    error_message = "auto_stop_max_uptime_hours must be a whole number from 1 through 168."
+    condition     = var.auto_stop_max_uptime_minutes == 0 || (var.auto_stop_max_uptime_minutes >= 15 && var.auto_stop_max_uptime_minutes <= 10080 && floor(var.auto_stop_max_uptime_minutes) == var.auto_stop_max_uptime_minutes)
+    error_message = "auto_stop_max_uptime_minutes must be 0 (no limit) or a whole number from 15 through 10080."
   }
-}
-
-variable "auto_stop_enforce_max_uptime" {
-  description = "When true (default), the instance stops at auto_stop_max_uptime_hours even if people are still using it, after an email warning 30 minutes earlier. Right for a demo or pre-production lab that must not be left running. When false, reaching the limit only sends an email every hour and active users are never stopped. Ignored when auto_stop_idle_minutes is 0."
-  type        = bool
-  default     = true
 }
 
 variable "auto_stop_alert_email" {

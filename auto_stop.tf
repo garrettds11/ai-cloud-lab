@@ -1,17 +1,17 @@
-# Idle-aware auto-stop. auto_stop_idle_minutes is the switch: 0 is off, 1 or more is on.
+# Auto-stop, with two independent controls. Each is off when set to 0.
 #
-# Layer 1 runs on the instance (scripts/ai-lab-idle-check.sh, installed by
-# cloud-init): it powers the instance off only after auto_stop_idle_minutes with
-# no active Open WebUI users and no reply being generated.
+#   auto_stop_idle_minutes: idle shutdown. The instance stops after that many minutes
+#   with no active Open WebUI users and no reply being generated. People who are active
+#   are never stopped by this.
 #
-# Layer 2 is this independent watchdog (lambda/auto_stop_watchdog.py), run by
-# EventBridge every few minutes. It stops the instance only when the instance-side
-# agent already reports it idle (shutdown failed) or when the agent is silent and
-# the load balancer shows no traffic. It emails an alert when the instance runs
-# longer than auto_stop_max_uptime_hours or when the agent stops reporting. It never
-# stops an instance that has active users because of the idle timeout. With
-# auto_stop_enforce_max_uptime the maximum uptime is a hard cap: both layers stop the
-# instance at the limit even if people are active, after an email warning.
+#   auto_stop_max_uptime_minutes: a hard time limit. The instance stops that many
+#   minutes after it boots even if people are using it, after an email warning.
+#
+# Layer 1 runs on the instance (scripts/ai-lab-idle-check.sh, installed by cloud-init)
+# and does both. Layer 2 is this independent watchdog (lambda/auto_stop_watchdog.py),
+# run by EventBridge every few minutes. It enforces the hard limit a few minutes late if
+# the instance has not stopped itself, stops an instance whose idle shutdown failed (or
+# whose monitor is silent while the load balancer is quiet), and emails alerts.
 
 locals {
   auto_stop_check_minutes  = 5
@@ -20,8 +20,8 @@ locals {
 
 check "auto_stop_alert_email" {
   assert {
-    condition     = var.auto_stop_idle_minutes == 0 || var.auto_stop_alert_email != null
-    error_message = "auto_stop_idle_minutes is above 0 but auto_stop_alert_email is not set, so long-running and not-reporting alerts have nowhere to go. Set auto_stop_alert_email in terraform.tfvars."
+    condition     = !local.auto_stop_enabled || var.auto_stop_alert_email != null
+    error_message = "Auto-stop is on but auto_stop_alert_email is not set, so the shutdown warning and not-reporting alerts have nowhere to go. Set auto_stop_alert_email in terraform.tfvars."
   }
 }
 
@@ -32,10 +32,9 @@ resource "aws_ssm_parameter" "auto_stop" {
   name  = local.auto_stop_parameter_name
   type  = "String"
   value = jsonencode({
-    enabled            = var.auto_stop_idle_minutes > 0
+    enabled            = local.auto_stop_enabled
     idle_minutes       = var.auto_stop_idle_minutes
-    max_uptime_minutes = var.auto_stop_max_uptime_hours * 60
-    enforce_max_uptime = var.auto_stop_enforce_max_uptime
+    max_uptime_minutes = var.auto_stop_max_uptime_minutes
   })
 }
 
@@ -164,13 +163,12 @@ resource "aws_lambda_function" "auto_stop_watchdog" {
 
   environment {
     variables = {
-      INSTANCE_ID         = aws_instance.ai_lab.id
-      IDLE_MINUTES        = tostring(var.auto_stop_idle_minutes)
-      MAX_UPTIME_HOURS    = tostring(var.auto_stop_max_uptime_hours)
-      ENFORCE_MAX_UPTIME  = tostring(var.auto_stop_enforce_max_uptime)
-      CHECK_MINUTES       = tostring(local.auto_stop_check_minutes)
-      SNS_TOPIC_ARN       = aws_sns_topic.auto_stop[each.key].arn
-      ALB_DIMENSION       = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
+      INSTANCE_ID        = aws_instance.ai_lab.id
+      IDLE_MINUTES       = tostring(var.auto_stop_idle_minutes)
+      MAX_UPTIME_MINUTES = tostring(var.auto_stop_max_uptime_minutes)
+      CHECK_MINUTES      = tostring(local.auto_stop_check_minutes)
+      SNS_TOPIC_ARN      = aws_sns_topic.auto_stop[each.key].arn
+      ALB_DIMENSION      = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
     }
   }
 

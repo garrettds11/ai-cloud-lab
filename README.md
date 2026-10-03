@@ -109,16 +109,16 @@ access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 
 ## Cost Guardrail: Auto-Stop
 
-The lab stops itself when nobody is using it, and the idle timeout never stops
-an instance that has active users. It is on by default. Set
-`auto_stop_idle_minutes = 0` to turn it off. These settings in `terraform.tfvars`
-control it:
+The lab stops itself with two independent controls, each off when set to `0`:
+an idle shutdown that never stops anyone who is active, and a hard time limit that
+stops the instance at a fixed time after boot. Typical use: for a demo, idle `0`
+and limit `90`; for production, idle `60` and limit `0`. These settings in
+`terraform.tfvars` control it:
 
 | Setting | Meaning |
 |---|---|
-| `auto_stop_idle_minutes` | The on/off switch and the idle timeout. `0` turns auto-stop off. `1` to `1440` turns it on and is the minutes of no activity before it stops itself (default 60; the example uses 90) |
-| `auto_stop_max_uptime_hours` | Longest the instance may run after it starts (default 8) |
-| `auto_stop_enforce_max_uptime` | `true` (default): stop at that limit even if people are active, after an email warning 30 minutes earlier. `false`: only email every hour, never stop active users |
+| `auto_stop_idle_minutes` | Idle shutdown. `0` turns it off. `1` to `1440` stops the instance after that many minutes with no active Open WebUI user and no reply being generated (default 60). Active users are never stopped by this |
+| `auto_stop_max_uptime_minutes` | Hard time limit. `0` (default) means none. `15` or more stops the instance that many minutes after it boots, even if people are active, after an email warning shortly before (example: 90) |
 | `auto_stop_alert_email` | Where alerts go; AWS emails a confirmation link to click once |
 
 Changing these updates in place (an SSM parameter and a Lambda setting), so it
@@ -139,18 +139,19 @@ still running.
 idle monitor already reports it idle but it is still running (the shutdown
 failed), or if the monitor has gone silent and the load balancer shows no
 requests for the whole idle window. Otherwise it emails an alert and leaves the
-instance running when the monitor is not reporting. It also backs up the maximum
-uptime: with `auto_stop_enforce_max_uptime = true` it emails a warning 30 minutes
-before the limit and stops the instance just after it if the monitor has not;
-with `false` it only emails every hour once the limit has passed.
+instance running when the monitor is not reporting. It also backs up the hard time
+limit: it emails a warning 30 minutes before the limit (10 minutes for limits under
+an hour) and stops the instance a few minutes after it if the monitor has not.
 
 What to know:
 
-- **The maximum uptime is the hard cap.** With `auto_stop_enforce_max_uptime = true`
-  (the default) the instance stops at `auto_stop_max_uptime_hours` even if people
-  are still chatting, so a demo lab is never left running after the event. Start it
-  again to continue; it gets a fresh limit. For production, set it to `false` so
-  active users are never stopped; you then get an email every hour past the limit.
+- **The hard time limit counts from boot** and includes first-boot setup. At the
+  limit the instance stops even if people are still chatting, so a demo lab is never
+  left running after the event. Start it again to continue; it gets a fresh limit.
+  For production, set `auto_stop_max_uptime_minutes = 0` so active users are never
+  stopped, and use the idle shutdown instead.
+- With both settings at `0` auto-stop is off: nothing stops the instance, and the
+  watchdog, SNS topic and alert email are not needed.
 - The idle monitor publishes `ActiveUsers`, `IdleMinutes`, `UptimeMinutes` and
   `Heartbeat` to CloudWatch (namespace `AILab`). To see what it sees on the
   instance, run `sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check`.

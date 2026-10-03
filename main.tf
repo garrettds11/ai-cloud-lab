@@ -18,11 +18,14 @@ provider "aws" {
   profile = var.aws_profile
 
   default_tags {
-    tags = {
-      Project     = var.project_name
-      Environment = "lab"
-      ManagedBy   = "terraform"
-    }
+    tags = merge(
+      {
+        Project     = var.project_name
+        Environment = "lab"
+        ManagedBy   = "terraform"
+      },
+      var.tags
+    )
   }
 }
 

@@ -16,6 +16,12 @@ variable "project_name" {
   default     = "ollama-open-webui-lab"
 }
 
+variable "tags" {
+  description = "Extra tags applied to every AWS resource, such as Owner or CostCenter. Keys here override the built-in Project, Environment, and ManagedBy tags."
+  type        = map(string)
+  default     = {}
+}
+
 variable "instance_type" {
   description = "EC2 instance type used by the lab."
   type        = string

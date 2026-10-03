@@ -4,6 +4,14 @@ aws_profile = null
 
 project_name = "ollama-open-webui-lab"
 
+# Optional extra tags for every AWS resource. These add to, and can override,
+# the built-in Project, Environment, and ManagedBy tags.
+# tags = {
+#   Environment = "demo"
+#   Owner       = "your-name"
+#   CostCenter  = "ai-lab"
+# }
+
 instance_type    = "c7i.4xlarge"
 root_volume_size = 80
 ollama_model     = "llama3.2:3b"

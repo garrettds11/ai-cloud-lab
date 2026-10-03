@@ -217,17 +217,12 @@ completes, remove the local plan file:
 Remove-Item ai-lab.tfplan
 ```
 
-## 4. Set the unique SSM target
+## 4. Status Check the Open WebUI Server
 
-After apply, capture the instance ID in an environment variable:
+After apply, capture the instance ID in an environment variable to set the SSM target and open a shell:
 
 ```powershell
 $env:instance_id = terraform output -raw instance_id
-```
-
-Use that unique target for the SSM session:
-
-```powershell
 aws ssm start-session --target $env:instance_id
 ```
 
@@ -269,9 +264,12 @@ aws elbv2 describe-target-health `
   --target-group-arn $env:alb_target_group_arn
 ```
 
-The EC2 target should report `healthy`. Then verify:
+The EC2 target should report `healthy`. 
 
-- `https://aiwebdemo.click` loads Open WebUI and accepts the admin and four demo accounts.
+### Verify
+
+- URL loads Open WebUI: https://aiwebdemo.click
+
 - The ALB has no public port 80 (the default). Plain `http://` is not a supported
   application URL; with Cloudflare, **Always Use HTTPS** sends visitors who type
   `http://` to HTTPS at the edge before they reach AWS.
@@ -301,7 +299,7 @@ Before testing, confirm that:
 
 Run these from a browser:
 
-1. In a private window, open `https://aiwebdemo.click`. You must land on the
+1. In a private window, open https://aiwebdemo.click. You must land on the
    Cloudflare Access sign-in page, not the Open WebUI login page.
 2. Sign in with a Cloudflare account whose email is **not** in
    `cloudflare_access_allowed_emails` (or a different identity). Access must
@@ -315,8 +313,12 @@ Run these from a browser:
 6. In the Cloudflare dashboard, confirm SSL/TLS is **Full (strict)** and that
    Security > WAF shows the Free Managed Ruleset enabled.
 
-`curl.exe -I https://aiwebdemo.click` should return a `302` to
+This should return a `302` to
 `cloudflareaccess.com` rather than an Open WebUI page.
+
+```Powershell
+curl.exe -I https://aiwebdemo.click
+```
 
 ### Cognito sign-in test
 
@@ -331,7 +333,7 @@ set them from the same PowerShell window, with `AWS_PROFILE` and
 
 Then, in a private window:
 
-1. Open `https://aiwebdemo.click`. Access must send you straight to the Cognito
+1. Open https://aiwebdemo.click. Access must send you straight to the Cognito
    sign-in page (no login-method choice).
 2. Sign in with `demo1@example.local` and the demo password. You must reach Open
    WebUI.
@@ -373,7 +375,9 @@ aws ssm start-session `
   --parameters "portNumber=8080,localPortNumber=8081"
 ```
 
-Then open `http://localhost:8081`.
+Then open http://localhost:8081.
+
+### Login with the admin and four demo accounts
 
 Initial login credentials:
 

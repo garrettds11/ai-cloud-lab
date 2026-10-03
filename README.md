@@ -12,7 +12,7 @@ The active lab provisions:
 - AWS Systems Manager Session Manager for shell access and port forwarding
 - An IAM instance profile with `AmazonSSMManagedInstanceCore`
 - A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic)
-- Optional public HTTPS access through an Application Load Balancer, ACM, and Route 53
+- Optional public HTTPS access through an Application Load Balancer and ACM, fronted by Cloudflare (DNS, proxy, and Cloudflare Access), or by Route 53 when Cloudflare is disabled
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
@@ -41,17 +41,54 @@ Local model
 
 Ollama listens only on `127.0.0.1:11434`. Open WebUI runs on the instance at `localhost:8080`. The Terraform security group does not expose ports `8080` or `11434` to the public internet. SSH is disabled by default; if enabled, TCP/22 is limited to `var.allowed_ssh_cidr`.
 
-## Optional Domain Access
+## Optional Domain Access And Cloudflare
 
-Set `enable_domain_access = true` only after the public Route 53 hosted zone
-exists and the ACM certificate is issued in the same AWS region. Terraform then
-creates an internet-facing ALB with HTTP-to-HTTPS redirect, an HTTPS listener on
-port 443, an EC2 rule allowing the app port only from the ALB, and a Route 53
-alias record for `domain_name`.
+Cloudflare is a major part of the public-access architecture. With
+`enable_domain_access = true` and `enable_cloudflare_access = true`, traffic
+flows like this:
+
+```text
+User
+  |  HTTPS, Cloudflare edge certificate
+  v
+Cloudflare DNS, proxy, and Cloudflare Access (approved emails only)
+  |  HTTPS, ACM certificate on the ALB (Full (strict))
+  v
+AWS Application Load Balancer
+  |  HTTP 8080, security-group path from the ALB only
+  v
+EC2 instance running Open WebUI and Ollama
+```
+
+Putting Cloudflare in front adds:
+
+- **Authentication before AWS:** only the emails in
+  `cloudflare_access_allowed_emails` get through Cloudflare Access. Everyone
+  else is stopped at Cloudflare's edge.
+- **A hidden origin:** the public hostname resolves to Cloudflare, not to the ALB.
+- **DDoS and bot mitigation, and free edge TLS**, plus optional WAF, rate
+  limiting, and analytics.
+
+Terraform then creates an internet-facing ALB with HTTP-to-HTTPS redirect, an
+HTTPS listener on port 443, an EC2 rule allowing the app port only from the ALB,
+a proxied Cloudflare CNAME for `domain_name` pointing at the ALB, and a
+Cloudflare Access application with an email allow policy.
+
+Set `enable_domain_access = true` only after the ACM certificate is issued in
+the same AWS region. For the Cloudflare path, the domain must also be delegated
+to Cloudflare at the registrar and the Cloudflare zone must be **Active**.
+Without Cloudflare (`enable_cloudflare_access = false`), Terraform creates a
+Route 53 alias record instead and needs a public Route 53 hosted zone.
 
 The project defaults to the issued `aiwebdemo.click` certificate ARN in
 `us-east-1`. Set `acm_certificate_arn` only when intentionally changing the
-certificate.
+certificate. When cloning for another account, replace it or set it to `null`.
+
+A few Cloudflare settings are not managed by Terraform. The most important is
+setting SSL/TLS to **Full (strict)**; **Flexible** causes a redirect loop with
+the ALB's HTTP-to-HTTPS redirect. See
+[cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md)
+for the full prerequisites, security settings, and trade-offs.
 
 The EC2 instance does not receive a public application ingress rule. When domain
 access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
@@ -63,6 +100,7 @@ access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 - AWS Session Manager plugin installed
 - An AWS profile with permission to create EC2, IAM, security group, and EBS resources
 - A default VPC in the selected AWS region, or a Terraform change to use a custom VPC/subnet
+- For public access through Cloudflare: a Cloudflare account with the domain added and **Active**, the domain's nameservers set to Cloudflare at the registrar, an issued ACM certificate, and a scoped Cloudflare API token stored in Secrets Manager (see `cloudflare-and-domain-requirements.md`)
 
 ## Secure Admin Password
 

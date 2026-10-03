@@ -29,7 +29,7 @@ open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:3945667
 open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
 
 # The default configuration creates demo1@example.local through
-# demo4@example.local. Override open_webui_demo_users to change their names
+# demo10@example.local. Override open_webui_demo_users to change their names
 # or email addresses, while keeping between 1 and 25 entries.
 
 # Public HTTPS access through the ALB and Cloudflare.
@@ -97,4 +97,4 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # Production: idle 60 and limit 0, so it stops only when nobody is using it.
 auto_stop_idle_minutes       = 0
 auto_stop_max_uptime_minutes = 90
-auto_stop_alert_email        = "you@example.com" # Replace; AWS sends a confirmation link
+auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link

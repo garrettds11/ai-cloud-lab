@@ -17,9 +17,16 @@ Create the local variables file once:
 
 ```powershell
 Copy-Item terraform.tfvars.example terraform.tfvars
-Copy-Item terraform.tfvars terraform.tfvars.md
+```
+
+Open `terraform.tfvars` in an editor and set your own values, such as the domain name, secret ARNs and the auto-stop timeout.
+
+```VS-Code
+code terraform.tfvars
+```
+
+```Notepad
 notepad terraform.tfvars
-terraform.tfvars.md
 ```
 
 Stop after opening Notepad. Before running any Terraform command, replace each
@@ -217,13 +224,13 @@ Apply completes when EC2 is running, not necessarily when Ollama, the model, and
 
 ### Auto-stop test
 
-`auto_stop_idle_minutes` in `terraform.tfvars` is both the switch (`0` is off) and
-the idle timeout (the example uses 90 for a demo). The idle timeout stops the
-instance only when no Open WebUI user is active and no reply is being generated, so
-test with and without activity. `auto_stop_max_uptime_hours` with
-`auto_stop_enforce_max_uptime = true` is a separate hard cap that stops it even when
-people are active. Changing these settings updates in
-place; it does not replace the instance.
+Auto-stop has two independent settings in `terraform.tfvars`, each off when set to `0`:
+`auto_stop_idle_minutes` stops the instance after that many minutes with no active
+Open WebUI user and no reply being generated, so test it with and without activity.
+`auto_stop_max_uptime_minutes` is a hard time limit that stops the instance that many
+minutes after it boots even when people are active (the example uses 90 for a demo,
+with the idle timeout at `0`). Changing these settings updates in place; it does not
+replace the instance.
 
 1. After first-boot setup finishes and Open WebUI is ready, confirm the monitor
    sees the lab. In the SSM shell:
@@ -253,16 +260,16 @@ window before it stops again. Set the demo value (90) again when you finish
 testing. Click the SNS confirmation link in the `auto_stop_alert_email` inbox so
 alerts are delivered.
 
-5. To test the hard cap, set `auto_stop_max_uptime_hours = 1` and
-   `auto_stop_enforce_max_uptime = true`, apply, and start the instance fresh
-   (stop and start it, since the limit counts from boot). Keep a signed-in tab
-   sending messages. About 30 minutes after boot you must receive the "will stop in
-   about 30 minutes" email, and at about 60 minutes the instance must stop even
-   though you are active. Restore `auto_stop_max_uptime_hours = 8` afterwards.
-6. To test the off switch, set `auto_stop_idle_minutes = 0` and apply. The watchdog,
-   SNS topic and EventBridge rule are removed, and the instance no longer stops itself
-   (`AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check` prints nothing because the
-   monitor exits when disabled).
+5. To test the hard time limit, set `auto_stop_idle_minutes = 0` and
+   `auto_stop_max_uptime_minutes = 20`, apply, and start the instance fresh (stop and
+   start it, since the limit counts from boot). Keep a signed-in tab sending messages.
+   About 10 minutes after boot you must receive the "will stop in about 10 minutes"
+   email, and at 20 minutes the instance must stop even though you are active. For the
+   demo value, use `auto_stop_max_uptime_minutes = 90` (the warning comes 30 minutes
+   before it).
+6. To test the off switch, set both `auto_stop_idle_minutes = 0` and
+   `auto_stop_max_uptime_minutes = 0` and apply. The watchdog, SNS topic and
+   EventBridge rule are removed, and nothing stops the instance.
 
 The plan file can contain sensitive values. Do not commit it. After the apply
 completes, remove the local plan file:

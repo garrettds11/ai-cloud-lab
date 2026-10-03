@@ -24,7 +24,7 @@ read_secret_value() {
     # a one-property JSON object. Plaintext SecretString values remain valid.
     if printf '%s' "$secret_string" | jq -e 'type == "object"' >/dev/null 2>&1; then
         printf '%s' "$secret_string" |
-            jq -er 'if length == 1 and (.[].value | type) == "string" then .[].value else error("secret object must contain exactly one string value") end'
+            jq -er 'if length == 1 and (.[] | type) == "string" then .[] else error("secret object must contain exactly one string value") end'
         return
     fi
 

@@ -18,7 +18,7 @@ provider "aws" {
   profile = var.aws_profile
 
   default_tags {
-    tags = merge({ Project = var.project_name }, var.tags)
+    tags = var.tags
   }
 }
 

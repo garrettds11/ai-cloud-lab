@@ -17,7 +17,7 @@ variable "project_name" {
 }
 
 variable "tags" {
-  description = "Tags applied to every AWS resource. Setting this in terraform.tfvars replaces these defaults entirely, so list every tag you want. The Project tag always comes from project_name unless you set Project here. Each resource's Name tag is derived from project_name."
+  description = "Tags applied to every AWS resource. Setting this in terraform.tfvars replaces these defaults entirely, so list every tag you want, including any project or owner tag your organization uses. Each resource's Name tag is derived from project_name."
   type        = map(string)
   default = {
     Environment = "lab"

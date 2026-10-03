@@ -4,15 +4,15 @@ aws_profile = null
 
 project_name = "ollama-open-webui-lab"
 
-# AWS tags for every resource. Uncommenting this REPLACES the defaults shown
-# below, so list every tag you want. Project always comes from project_name
-# unless you set it here. Each resource's Name tag is derived from project_name.
+# AWS tags applied to every resource. Uncommenting this REPLACES the defaults
+# (Environment, ManagedBy, Application), so list every tag you want. Use your own
+# tag keys, such as the project tag your other AWS resources already carry.
+# Each resource's Name tag is derived from project_name, not from this map.
 # tags = {
+#   project     = "aiwebdemo"
 #   Environment = "lab"
 #   ManagedBy   = "terraform"
 #   Application = "Open-WebUI-Ollama"
-#   Owner       = "your-name"
-#   CostCenter  = "ai-lab"
 # }
 
 instance_type    = "c7i.4xlarge"

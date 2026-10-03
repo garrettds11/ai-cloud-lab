@@ -234,6 +234,48 @@ variable "cloudflare_access_session_duration" {
   }
 }
 
+variable "enable_cognito" {
+  description = "Whether to create an Amazon Cognito user pool for the lab users and use it as the sign-in for both Cloudflare Access and Open WebUI. Requires enable_domain_access, and cloudflare_access_team_domain when enable_cloudflare_access is true."
+  type        = bool
+  default     = false
+}
+
+variable "cognito_domain_prefix" {
+  description = "Globally unique prefix for the Cognito hosted sign-in domain (<prefix>.auth.<region>.amazoncognito.com). Required when enable_cognito is true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cognito_domain_prefix == null || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.cognito_domain_prefix))
+    error_message = "cognito_domain_prefix must be lowercase letters, numbers, and hyphens, and must not start or end with a hyphen."
+  }
+
+  validation {
+    condition     = var.cognito_domain_prefix == null || !can(regex("aws|amazon|cognito", var.cognito_domain_prefix))
+    error_message = "cognito_domain_prefix must not contain the reserved words aws, amazon, or cognito."
+  }
+}
+
+variable "cognito_extra_users" {
+  description = "Additional Cognito users beyond open_webui_demo_users, such as administrators. Each object contains an email and display name."
+  type = list(object({
+    email = string
+    name  = string
+  }))
+  default = []
+}
+
+variable "cloudflare_access_team_domain" {
+  description = "Your Cloudflare Zero Trust team domain, such as example-team.cloudflareaccess.com (shown on the Access login page). Used for the Cognito callback URL when enable_cognito and enable_cloudflare_access are both true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cloudflare_access_team_domain == null || can(regex("^[a-z0-9-]+\\.cloudflareaccess\\.com$", var.cloudflare_access_team_domain))
+    error_message = "cloudflare_access_team_domain must look like example-team.cloudflareaccess.com."
+  }
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

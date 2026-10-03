@@ -278,6 +278,33 @@ wait_for_ollama
 # Pull requested model.
 HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
 
+# Optional Cognito single sign-on for Open WebUI. The app client secret is read
+# from Cognito through the instance role, so it is never in user-data.
+oauth_args=()
+if [[ "${open_webui_oidc_enabled}" == "true" ]]; then
+    cognito_client_secret="$(aws cognito-idp describe-user-pool-client \
+        --user-pool-id '${cognito_user_pool_id}' \
+        --client-id '${cognito_client_id}' \
+        --query 'UserPoolClient.ClientSecret' \
+        --output text \
+        --region '${aws_region}')"
+
+    if [[ -z "$cognito_client_secret" || "$cognito_client_secret" == "None" ]]; then
+        echo "Could not read the Cognito app client secret."
+        exit 1
+    fi
+
+    oauth_args=(
+        -e OAUTH_CLIENT_ID='${cognito_client_id}'
+        -e OAUTH_CLIENT_SECRET="$cognito_client_secret"
+        -e OPENID_PROVIDER_URL='https://cognito-idp.${aws_region}.amazonaws.com/${cognito_user_pool_id}/.well-known/openid-configuration'
+        -e OPENID_REDIRECT_URI='${open_webui_url}/oauth/oidc/callback'
+        -e OAUTH_PROVIDER_NAME='Cognito'
+        -e OAUTH_SCOPES='openid email profile'
+        -e OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true
+    )
+fi
+
 docker volume create "${open_webui_docker_volume}"
 docker pull "${open_webui_container_image}"
 docker rm -f "${open_webui_container_name}" 2>/dev/null || true
@@ -293,11 +320,12 @@ docker run -d \
     -e ENABLE_LOGIN_FORM=true \
     -e ENABLE_PASSWORD_AUTH=true \
     -e ENABLE_SIGNUP=false \
-    -e ENABLE_OAUTH_SIGNUP=false \
+    -e ENABLE_OAUTH_SIGNUP="${open_webui_oidc_enabled}" \
     -e ENABLE_OPENAI_API=false \
     -e WEBUI_ADMIN_EMAIL="${open_webui_admin_email}" \
     -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \
     -e WEBUI_ADMIN_PASSWORD="$open_webui_admin_password" \
+    "$${oauth_args[@]}" \
     "${open_webui_container_image}"
 
 wait_for_open_webui

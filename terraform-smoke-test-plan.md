@@ -318,6 +318,27 @@ Run these from a browser:
 `curl.exe -I https://aiwebdemo.click` should return a `302` to
 `cloudflareaccess.com` rather than an Open WebUI page.
 
+### Cognito sign-in test
+
+Skip this section unless `enable_cognito` is `true` in `terraform.tfvars`.
+Terraform creates the Cognito users without passwords. After `apply` completes,
+set them from the same PowerShell window, with `AWS_PROFILE` and
+`AWS_DEFAULT_REGION` already set:
+
+```powershell
+.\scripts\set-cognito-passwords.ps1
+```
+
+Then, in a private window:
+
+1. Open `https://aiwebdemo.click`. Access must send you straight to the Cognito
+   sign-in page (no login-method choice).
+2. Sign in with `demo1@example.local` and the demo password. You must reach Open
+   WebUI.
+3. If Open WebUI shows its own login page, choose **Continue with Cognito**. It
+   must sign you in as the matching Open WebUI account without asking for a password.
+4. Sign in as a user who is not in the Cognito pool. Access must deny it.
+
 ### SSM-only test
 
 For an SSM-only run, set the mode explicitly before planning so a stale domain

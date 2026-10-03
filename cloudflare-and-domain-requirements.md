@@ -157,7 +157,7 @@ The administrator needs:
 6. The email addresses allowed through the Cloudflare Access application.
 7. Cloudflare Zero Trust (Access) enabled for the account before applying the Access resource.
 
-The API token should be limited to this account and zone, with an expiry date. The Terraform resources in this project need permission to read the zone, edit its DNS records, and edit Access applications and policies: **Zone: Zone Read**, **Zone: DNS Edit**, and **Account: Access: Apps and Policies Edit**.
+The API token should be limited to this account and zone, with an expiry date. The Terraform resources in this project need permission to read the zone, edit its DNS records, and edit Access applications and policies: **Zone: Zone Read**, **Zone: DNS Edit**, and **Account: Access: Apps and Policies Edit**. If you enable Cognito (below), the token also needs **Account: Access: Organizations, Identity Providers, and Groups Edit** so Terraform can add the Cognito login method.
 
 The token itself must not be committed to the repository. In this project it is stored in AWS Secrets Manager and retrieved by the PowerShell Terraform wrapper into the temporary `CLOUDFLARE_API_TOKEN` environment variable.
 
@@ -217,6 +217,43 @@ Do these in the Cloudflare dashboard after the zone is **Active**. They are list
 6. **Publish email protections even though the domain sends no mail.** This stops others from spoofing the domain: a null MX record (`0 .`), an SPF record of `v=spf1 -all`, and a DMARC record such as `v=DMARC1; p=reject`.
 7. **Consider DNSSEC.** Enable it in Cloudflare and add the DS record at the registrar, if the registrar supports it for the domain's TLD.
 8. **Protect the accounts.** Use two-factor authentication on the Cloudflare account and on the AWS and registrar accounts. Keep the API token scoped, set an expiry, and rotate the Secrets Manager copy when it changes. Keep the registrar's transfer lock on.
+
+## Optional: Amazon Cognito sign-in
+
+Set `enable_cognito = true` to use an Amazon Cognito user pool as the user
+directory for both Cloudflare Access and Open WebUI. Without it, Access uses the
+login methods already configured in your Zero Trust organization (for example
+One-time PIN or the Cloudflare login) and Open WebUI uses its local accounts.
+
+With Cognito enabled, Terraform creates:
+
+- A Cognito user pool with no self-service sign-up, a hosted sign-in domain
+  (`cognito_domain_prefix`), and one app client used by Cloudflare and Open WebUI.
+- A Cognito user for each of the four `open_webui_demo_users` plus any
+  `cognito_extra_users`. They are created without passwords and with the email
+  marked verified, so no email is sent. Run `scripts/set-cognito-passwords.ps1`
+  after `apply` to set each password from your existing demo-user password secret.
+- A Cloudflare Access login method of type OpenID Connect that points at the pool.
+  The Access application offers only this login method and sends visitors straight
+  to it. The Access policy allows the emails of the Cognito users.
+- Open WebUI single sign-on through the same pool. The container reads the app
+  client secret from Cognito at boot through the instance role, so the secret is
+  not in user-data. Existing local demo accounts with the same email are merged
+  with the Cognito sign-in. The Open WebUI password form stays enabled so the
+  local administrator account still works.
+
+Requirements and cautions:
+
+- Set `cloudflare_access_team_domain` to the host shown on the Access login page
+  (for example `your-team.cloudflareaccess.com`). Terraform adds
+  `https://<team domain>/cdn-cgi/access/callback` as a Cognito callback URL.
+- `cognito_domain_prefix` must be unique within the AWS region.
+- The app client secret is stored in Terraform state, as is the Cloudflare login
+  method that uses it. Keep the state file private.
+- Add yourself with `cognito_extra_users` if you are not one of the demo users;
+  otherwise Access will not let your own email through.
+- Cognito users with `example.local` addresses cannot receive mail, so password
+  resets are administrator-only by design.
 
 ## Can the providers be swapped?
 

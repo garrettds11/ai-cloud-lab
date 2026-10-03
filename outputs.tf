@@ -64,3 +64,18 @@ output "ssm_shell_command" {
     aws ssm start-session --target ${aws_instance.ai_lab.id} --region ${var.aws_region}${local.aws_cli_profile_arg}
   EOT
 }
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool ID when enable_cognito is true."
+  value       = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : null
+}
+
+output "cognito_hosted_login_domain" {
+  description = "Cognito hosted sign-in domain when enable_cognito is true."
+  value       = var.enable_cognito ? "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com" : null
+}
+
+output "cognito_user_emails" {
+  description = "Emails of the Cognito users Terraform creates. Used by scripts/set-cognito-passwords.ps1."
+  value       = var.enable_cognito ? sort(keys(local.cognito_users)) : []
+}

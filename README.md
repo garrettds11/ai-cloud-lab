@@ -89,6 +89,12 @@ Cloudflare API token in `CLOUDFLARE_API_TOKEN`. Run them through the wrapper in
 [terraform-smoke-test-plan.md](terraform-smoke-test-plan.md) rather than plain
 `terraform`, or they fail with `403 Missing X-Auth-Email header`.
 
+Set `enable_cognito = true` to use an Amazon Cognito user pool as the sign-in for
+both Cloudflare Access and Open WebUI; see the Cognito section of
+[cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
+After `apply`, run `scripts/set-cognito-passwords.ps1` once to set the user
+passwords from Secrets Manager.
+
 A few Cloudflare settings are not managed by Terraform. The most important is
 setting SSL/TLS to **Full (strict)**; **Flexible** makes Cloudflare connect over
 HTTP port 80, which the ALB does not open, so visitors get 522 errors. See

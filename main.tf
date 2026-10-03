@@ -30,6 +30,13 @@ locals {
   route53_resources       = var.enable_domain_access && !var.enable_cloudflare_access ? { domain = true } : {}
   cloudflare_resources    = var.enable_cloudflare_access ? { domain = true } : {}
   http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
+  cognito_resources       = var.enable_cognito ? { domain = true } : {}
+  cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
+  cognito_users           = { for user in concat(var.open_webui_demo_users, var.cognito_extra_users) : user.email => user }
+  access_allowed_emails = var.enable_cognito ? toset(concat(
+    tolist(var.cloudflare_access_allowed_emails),
+    [for user in values(local.cognito_users) : user.email]
+  )) : var.cloudflare_access_allowed_emails
   domain_certificate_arn = var.acm_certificate_arn != null ? var.acm_certificate_arn : (
     var.enable_domain_access ? data.aws_acm_certificate.domain[0].arn : null
   )
@@ -223,6 +230,9 @@ resource "aws_instance" "ai_lab" {
     open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
     open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
     open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
+    open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
+    cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
+    cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
     open_webui_container_image           = var.open_webui_container_image
     open_webui_container_name            = var.open_webui_container_name
     open_webui_host_port                 = var.open_webui_host_port
@@ -251,7 +261,7 @@ resource "aws_instance" "ai_lab" {
         var.enable_domain_access &&
         var.cloudflare_account_id != null &&
         var.cloudflare_api_token_secret_arn != null &&
-        length(var.cloudflare_access_allowed_emails) > 0
+        length(local.access_allowed_emails) > 0
       )
       error_message = "Cloudflare access requires enable_domain_access, cloudflare_account_id, cloudflare_api_token_secret_arn, and at least one allowed email."
     }
@@ -269,7 +279,9 @@ resource "aws_instance" "ai_lab" {
 
   depends_on = [
     aws_iam_role_policy_attachment.ssm,
-    aws_iam_role_policy.open_webui_admin_password
+    aws_iam_role_policy.open_webui_admin_password,
+    aws_iam_role_policy.cognito_client,
+    aws_cognito_user_pool_domain.lab
   ]
 }
 
@@ -405,11 +417,17 @@ resource "cloudflare_zero_trust_access_application" "domain" {
   type             = "self_hosted"
   session_duration = var.cloudflare_access_session_duration
 
+  # With Cognito enabled, only the Cognito login method is offered and users go
+  # straight to it. Otherwise Access uses whatever login methods your Zero Trust
+  # organization has configured.
+  allowed_idps              = var.enable_cognito ? [cloudflare_zero_trust_access_identity_provider.cognito["domain"].id] : null
+  auto_redirect_to_identity = var.enable_cognito
+
   policies = [{
     name       = "Allow approved Open WebUI users"
     decision   = "allow"
     precedence = 1
-    include = [for email in var.cloudflare_access_allowed_emails : {
+    include = [for email in local.access_allowed_emails : {
       email = { email = email }
     }]
   }]

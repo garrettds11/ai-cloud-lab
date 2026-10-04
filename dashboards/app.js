@@ -117,6 +117,9 @@
   };
 
   let pollTimer = null;
+  // Instances just started from this page. EC2 can still report "stopped" for a moment after
+  // a start is accepted, so for 30 seconds a stopped answer is shown as starting.
+  const pendingStarts = new Map();
 
   // ---- feedback: toasts, live region, dialog, focus -----------------------------------
 
@@ -474,6 +477,11 @@
     try {
       const list = await API.listInstances();
       if (session !== state.session) return;
+      list.forEach((i) => {
+        const at = pendingStarts.get(i.id);
+        if (at === undefined) return;
+        if (i.phase === 'stopped' && Date.now() - at < 30000) i.phase = 'pending'; else pendingStarts.delete(i.id);
+      });
       detectTransitions(list);
       state.instances = list;
       state.instError = null;
@@ -498,8 +506,10 @@
     try {
       announce('Starting ' + inst.name);
       await API.startInstance(inst.id);
+      pendingStarts.set(inst.id, Date.now());
       await loadInstances();
     } catch (err) {
+      if (err.status === 409) { loadInstances(); return; } // already starting: the page was out of date
       toast(err.message, 'error');
       announce(err.message);
     }

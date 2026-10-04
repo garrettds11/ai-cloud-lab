@@ -30,3 +30,17 @@ resource "aws_cognito_user_pool_client" "control_panel" {
   callback_urls = ["${var.control_panel_url}/"]
   logout_urls   = ["${var.control_panel_url}/"]
 }
+
+# Sign-in page look for the control panel client. Customizations are per app client, so
+# this is separate from the lab's. Neutral AI Cloud Lab logo and the panel's colors; see
+# branding/README.md.
+resource "aws_cognito_user_pool_ui_customization" "control_panel" {
+  for_each = local.control_panel_resources
+
+  user_pool_id = aws_cognito_user_pool.lab["domain"].id
+  client_id    = aws_cognito_user_pool_client.control_panel[each.key].id
+  css          = file("${path.module}/branding/cognito-panel.css")
+  image_file   = filebase64("${path.module}/branding/logo-panel.png")
+
+  depends_on = [aws_cognito_user_pool_domain.lab]
+}

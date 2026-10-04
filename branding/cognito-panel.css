@@ -1,0 +1,31 @@
+/* Cognito hosted UI (classic) styling for the control panel client. Matches the panel's
+   colors. Only a fixed set of classes and properties is accepted, and the file must
+   stay under 3 KB. Text cannot be changed here. */
+.logo-customizable {
+  max-width: 60%;
+  max-height: 80px;
+}
+
+.banner-customizable {
+  padding: 20px 0;
+  background-color: #1f5ae0;
+}
+
+.background-customizable {
+  background-color: #1a1d21;
+}
+
+.submitButton-customizable {
+  background-color: #2f6df0;
+  border-color: #2f6df0;
+  color: #ffffff;
+}
+
+.submitButton-customizable:hover {
+  background-color: #4a82f5;
+  border-color: #4a82f5;
+}
+
+.inputField-customizable:focus {
+  border-color: #2f6df0;
+}

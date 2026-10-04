@@ -7,7 +7,7 @@
 # says it has no sign-in settings until a lab is applied again.
 #
 # The cache clearing runs the AWS CLI through PowerShell, with the credentials Terraform
-# already uses.
+# already uses: the aws_profile variable, or the default credentials when it is null.
 
 locals {
   control_panel_site = (
@@ -55,9 +55,10 @@ resource "terraform_data" "control_panel_config_cache" {
 
   provisioner "local-exec" {
     interpreter = ["PowerShell", "-NoProfile", "-Command"]
-    command     = "aws cloudfront create-invalidation --distribution-id $env:PANEL_DISTRIBUTION_ID --paths /config.js | Out-Null; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+    command     = "$p = @(); if ($env:PANEL_PROFILE) { $p = @('--profile', $env:PANEL_PROFILE) }; aws cloudfront create-invalidation @p --distribution-id $env:PANEL_DISTRIBUTION_ID --paths /config.js | Out-Null; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
     environment = {
       PANEL_DISTRIBUTION_ID = var.control_panel_distribution_id
+      PANEL_PROFILE         = var.aws_profile != null ? var.aws_profile : ""
     }
   }
 }

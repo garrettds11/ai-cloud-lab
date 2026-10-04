@@ -6,7 +6,8 @@
 # issuer and audience: to the lab's pool on apply, back to the holding pool on destroy.
 # It never creates or deletes the authorizer, so the routes keep working across lab rebuilds.
 #
-# It runs the AWS CLI through PowerShell, with the credentials Terraform already uses.
+# It runs the AWS CLI through PowerShell, with the same aws_profile Terraform uses (the
+# default credentials when aws_profile is null).
 
 locals {
   control_panel_authorizer = (
@@ -22,6 +23,7 @@ resource "terraform_data" "control_panel_authorizer" {
 
   input = {
     region        = var.aws_region
+    profile       = var.aws_profile != null ? var.aws_profile : ""
     api_id        = var.control_panel_api_id
     authorizer_id = var.control_panel_authorizer_id
     issuer        = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.lab["domain"].id}"
@@ -36,9 +38,10 @@ resource "terraform_data" "control_panel_authorizer" {
 
   provisioner "local-exec" {
     interpreter = ["PowerShell", "-NoProfile", "-Command"]
-    command     = "aws apigatewayv2 update-authorizer --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration \"Issuer=$env:PANEL_ISSUER,Audience=$env:PANEL_AUDIENCE\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+    command     = "$p = @(); if ($env:PANEL_PROFILE) { $p = @('--profile', $env:PANEL_PROFILE) }; aws apigatewayv2 update-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration \"Issuer=$env:PANEL_ISSUER,Audience=$env:PANEL_AUDIENCE\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
     environment = {
       PANEL_REGION        = self.input.region
+      PANEL_PROFILE       = self.input.profile
       PANEL_API_ID        = self.input.api_id
       PANEL_AUTHORIZER_ID = self.input.authorizer_id
       PANEL_ISSUER        = self.input.issuer
@@ -50,9 +53,10 @@ resource "terraform_data" "control_panel_authorizer" {
     when        = destroy
     on_failure  = continue
     interpreter = ["PowerShell", "-NoProfile", "-Command"]
-    command     = "aws apigatewayv2 update-authorizer --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration \"Issuer=$env:PANEL_ISSUER,Audience=holding-unused\""
+    command     = "$p = @(); if ($env:PANEL_PROFILE) { $p = @('--profile', $env:PANEL_PROFILE) }; aws apigatewayv2 update-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration \"Issuer=$env:PANEL_ISSUER,Audience=holding-unused\""
     environment = {
       PANEL_REGION        = self.input.region
+      PANEL_PROFILE       = self.input.profile
       PANEL_API_ID        = self.input.api_id
       PANEL_AUTHORIZER_ID = self.input.authorizer_id
       PANEL_ISSUER        = self.input.holding

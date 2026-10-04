@@ -36,8 +36,8 @@ body {
   background: var(--content);
   color: var(--text);
   font: 14px/1.45 var(--font);
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
@@ -129,7 +129,7 @@ a { color: var(--link); }
 
 /* ---- shell ---------------------------------------------------------------------- */
 
-.shell { display: grid; grid-template-columns: 224px 1fr; min-height: 0; }
+.shell { display: grid; grid-template-columns: 224px 1fr; min-height: 0; flex: 1 1 auto; }
 
 .sidebar { background: var(--side); padding: 12px 0; border-right: 1px solid #000; }
 .nav { list-style: none; margin: 0; padding: 0; }
@@ -393,6 +393,7 @@ input[type="checkbox"]:disabled { cursor: not-allowed; opacity: .5; }
 /* ---- status bar ------------------------------------------------------------------- */
 
 .statusbar {
+  flex: none;
   display: flex; align-items: stretch; gap: 20px;
   height: 28px; background: var(--status); border-top: 1px solid #000;
   color: var(--text-2); font-size: 12.5px;

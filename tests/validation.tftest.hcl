@@ -2,11 +2,11 @@
 # network exposure. Providers are mocked, so no AWS or Cloudflare credentials, and no
 # network access, are needed. Run from the repository root:
 #
-#   terraform init -backend=false
-#   terraform test
+#   Invoke-TerraformWithCloudflareToken -Arguments @('init', '-backend=false')
+#   Invoke-TerraformWithCloudflareToken -Arguments @('test')
 #
 # Requires Terraform 1.7 or later (mock_provider). A local terraform.tfvars is still
-# loaded by terraform test, so the variables block below pins every setting the tests
+# loaded by the test command, so the variables block below pins every setting the tests
 # depend on; values in the test file take precedence over terraform.tfvars.
 
 mock_provider "aws" {

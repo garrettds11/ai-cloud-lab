@@ -46,7 +46,7 @@ grafana_otlp_instance_id       = "<your OTLP instance ID>"
 grafana_credentials_secret_arn = "<the secret's ARN>"
 ```
 
-Because telemetry is on by default, `terraform plan` fails with a clear message until those three values are set. Then run `plan` and `apply` as usual. The instance is replaced (about 3 minutes). The instance role gets read access to that one secret and nothing else is widened. To run without telemetry, set `enable_grafana_telemetry = false` instead.
+Because telemetry is on by default, `plan` fails with a clear message until those three values are set. Then run `plan` and `apply` as usual, through `Invoke-TerraformWithCloudflareToken`. The instance is replaced (about 3 minutes). The instance role gets read access to that one secret and nothing else is widened. To run without telemetry, set `enable_grafana_telemetry = false` instead.
 
 ## Check that it works
 
@@ -70,8 +70,8 @@ Retention is set by your Grafana Cloud plan, not by this repository. Check it un
 
 ## Teardown
 
-`terraform destroy` removes the instance, so collection stops. These remain until you delete them: the Secrets Manager secret, the Grafana access policy token, and the data already stored in Grafana Cloud. Delete the secret and revoke the token when you no longer need them.
+`destroy` (run through `Invoke-TerraformWithCloudflareToken`) removes the instance, so collection stops. These remain until you delete them: the Secrets Manager secret, the Grafana access policy token, and the data already stored in Grafana Cloud. Delete the secret and revoke the token when you no longer need them.
 
 ## Rotating the token
 
-Create a new token, update the secret's value, then replace the instance (for example `terraform apply -replace=aws_instance.ai_lab`). The instance reads the secret only at boot.
+Create a new token, update the secret's value, then replace the instance (for example `Invoke-TerraformWithCloudflareToken -Arguments @('apply', '-replace=aws_instance.ai_lab')`). The instance reads the secret only at boot.

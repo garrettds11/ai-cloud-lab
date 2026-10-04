@@ -60,4 +60,3 @@ aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://$bucket" --exclude "*.md" --
 aws cloudfront create-invalidation --distribution-id <distribution id> --paths "/*"
 ```
 
-Before this goes live, `mock-api.js` is replaced by a module that calls the Control API (see README).

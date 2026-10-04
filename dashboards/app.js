@@ -1,13 +1,13 @@
 /*
- * AI Cloud Lab dashboard: one page, four views (Instances, Logins, Logs, User management).
- * Plain JavaScript, no build step. All data comes from window.MockApi (mock-api.js).
- * To wire this to the real Control API, replace mock-api.js with a module that exposes the
- * same calls; nothing else in this file needs to change.
+ * AI Cloud Lab control panel: one page, four views (Instances, Logins, Logs, User management).
+ * Plain JavaScript, no build step. All data comes from window.Api (api.js), which signs the
+ * user in with Cognito and calls the Control API. This file holds no permissions of its own:
+ * it shows what the API returns, and the API checks every rule again.
  */
 (function () {
   'use strict';
 
-  const API = window.MockApi;
+  const API = window.Api;
   const MIN = 60 * 1000;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const $ = (selector, root) => (root || document).querySelector(selector);
@@ -173,7 +173,8 @@
       h('span', { class: 'avatar', 'aria-hidden': 'true', text: initials }),
       h('span', { class: 'who' },
         h('span', { class: 'who-name', text: s.name }),
-        h('span', { class: 'who-time', text: 'Signed in ' + fmt.time(s.signedInAt) })));
+        h('span', { class: 'who-time', text: 'Signed in ' + fmt.time(s.signedInAt) })),
+      h('button', { type: 'button', class: 'signout', onClick: () => API.signOut(), text: 'Sign out' }));
   }
 
   function renderNav() {
@@ -469,7 +470,7 @@
   async function loadInstances() {
     const session = state.session;
     try {
-      const list = await API.listInstances(session);
+      const list = await API.listInstances();
       if (session !== state.session) return;
       detectTransitions(list);
       state.instances = list;
@@ -494,7 +495,7 @@
   async function onStart(inst) {
     try {
       announce('Starting ' + inst.name);
-      await API.startInstance(state.session, inst.id);
+      await API.startInstance(inst.id);
       await loadInstances();
     } catch (err) {
       toast(err.message, 'error');
@@ -547,7 +548,7 @@
   async function loadLogins() {
     const session = state.session;
     try {
-      const list = await API.listLogins(session);
+      const list = await API.listLogins();
       if (session !== state.session) return;
       state.logins = list;
       state.loginsError = null;
@@ -617,7 +618,7 @@
   async function loadLogs() {
     const session = state.session;
     try {
-      const list = await API.listLogs(session, state.logFilters);
+      const list = await API.listLogs(state.logFilters);
       if (session !== state.session) return;
       state.logs = list;
       state.logsError = null;
@@ -762,7 +763,7 @@
     um().saved = new Set();
     paintUM();
     try {
-      const granted = await API.getGrants(state.session, id);
+      const granted = await API.getGrants(id);
       if (um().selectedId !== id) return;
       um().saved = new Set(granted);
       um().error = null;
@@ -811,13 +812,13 @@
     });
     if (!ok) return;
     try {
-      await API.saveUserChanges(state.session, user.id, { groups: groupChanges, grants: changes });
-      um().users = await API.listUsers(state.session);
-      const granted = await API.getGrants(state.session, user.id);
+      await API.saveUserChanges(user.id, { groups: groupChanges, grants: changes });
+      um().users = await API.listUsers();
+      const granted = await API.getGrants(user.id);
       um().saved = new Set(granted);
       um().staged = new Map();
       um().stagedGroups = new Map();
-      um().changes = await API.listChanges(state.session);
+      um().changes = await API.listChanges();
       toast('Saved ' + total + ' change' + (total === 1 ? '' : 's') + ' for ' + user.name, 'ok');
       announce('Saved ' + total + ' change' + (total === 1 ? '' : 's') + ' for ' + user.name);
     } catch (err) {
@@ -962,7 +963,7 @@
       h('div', { id: 'um-changes' }));
     const session = state.session;
     try {
-      const [users, instances, changes] = await Promise.all([API.listUsers(session), API.listAllInstances(session), API.listChanges(session)]);
+      const [users, instances, changes] = await Promise.all([API.listUsers(), API.listAllInstances(), API.listChanges()]);
       if (session !== state.session) return;
       um().users = users;
       um().instances = instances;
@@ -993,42 +994,33 @@
     if (moveFocus) { const title = $('#page-title'); if (title) title.focus(); }
   }
 
-  async function signInAs(userId) {
+  function openSession(session) {
     clearTimeout(pollTimer);
-    state.session = await API.signIn(userId);
-    try { localStorage.setItem('dashboard.demoUser', userId); } catch (err) { /* private mode: fine */ }
+    state.session = session;
     state.instances = null; state.instError = null;
     state.logins = null; state.logs = null;
     state.expanded = new Set();
     state.phases = new Map();
     state.um = freshUM();
     renderUserChip();
-    $('#demo-user').value = userId;
-    announce('Signed in as ' + state.session.name);
+    announce('Signed in as ' + session.name);
     route(false);
   }
 
-  async function initDemoControls() {
-    const people = API.listDemoUsers();
-    const select = $('#demo-user');
-    select.replaceChildren(...people.map((u) => h('option', { value: u.id, text: u.name + ', ' + roleLabel(u.groups) })));
-    select.addEventListener('change', () => signInAs(select.value));
-    $('#demo-scenario').addEventListener('change', (e) => {
-      API.setScenario(e.target.value);
-      if (state.route === 'instances') loadInstances();
-    });
-    $('#demo-advance').addEventListener('click', () => {
-      API.advance(10);
-      toast('Mock clock moved forward 10 minutes.');
-      if (state.route === 'instances') loadInstances();
-      if (state.route === 'logs') loadLogs();
-    });
-    $('#demo-reset').addEventListener('click', () => {
-      API.reset();
-      $('#demo-scenario').value = 'normal';
-      signInAs(state.session.userId);
-      toast('Demo reset.');
-    });
+  // Shown instead of the page when it cannot sign in or has no settings.
+  function showFatal(message, canRetry) {
+    clearTimeout(pollTimer);
+    $('#nav').replaceChildren();
+    $('#main').replaceChildren(
+      h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Control panel' }),
+      h('div', { class: 'error-box', role: 'alert' }, icon('error'), h('span', { text: message })),
+      canRetry ? h('p', null, h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => location.reload(), text: 'Try again' })) : null);
+  }
+
+  function paintApiStatus(ok) {
+    const box = $('#api-status');
+    box.className = ok ? 'status-ok' : 'status-bad';
+    $('#api-status-text').textContent = ok ? 'Control API connected' : 'Control API unreachable';
   }
 
   async function boot() {
@@ -1037,11 +1029,15 @@
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#global-search').focus(); }
     });
     window.addEventListener('hashchange', () => route(true));
-    await initDemoControls();
-    let first = 'u1';
-    try { first = localStorage.getItem('dashboard.demoUser') || first; } catch (err) { /* ignore */ }
-    await signInAs(first);
-    renderNav();
+    window.addEventListener('api-status', (e) => paintApiStatus(e.detail.ok));
+    $('#region').textContent = API.region() || 'unknown';
+    const problem = API.configProblem();
+    if (problem) { showFatal(problem, false); return; }
+    try {
+      openSession(await API.start());
+    } catch (err) {
+      showFatal(err.message, true);
+    }
   }
 
   boot();

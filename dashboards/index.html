@@ -22,20 +22,6 @@
     <div id="userchip" class="userchip" role="group" aria-label="Not signed in"></div>
   </header>
 
-  <div class="demo" role="region" aria-label="Demo controls">
-    <strong>MOCK DATA</strong>
-    <span>Nothing here talks to AWS.</span>
-    <label>Sign in as <select id="demo-user"></select></label>
-    <label>Auto-stop view <select id="demo-scenario">
-      <option value="normal">Normal</option>
-      <option value="off">Auto-stop is off</option>
-      <option value="silent">Idle monitor silent</option>
-      <option value="unknown">Activity unknown</option>
-    </select></label>
-    <button id="demo-advance" type="button">Move clock +10 min</button>
-    <button id="demo-reset" type="button">Reset demo</button>
-  </div>
-
   <div class="shell">
     <nav class="sidebar" aria-label="Main">
       <ul class="nav" id="nav"></ul>
@@ -46,16 +32,16 @@
   </div>
 
   <footer class="statusbar">
-    <div class="status-ok"><span class="dot" aria-hidden="true"></span><span>Control API connected (mock)</span></div>
-    <div>Region us-east-1</div>
-    <div class="push"><span id="last-updated">Not loaded yet</span><span>Mock v0.1</span></div>
+    <div id="api-status" class="status-wait"><span class="dot" aria-hidden="true"></span><span id="api-status-text">Connecting to the Control API</span></div>
+    <div>Region <span id="region"></span></div>
+    <div class="push"><span id="last-updated">Not loaded yet</span></div>
   </footer>
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
   <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <script src="config.js"></script>
-  <script src="mock-api.js"></script>
+  <script src="api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

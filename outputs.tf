@@ -89,3 +89,15 @@ output "cognito_user_emails" {
   description = "Emails of the Cognito users Terraform creates. Used by scripts/set-cognito-passwords.ps1."
   value       = var.enable_cognito ? sort(keys(local.cognito_users)) : []
 }
+
+output "control_panel_config" {
+  description = "Settings the control panel dashboard needs, when control_panel_url is set. scripts/make-panel-config.ps1 writes them to dashboards/config.js."
+  value = length(local.control_panel_resources) > 0 ? {
+    region            = var.aws_region
+    userPoolId        = aws_cognito_user_pool.lab["domain"].id
+    appClientId       = aws_cognito_user_pool_client.control_panel["domain"].id
+    hostedLoginDomain = "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com"
+    redirectUri       = "${var.control_panel_url}/"
+    apiUrl            = var.control_panel_api_url
+  } : null
+}

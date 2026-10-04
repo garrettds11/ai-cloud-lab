@@ -23,3 +23,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Written by scripts/make-panel-config.ps1
+dashboards/config.js

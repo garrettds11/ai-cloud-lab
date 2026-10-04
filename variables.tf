@@ -491,3 +491,20 @@ variable "grafana_credentials_secret_arn" {
     error_message = "grafana_credentials_secret_arn must be a valid Secrets Manager ARN."
   }
 }
+
+variable "control_panel_url" {
+  description = "Public address of the control panel dashboard, for example https://cp.aiwebdemo.click. Terraform uses it only as the sign-in and sign-out address of the panel's Cognito app client. It does not create or change the panel's hosting or DNS, which are built by hand. Leave null to skip the panel's app client and config file. Requires enable_cognito = true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.control_panel_url == null || can(regex("^https://[a-z0-9.-]+$", var.control_panel_url))
+    error_message = "control_panel_url must start with https:// and contain only a host name, with no trailing slash or path."
+  }
+}
+
+variable "control_panel_api_url" {
+  description = "Address of the control panel's Control API, built by hand ahead of Terraform. Terraform only copies it into dashboards/config.js. Leave null until the API exists."
+  type        = string
+  default     = null
+}

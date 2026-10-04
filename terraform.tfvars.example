@@ -63,6 +63,13 @@ cognito_domain_prefix         = "aiwebdemo"
 cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
 cognito_extra_users           = []
 
+# Control panel dashboard. Terraform only supplies its sign-in settings: an app
+# client in the Cognito pool and an output that scripts/make-panel-config.ps1 writes
+# to dashboards/config.js. The panel's hosting, DNS and API are built by hand (see
+# dashboards/SETUP.md).
+control_panel_url = "https://cp.aiwebdemo.click"
+# control_panel_api_url = "https://<api-id>.execute-api.us-east-1.amazonaws.com"
+
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

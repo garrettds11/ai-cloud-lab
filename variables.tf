@@ -289,18 +289,6 @@ variable "cognito_extra_users" {
   default = []
 }
 
-variable "cognito_operator_emails" {
-  description = "Emails of the Cognito users placed in the operators group. Operators may start the instances an administrator has granted them from the control panel dashboard; everyone else sees no instances there. Each email must belong to a Cognito user: the administrator, a demo user in open_webui_demo_users, or a user in cognito_extra_users."
-  type        = list(string)
-  default     = []
-}
-
-variable "cognito_user_manager_emails" {
-  description = "Emails of the Cognito users placed in the user_mgrs group. User managers see the User management page in the control panel dashboard, where they grant or revoke each user's access to instances. Each email must belong to a Cognito user, as for cognito_operator_emails."
-  type        = list(string)
-  default     = []
-}
-
 variable "cloudflare_access_team_domain" {
   description = "Your Cloudflare Zero Trust team domain, such as example-team.cloudflareaccess.com (shown on the Access login page). Used for the Cognito callback URL when enable_cognito and enable_cloudflare_access are both true."
   type        = string

@@ -63,19 +63,6 @@ cognito_domain_prefix         = "aiwebdemo"
 cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
 cognito_extra_users           = []
 
-# Roles in the control panel dashboard (Cognito groups). Operators may start the
-# instances they have been granted: the odd demo users, 1 to 9. User managers
-# see User management: the administrator. Every email must be a Cognito user.
-cognito_operator_emails = [
-  "demo1@example.local",
-  "demo3@example.local",
-  "demo5@example.local",
-  "demo7@example.local",
-  "demo9@example.local",
-]
-
-cognito_user_manager_emails = ["admin@example.local"]
-
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

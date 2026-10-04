@@ -46,6 +46,8 @@ locals {
     var.cognito_extra_users
   )
   cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
+  # The demo users that are operators: the 1st, 3rd, 5th ... entry, so demo1, demo3 ...
+  demo_operator_emails = [for index, user in var.open_webui_demo_users : user.email if index % 2 == 0]
   open_webui_banners = var.security_banner_text == "" ? [] : [{
     id          = "security-notice"
     type        = "warning"

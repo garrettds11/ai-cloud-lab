@@ -18,7 +18,7 @@ There is no build step. The page works from a plain file path.
 | Demo users 2, 4, 6, 8, 10 | none | "You have no instances available for edit." |
 | Administrator | `user_mgrs` | The same pages, plus **User management** |
 
-An operator needs both the group and a grant: the `operators` group says they may start instances, and a grant in `instance_entitlements` says which ones. The groups and who is in them come from `cognito.tf` and `terraform.tfvars` (`cognito_operator_emails`, `cognito_user_manager_emails`).
+An operator needs both the group and a grant: the `operators` group says they may start instances, and a grant in `instance_entitlements` says which ones. Terraform creates the two groups and places only the demo users in them (odd users in `operators`, the demo administrator in `user_mgrs`). Everyone else is managed in the panel. See `SETUP.md`.
 
 ## Try it
 
@@ -39,6 +39,7 @@ The mock starts `ai-lab-gpu` with a capacity failure the first time, so you can 
 | `styles.css` | Docker Desktop style, dark, desktop only (1024 px and up) |
 | `app.js` | The four views |
 | `mock-api.js` | The stand-in Control API, and where the access rules live |
+| `SETUP.md` | What is built by hand outside Terraform, and what the panel depends on |
 
 ## Moving to the real API
 

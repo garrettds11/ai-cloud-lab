@@ -113,6 +113,63 @@ resource "aws_cognito_user" "lab" {
   }
 }
 
+# Groups that carry a user's role in the control panel dashboard. The names are
+# fixed because the dashboard and its API check them in the sign-in token's
+# cognito:groups claim.
+#   operators: may start the instances an administrator has granted them.
+#   user_mgrs: may open User management and change who can start which instance.
+# Everyone else can sign in but sees no instances to start. Membership comes from
+# cognito_operator_emails and cognito_user_manager_emails in terraform.tfvars.
+resource "aws_cognito_user_group" "operators" {
+  for_each = local.cognito_resources
+
+  name         = "operators"
+  user_pool_id = aws_cognito_user_pool.lab[each.key].id
+  description  = "May start the instances they have been granted in the control panel."
+}
+
+resource "aws_cognito_user_group" "user_mgrs" {
+  for_each = local.cognito_resources
+
+  name         = "user_mgrs"
+  user_pool_id = aws_cognito_user_pool.lab[each.key].id
+  description  = "May use User management to grant or revoke instance access."
+}
+
+resource "aws_cognito_user_in_group" "operators" {
+  for_each = var.enable_cognito ? toset(var.cognito_operator_emails) : toset([])
+
+  user_pool_id = aws_cognito_user_pool.lab["domain"].id
+  group_name   = aws_cognito_user_group.operators["domain"].name
+  username     = each.key
+
+  depends_on = [aws_cognito_user.lab]
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.cognito_users), each.key)
+      error_message = "${each.key} is in cognito_operator_emails but is not a Cognito user. Add it to open_webui_demo_users or cognito_extra_users, or use the administrator's email."
+    }
+  }
+}
+
+resource "aws_cognito_user_in_group" "user_mgrs" {
+  for_each = var.enable_cognito ? toset(var.cognito_user_manager_emails) : toset([])
+
+  user_pool_id = aws_cognito_user_pool.lab["domain"].id
+  group_name   = aws_cognito_user_group.user_mgrs["domain"].name
+  username     = each.key
+
+  depends_on = [aws_cognito_user.lab]
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.cognito_users), each.key)
+      error_message = "${each.key} is in cognito_user_manager_emails but is not a Cognito user. Add it to open_webui_demo_users or cognito_extra_users, or use the administrator's email."
+    }
+  }
+}
+
 # Cloudflare Access login method backed by the Cognito user pool.
 resource "cloudflare_zero_trust_access_identity_provider" "cognito" {
   for_each = local.cognito_cloudflare_idp

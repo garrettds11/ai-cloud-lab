@@ -10,7 +10,8 @@ Rules, checked on every call (see README.md):
     (an OIDC token with a verified email). What they may do comes from this panel's own
     table, read on every call, so a role change takes effect at once.
   * Customers see and start only the instances they hold an active grant for, and only
-    while they hold the operators role. Nobody here can stop an instance.
+    while they hold the operators role. Administrators hold every right: they see and start
+    every managed instance without grants. Nobody here can stop an instance.
   * Admin routes need the user_mgrs or the admin role. User managers and administrators
     change who may start which instance (grants). Only an administrator changes anyone's
     roles, including who else is an administrator. Saving changes writes the panel's users

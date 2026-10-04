@@ -130,3 +130,8 @@ enable_grafana_telemetry       = true
 grafana_otlp_instance_id       = "1846719"
 grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
 grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:grafana-api-token-aiwebdemo-MakqN8"
+
+# Optional: deploy the read-only vulnerability findings MCP server (lambda/vuln_mcp).
+# The table and the token secret are built by hand. Leave both out to deploy nothing.
+vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+# vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdEf"

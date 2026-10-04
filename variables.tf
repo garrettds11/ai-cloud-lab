@@ -550,3 +550,25 @@ variable "control_panel_distribution_id" {
   type        = string
   default     = null
 }
+
+variable "vuln_mcp_table_name" {
+  description = "Name of the DynamoDB table of vulnerability findings (built by hand, for example aiwebdemo-vuln-findings). When set, Terraform deploys the read-only MCP server in lambda/vuln_mcp with a Function URL, so Open WebUI can query the table. Terraform only reads the table and never creates or changes it. Leave null to deploy nothing. Requires vuln_mcp_token_secret_arn."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.vuln_mcp_table_name == null || can(regex("^[A-Za-z0-9_.-]{3,255}$", var.vuln_mcp_table_name))
+    error_message = "vuln_mcp_table_name must be a valid DynamoDB table name (3 to 255 letters, digits, underscores, hyphens or dots)."
+  }
+}
+
+variable "vuln_mcp_token_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret that holds only the bearer token callers must send to the MCP server, either as plain text or as a one-key key/value secret. Required when vuln_mcp_table_name is set. The function reads it at run time, so the token is never in Terraform state."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.vuln_mcp_token_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.vuln_mcp_token_secret_arn))
+    error_message = "vuln_mcp_token_secret_arn must be a valid Secrets Manager ARN."
+  }
+}

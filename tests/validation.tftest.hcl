@@ -34,6 +34,12 @@ mock_provider "aws" {
     }
   }
 
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+    }
+  }
+
   mock_data "aws_route53_zone" {
     defaults = {
       zone_id = "Z0123456789ABCDEFGHIJ"
@@ -126,6 +132,8 @@ variables {
   open_webui_host_port            = 8080
   auto_stop_idle_minutes          = 60
   auto_stop_max_uptime_minutes    = 0
+  vuln_mcp_table_name             = null
+  vuln_mcp_token_secret_arn       = null
 }
 
 run "baseline_plan_succeeds" {
@@ -410,4 +418,63 @@ run "grafana_instance_id_must_be_numeric" {
   }
 
   expect_failures = [var.grafana_otlp_instance_id]
+}
+
+run "vuln_mcp_off_creates_nothing" {
+  command = plan
+
+  assert {
+    condition     = length(aws_lambda_function.vuln_mcp) == 0 && length(aws_lambda_function_url.vuln_mcp) == 0
+    error_message = "With vuln_mcp_table_name unset, no MCP Lambda or Function URL may be created."
+  }
+}
+
+run "vuln_mcp_on_creates_function_and_url" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdEf"
+  }
+
+  assert {
+    condition     = length(aws_lambda_function.vuln_mcp) == 1 && length(aws_lambda_function_url.vuln_mcp) == 1
+    error_message = "Setting vuln_mcp_table_name must create one Lambda and one Function URL."
+  }
+
+  assert {
+    condition     = aws_lambda_function.vuln_mcp["vuln_mcp"].handler == "mcp_handler.lambda_handler"
+    error_message = "The MCP Lambda must use mcp_handler.lambda_handler."
+  }
+}
+
+run "vuln_mcp_table_needs_a_token_secret" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = null
+  }
+
+  expect_failures = [aws_lambda_function.vuln_mcp]
+}
+
+run "vuln_mcp_token_secret_arn_must_be_valid" {
+  command = plan
+
+  variables {
+    vuln_mcp_token_secret_arn = "not-an-arn"
+  }
+
+  expect_failures = [var.vuln_mcp_token_secret_arn]
+}
+
+run "vuln_mcp_table_name_must_be_valid" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name = "bad name!"
+  }
+
+  expect_failures = [var.vuln_mcp_table_name]
 }

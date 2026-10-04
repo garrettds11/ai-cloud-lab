@@ -101,3 +101,8 @@ output "control_panel_config" {
     apiUrl            = var.control_panel_api_url
   } : null
 }
+
+output "vuln_mcp_url" {
+  description = "Function URL of the vulnerability findings MCP server when vuln_mcp_table_name is set. Add it to Open WebUI as an MCP tool server, with the token as the bearer token."
+  value       = length(local.vuln_mcp_resources) > 0 ? "${aws_lambda_function_url.vuln_mcp["vuln_mcp"].function_url}mcp" : null
+}

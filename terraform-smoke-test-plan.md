@@ -218,8 +218,9 @@ When `control_panel_url` is set, the plan also shows the control panel changes: 
 new `aws_ssm_parameter` resources under `/<project_name>/control-panel/`, the
 `control-panel=managed` tag on the lab instance, and, if the three authorizer
 variables are set, the `terraform_data` resource that points the API's authorizer at
-the lab's pool. Section 5, "Control panel config test", has the steps that finish the
-panel after `apply`.
+the lab's pool. With `control_panel_bucket` set it also shows the `config.js` object, and with
+`control_panel_distribution_id` set the cache-clearing step. Section 5, "Control panel
+config test", has the checks after `apply`.
 
 ## 3. Deploy
 
@@ -510,22 +511,20 @@ To turn local password sign-in off, set `open_webui_enable_local_login = false`
 
 Skip this section unless `enable_cognito` is `true` and `control_panel_url` is set
 in `terraform.tfvars`. Terraform creates the control panel's Cognito app client
-and the `control_panel_config` output. After `apply` completes, write the file the
-panel loads. Run this from the repository directory, with
-`Invoke-TerraformWithCloudflareToken` loaded:
+and publishes the panel's `config.js` into its bucket during `apply`, then clears
+that file from CloudFront's cache. This needs `control_panel_bucket`, and
+`control_panel_distribution_id` for the cache. There is nothing to write or upload
+by hand. Check:
 
-```powershell
-.\scripts\make-panel-config.ps1
-```
-
-Then check:
-
-1. The script prints `Wrote ...\dashboards\config.js` and does not stop with an
-   error. A warning that there is no API address means `control_panel_api_url` is
-   not set in `terraform.tfvars`.
-2. `dashboards\config.js` holds the region, the user pool ID, an app client ID and
-   the `redirectUri` `https://cp.aiwebdemo.click/`. It is not tracked by git
-   (`git status` does not list it).
+1. `aws s3 cp "s3://aiwebdemo-control-panel-394566733278/config.js" -` prints a
+   file that starts with `// Written by Terraform` and holds the region, the user
+   pool ID, an app client ID, the API address and the `redirectUri`
+   `https://cp.aiwebdemo.click/`. A `null` for `apiUrl` means `control_panel_api_url`
+   is not set in `terraform.tfvars`.
+2. Open `https://cp.aiwebdemo.click`. The page must show a sign-in button, not a
+   message about a missing `clientId` or a missing settings file. If it shows an old
+   message, the cache clearing did not run: check the `apply` output for the
+   `terraform_data.control_panel_config_cache` step.
 3. In the Cognito console, the user pool has a second app client named
    `<project_name>-control-panel` with no client secret.
 4. If `control_panel_users_table` is set, the DynamoDB table it names has a row for
@@ -545,20 +544,7 @@ Then check:
    control panel app client ID. After `destroy`, the same command must show the holding
    pool's issuer and the audience `holding-unused`.
 
-6. Upload the new `config.js`. The panel page and a partial `config.js` (API address,
-   redirect address and region only) were uploaded before this test, so sign-in does
-   not work until the full file is in the bucket. Upload it and clear the cache:
-
-   ```powershell
-   $bucket = "aiwebdemo-control-panel-394566733278"
-   aws s3 cp .\dashboards\config.js "s3://$bucket/config.js" --content-type "application/javascript; charset=utf-8"
-   aws cloudfront create-invalidation --distribution-id E2799OUDXX2ED3 --paths "/config.js"
-   ```
-
-   Open `https://cp.aiwebdemo.click`. The page must show a sign-in button, not a
-   message about a missing `clientId`.
-
-7. The lab publishes its wiring for the panel. With `control_panel_url` set, `apply`
+6. The lab publishes its wiring for the panel. With `control_panel_url` set, `apply`
    creates three SSM parameters and tags the lab instance `control-panel=managed`.
    Check:
 
@@ -571,12 +557,13 @@ Then check:
    `service-url` (`https://<domain_name>`). `target-group-arn` and `service-url` exist
    only when `enable_domain_access` is also `true`. The tag value is `managed`.
 
-8. Sign in at `https://cp.aiwebdemo.click` as a user in the lab's Cognito pool. The
+7. Sign in at `https://cp.aiwebdemo.click` as a user in the lab's Cognito pool. The
    panel must list the lab instance with no setting copied into the Lambda functions.
    Only a sign-in whose email is in `BOOTSTRAP_ADMINS` (`garrettds11@gmail.com`) can
    open the admin screens; other users get only the customer view.
 
-   After `destroy`, the parameters are gone and the panel lists no instances.
+   After `destroy`, the parameters are gone and the panel lists no instances. The
+   `config.js` object is deleted too, so the page reports that it has no settings file.
 
 ## 6. Stop or destroy the test system
 

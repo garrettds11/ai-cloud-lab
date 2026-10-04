@@ -24,7 +24,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Written by scripts/make-panel-config.ps1
+# A local copy of the panel's settings; Terraform publishes the real one to the bucket
 dashboards/config.js
 # Control API build and test output
 dashboards/api/control-api.zip

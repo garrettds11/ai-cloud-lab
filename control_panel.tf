@@ -3,8 +3,8 @@
 # The dashboard's own hosting, DNS and API are built by hand and are not managed
 # here. Terraform supplies only what lives in Cognito: a public app client for the
 # single-page app, and the control_panel_config output (region, user pool ID, app
-# client ID, API address). scripts/make-panel-config.ps1 turns that output into
-# dashboards/config.js, the file the page loads. Terraform never writes any page.
+# client ID, API address). control_panel_site.tf publishes that output as config.js, the
+# file the page loads, to the panel's bucket. Terraform writes no other page.
 
 locals {
   control_panel_resources = var.enable_cognito && var.control_panel_url != null ? { domain = true } : {}

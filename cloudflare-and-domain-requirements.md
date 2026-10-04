@@ -370,7 +370,7 @@ The control panel (`dashboards/`) is a separate web app where customers start th
 | The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
 | Real users, their roles and instance grants | The control panel. Terraform never touches them |
 
-Until a provider is wired, the authorizer trusts an empty holding Cognito pool that can never issue a token, so every API route answers 401. Apply points the authorizer at the lab's pool, and destroy points it back at the holding pool. The routes are never recreated. To use another provider, update the authorizer's issuer and audience by hand and write `dashboards/config.js` for it.
+Until a provider is wired, the authorizer trusts an empty holding Cognito pool that can never issue a token, so every API route answers 401. Apply points the authorizer at the lab's pool, and destroy points it back at the holding pool. The routes are never recreated. To use another provider, update the authorizer's issuer and audience by hand and upload a `config.js` for it.
 
 ### Instance wiring
 
@@ -397,7 +397,7 @@ Partially. The current ALB listener is AWS-specific and consumes an ACM certific
 
 ### Control panel sign-in provider
 
-Yes. The panel and its API accept any OpenID Connect provider. Changing it means updating the authorizer's issuer and audience and writing a new `dashboards/config.js`. No code changes.
+Yes. The panel and its API accept any OpenID Connect provider. Changing it means updating the authorizer's issuer and audience and uploading a new `config.js`. No code changes.
 
 ### Hosting provider
 

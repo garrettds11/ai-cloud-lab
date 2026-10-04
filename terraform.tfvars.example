@@ -64,17 +64,20 @@ cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
 cognito_extra_users           = []
 
 # Control panel dashboard. Terraform only supplies its sign-in settings: an app
-# client in the Cognito pool and an output that scripts/make-panel-config.ps1 writes
-# to dashboards/config.js. The panel's hosting, DNS and API are built by hand (see
-# dashboards/SETUP.md).
+# client in the Cognito pool and the config.js the page loads, which apply publishes to the
+# panel's bucket. The panel's hosting, DNS and API are built by hand (see dashboards/SETUP.md).
 control_panel_url = "https://cp.aiwebdemo.click"
 # The control panel API is built by hand ahead of Terraform (dashboards/SETUP.md). Its
-# address goes into dashboards/config.js. The three ids let apply point the API's
+# address goes into the published config.js. The three ids let apply point the API's
 # sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
 control_panel_api_url         = "https://65j334bc19.execute-api.us-east-1.amazonaws.com"
 control_panel_api_id          = "65j334bc19"
 control_panel_authorizer_id   = "pnlj78"
 control_panel_holding_pool_id = "us-east-1_xcTOLNQJM"
+# The panel's bucket and CloudFront distribution (built by hand). Apply writes config.js into
+# the bucket and clears it from the distribution's cache; destroy removes that one object.
+control_panel_bucket          = "aiwebdemo-control-panel-394566733278"
+control_panel_distribution_id = "E2799OUDXX2ED3"
 
 # Optional: seed the demo users' roles into the control panel's users table.
 # control_panel_users_table = "panel_users"

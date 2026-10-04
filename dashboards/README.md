@@ -24,7 +24,7 @@ A customer needs both the `operators` role and a grant in `instance_entitlements
 | `styles.css` | Docker Desktop style, dark, desktop only (1024 px and up) |
 | `app.js` | The four views |
 | `api.js` | OpenID Connect sign-in (authorization code with PKCE, any provider) and calls to the Control API |
-| `config.js` | Region, user pool ID, app client ID and API address. Written by `scripts\make-panel-config.ps1`; not committed |
+| `config.js` | Region, user pool ID, app client ID and API address. Published to the bucket by Terraform on apply; a local copy is not committed |
 | `config.example.js` | Shows what `config.js` looks like |
 | `api/` | The Control API Lambda, its tests and its setup guide |
 | `SETUP.md` | What is built by hand outside Terraform |
@@ -34,8 +34,8 @@ A customer needs both the `operators` role and a grant in `instance_entitlements
 The page signs in through the provider named in `config.js` (Okta, Entra ID, Cognito or any OIDC provider), which sends the browser back to `https://cp.aiwebdemo.click/`, so it works from that address. Opening `index.html` from a file shows the page without settings or sign-in.
 
 1. Build what `SETUP.md` lists.
-2. Apply Terraform, then write the settings: `.\scripts\make-panel-config.ps1`.
-3. Upload the pages (command in `SETUP.md`).
+2. Upload the pages (command in `SETUP.md`). It leaves `config.js` alone.
+3. Apply Terraform. It publishes `config.js` and clears it from the CloudFront cache.
 
 ## Not decided yet
 

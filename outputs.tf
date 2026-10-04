@@ -91,7 +91,7 @@ output "cognito_user_emails" {
 }
 
 output "control_panel_config" {
-  description = "Settings the control panel dashboard needs, when control_panel_url is set. scripts/make-panel-config.ps1 writes them to dashboards/config.js."
+  description = "Settings the control panel dashboard needs, when control_panel_url is set. control_panel_site.tf publishes them as config.js in the panel's bucket."
   value = length(local.control_panel_resources) > 0 ? {
     region            = var.aws_region
     userPoolId        = aws_cognito_user_pool.lab["domain"].id

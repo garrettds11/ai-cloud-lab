@@ -10,17 +10,13 @@ The panel depends on these Terraform-owned things when you use the lab's Cognito
 
 | Needed by the panel | Where it comes from |
 |---|---|
-| Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform output `control_panel_config`, written to `dashboards/config.js` by `scripts/make-panel-config.ps1`. For another provider: written by hand from `config.example.js` |
+| Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform writes `config.js` into the panel's bucket on apply and clears it from CloudFront's cache (`control_panel_site.tf`, needs `control_panel_bucket`; `control_panel_distribution_id` for the cache). For another provider: written by hand from `config.example.js` and uploaded |
 | Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set. Until then the authorizer trusts the empty holding pool and every route answers 401 |
 | Demo users and their roles in `panel_users` | `cognito.tf`, when `control_panel_users_table` is set |
 | Instance ID, ALB target group and service address | SSM parameters under `/<project_name>/control-panel/` that Terraform writes when `control_panel_url` is set (`control_panel_lab.tf`). The Lambdas read them live, so the panel follows the lab with nothing to copy. Terraform also tags the instance `control-panel=managed`, the only instances the customer role may start |
 | Auto-stop setting `/<project_name>/auto-stop` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init |
 
-Terraform needs `control_panel_url` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. After an apply, write the config file, then upload it with the pages:
-
-```powershell
-.\scripts\make-panel-config.ps1
-```
+Terraform needs `control_panel_url`, `control_panel_bucket` and `control_panel_distribution_id` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. Apply publishes `config.js`; there is nothing to write or upload by hand for the lab's own pool.
 
 Read other outputs through the repo's wrapper, not bare terraform:
 
@@ -59,13 +55,13 @@ Fill in the "Created" column as each piece is built.
 ## Still to build
 
 - DNS record `cp.aiwebdemo.click`: a CNAME in Cloudflare to `d11guvgb5r6hlh.cloudfront.net`, DNS only (not proxied).
-- Upload the pages, after `config.js` exists.
+- Upload the pages. `config.js` comes from Terraform on apply.
 
 ## Deploy the pages
 
 ```powershell
 $bucket = '<bucket name>'
-aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://$bucket" --exclude "*.md" --exclude "config.example.js" --exclude "api/*" --delete
+aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://$bucket" --exclude "*.md" --exclude "config.example.js" --exclude "config.js" --exclude "api/*" --exclude "_deploy/*" --delete
 aws cloudfront create-invalidation --distribution-id <distribution id> --paths "/*"
 ```
 

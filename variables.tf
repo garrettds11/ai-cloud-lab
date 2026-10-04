@@ -493,7 +493,7 @@ variable "grafana_credentials_secret_arn" {
 }
 
 variable "control_panel_url" {
-  description = "Public address of the control panel dashboard, for example https://cp.aiwebdemo.click. Terraform uses it only as the sign-in and sign-out address of the panel's Cognito app client. It does not create or change the panel's hosting or DNS, which are built by hand. Leave null to skip the panel's app client and config file. Requires enable_cognito = true."
+  description = "Public address of the control panel dashboard, for example https://cp.aiwebdemo.click. Terraform uses it only as the sign-in and sign-out address of the panel's Cognito app client. It does not create or change the panel's hosting or DNS, which are built by hand. Leave null to skip the panel's app client and config.js. Requires enable_cognito = true."
   type        = string
   default     = null
 
@@ -504,7 +504,7 @@ variable "control_panel_url" {
 }
 
 variable "control_panel_api_url" {
-  description = "Address of the control panel's Control API, built by hand ahead of Terraform. Terraform only copies it into dashboards/config.js. Leave null until the API exists."
+  description = "Address of the control panel's Control API, built by hand ahead of Terraform. Terraform copies it into the config.js it publishes to the panel's bucket. Leave null until the API exists."
   type        = string
   default     = null
 }
@@ -529,6 +529,18 @@ variable "control_panel_authorizer_id" {
 
 variable "control_panel_holding_pool_id" {
   description = "ID of the empty Cognito user pool that holds the authorizer's place when no lab is deployed (no users, no app clients, so it can never issue a usable token). Terraform points the authorizer back at it on destroy."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_bucket" {
+  description = "Name of the S3 bucket that serves the control panel pages (built by hand). When set, apply writes config.js, the panel's sign-in settings, into it, and destroy removes that one object. Terraform never writes any other page. Leave null to skip publishing config.js."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_distribution_id" {
+  description = "ID of the CloudFront distribution in front of the control panel's bucket (built by hand). When set together with control_panel_bucket, apply clears /config.js from its cache after each change. Leave null to skip."
   type        = string
   default     = null
 }

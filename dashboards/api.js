@@ -11,7 +11,7 @@
  *   scope        optional, default "openid email profile" (Okta and Entra also want offline_access)
  * Cognito pools can still be given as userPoolId + region (the issuer is built from them),
  * and hostedLoginDomain keeps Cognito's own sign-in and sign-out addresses.
- * scripts/make-panel-config.ps1 writes these from Terraform for the lab's Cognito pool;
+ * Terraform (control_panel_site.tf) publishes these for the lab's Cognito pool;
  * any other provider's file is written by hand.
  *
  * Tokens live in sessionStorage, so closing the tab signs the user out of this page.
@@ -42,13 +42,13 @@
   const announce = (ok) => window.dispatchEvent(new CustomEvent('api-status', { detail: { ok } }));
 
   function configProblem() {
-    if (!cfg) return 'This page has no settings file. Run scripts\\make-panel-config.ps1 and upload dashboards/config.js.';
+    if (!cfg) return 'This page has no settings file. Apply the lab's Terraform to publish config.js, or upload one by hand.';
     const missing = [];
     if (!clientId) missing.push('clientId');
     if (!cfg.redirectUri) missing.push('redirectUri');
     if (!issuer && !cfg.hostedLoginDomain && !(cfg.authorizationEndpoint && cfg.tokenEndpoint)) missing.push('issuer');
     if (missing.length) return 'The settings file is missing: ' + missing.join(', ') + '.';
-    if (!cfg.apiUrl) return 'The Control API address is not set. Set control_panel_api_url in terraform.tfvars, apply, and run scripts\\make-panel-config.ps1 again.';
+    if (!cfg.apiUrl) return 'The Control API address is not set. Set control_panel_api_url in terraform.tfvars and apply again.';
     return null;
   }
 

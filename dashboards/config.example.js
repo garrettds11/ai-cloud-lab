@@ -1,8 +1,8 @@
 // Example of dashboards/config.js: the settings the page loads at start-up.
 // The page signs in with any OpenID Connect provider. Fill in the provider you use.
-// For the lab's own Cognito pool, scripts/make-panel-config.ps1 writes this file from
-// Terraform's control_panel_config output; for any other provider, write it by hand.
-// The real file is not committed.
+// For the lab's own Cognito pool, Terraform publishes this file to the panel's bucket on
+// apply (control_panel_site.tf); for any other provider, write it by hand and upload it.
+// A local copy is not committed.
 window.PANEL_CONFIG = {
   // The provider's issuer URL. The page finds the sign-in and token addresses from
   // <issuer>/.well-known/openid-configuration. Examples:
@@ -22,5 +22,5 @@ window.PANEL_CONFIG = {
   region: "us-east-1"
   // Cognito only, instead of issuer: userPoolId, plus hostedLoginDomain
   // ("<prefix>.auth.us-east-1.amazoncognito.com") for its sign-in and sign-out pages.
-  // This is what make-panel-config.ps1 writes.
+  // This is what Terraform publishes.
 };

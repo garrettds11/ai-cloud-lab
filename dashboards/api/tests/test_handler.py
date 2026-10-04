@@ -215,6 +215,14 @@ def test_operator_sees_only_granted_instances(aws):
     assert body[0]["rule"] == {"enabled": True, "idleMinutes": 60, "maxUptimeMinutes": 90}
 
 
+def test_admin_sees_and_starts_every_instance_without_grants(aws):
+    status, body = call("GET /instances", ADM)
+    assert status == 200
+    assert sorted(i["id"] for i in body) == ["i-aaa", "i-bbb"]
+    assert call("POST /instances/{instanceId}/start", ADM, path={"instanceId": "i-aaa"})[0] == 200
+    assert [i["id"] for i in call("GET /instances", BOOT)[1]] == [i["id"] for i in body]
+
+
 def test_phase_needs_status_checks_and_alb_health(aws, monkeypatch):
     grant(aws, OP, "i-aaa")
     aws.ec2.state["i-aaa"] = "running"

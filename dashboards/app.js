@@ -864,7 +864,11 @@
         return;
       }
       const operator = user.roles.includes('operators');
-      if (!operator) {
+      const userIsAdmin = user.roles.includes('admin');
+      if (userIsAdmin) {
+        body.append(h('div', { class: 'notice' }, icon('info'),
+          h('span', { text: user.name + ' is an administrator, who can see and start every instance without grants.' })));
+      } else if (!operator) {
         body.append(h('div', { class: 'notice' }, icon('info'),
           h('span', { text: user.name + ' does not have the Operator role, so cannot be granted instances. ' + (isAdmin()
             ? 'Give them the Operator role in the Roles section below, save, then grant instances.'

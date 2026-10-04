@@ -200,6 +200,21 @@ def _grant_items(user_id):
     return out.get("Items", [])
 
 
+def _can_operate(caller):
+    """Operators, and administrators, who hold every right."""
+    return ROLE_OPERATORS in caller["roles"] or ROLE_ADMIN in caller["roles"]
+
+
+def _usable_ids(caller):
+    """Instances this caller may see and start: all managed ones for an administrator,
+    otherwise the ones with an applied grant."""
+    ids = _instance_ids()
+    if ROLE_ADMIN in caller["roles"]:
+        return ids
+    granted = set(_granted_ids(caller["id"]))
+    return [i for i in ids if i in granted]
+
+
 def _granted_ids(user_id):
     return [i["instanceId"] for i in _grant_items(user_id) if i.get("status") == "applied"]
 
@@ -378,20 +393,20 @@ def _view(instance_id, raw, rule):
 
 
 def list_instances(caller):
-    if ROLE_OPERATORS not in caller["roles"]:
+    if not _can_operate(caller):
         return []
-    granted = set(_granted_ids(caller["id"]))
-    wanted = [i for i in _instance_ids() if i in granted]
+    wanted = _usable_ids(caller)
     raws = _describe(wanted)
     rule = _rule()
     return [_view(i, raws[i], rule) for i in wanted if i in raws]
 
 
 def start_instance(caller, instance_id):
-    _require_role(caller, ROLE_OPERATORS)
+    if not _can_operate(caller):
+        raise ApiError(403, "You do not have permission to do that.")
     if instance_id not in _instance_ids():
         raise ApiError(404, "Instance not found.")
-    if instance_id not in _granted_ids(caller["id"]):
+    if instance_id not in _usable_ids(caller):
         _log(caller["id"], "warning", f"Start refused for {instance_id}: no active grant", instance_id)
         raise ApiError(403, "You do not have access to this instance.")
     raws = _describe([instance_id])
@@ -537,9 +552,8 @@ def list_logs(caller, params):
         }
         for r in _query_events(f"user#{caller['id']}", "log#", 200, since)
     ]
-    if ROLE_OPERATORS in caller["roles"] and (source in ("all", "EC2")):
-        granted = set(_granted_ids(caller["id"]))
-        ids = [i for i in _instance_ids() if i in granted]
+    if _can_operate(caller) and (source in ("all", "EC2")):
+        ids = _usable_ids(caller)
         if ids:
             raws = _describe(ids)
             names = {i: (_tag(r["instance"], "Name") or i) for i, r in raws.items()}

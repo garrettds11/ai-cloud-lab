@@ -527,8 +527,8 @@ Then check:
    demo users with an empty `roles` list; `admin@example.local` with `user_mgrs`.
 
 5. If `control_panel_api_id`, `control_panel_authorizer_id` and
-   `control_panel_holding_pool_id` are set, `apply` ran the AWS CLI through PowerShell to
-   point the control panel API's authorizer at this lab's pool. Check:
+   `control_panel_holding_pool_id` are set, `apply` pointed the control panel API's authorizer at
+   this lab's pool. Check:
 
    ```powershell
    aws apigatewayv2 get-authorizer --api-id <api id> --authorizer-id <authorizer id> --query JwtConfiguration

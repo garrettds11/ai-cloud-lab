@@ -56,6 +56,9 @@ The Cloudflare encryption mode is a Cloudflare dashboard setting. Terraform does
 | EC2 | Runs Open WebUI and Ollama | Yes | `aws_instance.ai_lab` |
 | AWS Secrets Manager | Stores the Open WebUI administrator and demo-user passwords and the Cloudflare API token | Yes for the current secure bootstrap flow | Secret ARNs in variables; secrets are pre-created outside Terraform |
 | Amazon Cognito (optional) | User directory and hosted sign-in page for Cloudflare Access and Open WebUI | Only when `enable_cognito = true` | `cognito.tf`, `cloudflare_zero_trust_access_identity_provider` |
+| Control panel hosting (optional) | S3 bucket, CloudFront distribution and the `cp` DNS record that serve the panel's pages | Only for the control panel | Built by hand; see `dashboards/SETUP.md` |
+| Control panel API (optional) | API Gateway, two Lambdas, DynamoDB tables and IAM roles behind the panel | Only for the control panel | Built by hand; Terraform adds only the demo rows and the authorizer update (`cognito.tf`, `control_panel_api.tf`) |
+| Control panel sign-in (optional) | Signs people in to the panel through any OpenID Connect provider (Cognito, Okta, Entra ID) | Only for the control panel | Terraform creates the panel's app client in the lab's Cognito pool (`control_panel.tf`) |
 | Auto-stop (on by default) | Stops the instance when nobody is using it and emails alerts through SNS | No; independent of domain access | `auto_stop.tf` (SSM parameter, Lambda watchdog, EventBridge rule, SNS topic) |
 
 ## What an administrator must provide
@@ -79,6 +82,8 @@ Terraform does not create, rotate, update, or destroy any of the secrets. Create
 - The **PowerShell Terraform wrapper** reads the Cloudflare token secret and exposes it only for the run.
 
 The identity that runs Terraform needs permission to create the EC2, IAM, security group, load balancer, SSM parameter, Lambda, SNS and EventBridge resources (and the Cognito resources when enabled), to read the ACM certificate, and to read the secrets.
+
+When the control panel variables are set, the identity that runs Terraform also needs permission to update the panel API's authorizer (`apigateway:PATCH` on the API) and to write the demo rows to the `panel_users` table.
 
 Relevant variables in `terraform.tfvars`:
 
@@ -228,6 +233,7 @@ Terraform does not currently:
 - Set the Cognito users' passwords (run `scripts/set-cognito-passwords.ps1` after `apply`).
 - Confirm the auto-stop email subscription (click the AWS confirmation link once).
 - Configure a Cloudflare Tunnel.
+- Create the control panel's hosting, its `cp` DNS record, API, Lambdas, tables or roles (see [Optional: control panel](#optional-control-panel)).
 
 Those actions must be completed before the corresponding Terraform resources can succeed, or by hand afterward.
 
@@ -341,6 +347,34 @@ Requirements and cautions:
   `branding/README.md` for how to replace them. Keep Open WebUI's own branding visible
   unless you meet the Open WebUI license terms for removing it.
 
+## Optional: control panel
+
+The control panel (`dashboards/`) is a separate web app where customers start the instances they are granted, and administrators manage who may start what. It lives on its own address (`https://cp.aiwebdemo.click`) and is built and kept by hand, so it does not depend on the lab being deployed. Without a lab it shows no instances. Without users it shows no users. See `dashboards/SETUP.md` for what exists and `dashboards/api/README.md` for the API.
+
+### What an administrator must provide
+
+- **AWS permissions** to create the S3 bucket, CloudFront distribution, DynamoDB tables, IAM roles, Lambda functions and API Gateway API.
+- **A DNS record** in the Cloudflare zone: a CNAME from `cp` to the CloudFront domain, set to **DNS only** (not proxied), because CloudFront already terminates TLS for it.
+- **A certificate** in us-east-1 that covers the panel's host name. The existing wildcard certificate for the domain does.
+- **A sign-in provider**, one of Cognito, Okta, Entra ID or any OpenID Connect provider, with a single-page app client (public, no secret, PKCE), the panel's address registered as a redirect URI, and a verified `email` claim in the ID token. Entra ID needs `email` added as an optional claim. The panel needs the provider's issuer URL and the app client ID.
+- **Bootstrap administrators**: the email addresses in the API's `BOOTSTRAP_ADMINS` setting. They always have the user manager role, so the panel can be opened before any user exists.
+
+### Who owns what
+
+| Piece | Owner |
+|---|---|
+| Hosting, DNS record, API, Lambdas, tables, IAM roles, the authorizer and its routes | Built by hand, kept when the lab is destroyed |
+| The panel's app client in the lab's Cognito pool | Terraform (`control_panel.tf`) |
+| The demo users' rows in `panel_users` (odd demo users as `operators`, `admin@example.local` as `user_mgrs`), when `control_panel_users_table` is set | Terraform |
+| The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
+| Real users, their roles and instance grants | The control panel. Terraform never touches them |
+
+Until a provider is wired, the authorizer trusts an empty holding Cognito pool that can never issue a token, so every API route answers 401. Apply points the authorizer at the lab's pool, and destroy points it back at the holding pool. The routes are never recreated. To use another provider, update the authorizer's issuer and audience by hand and write `dashboards/config.js` for it.
+
+### Instance wiring
+
+The Control API learns which instance and ALB target group to manage from its `INSTANCE_IDS` and `TARGET_GROUP_ARN` settings. These are set by hand today, after a lab exists. The goal is for them to follow the lab automatically; this section will change when that is built.
+
 ## Can the providers be swapped?
 
 ### Domain registrar
@@ -359,6 +393,10 @@ Using another DNS provider would require replacing the Route 53 or Cloudflare re
 ### Certificate provider
 
 Partially. The current ALB listener is AWS-specific and consumes an ACM certificate ARN. A certificate from another public certificate authority could be used only after it is imported into ACM or the Terraform implementation is changed to manage the alternate certificate and attach it to the ALB. The certificate still needs to match the hostname and be available to the load balancer.
+
+### Control panel sign-in provider
+
+Yes. The panel and its API accept any OpenID Connect provider. Changing it means updating the authorizer's issuer and audience and writing a new `dashboards/config.js`. No code changes.
 
 ### Hosting provider
 
@@ -393,5 +431,7 @@ Moving the application to another hosting provider would require a separate Terr
 14. After the apply: run `scripts/set-cognito-passwords.ps1` if Cognito is on, and click the SNS confirmation link in the alert mailbox.
 15. Set the Cloudflare SSL/TLS mode to Full (strict) and review the other security settings above.
 16. Verify the ALB target health and the public HTTPS URL.
+
+17. Optional, for the control panel: build it as described in `dashboards/SETUP.md`, add the `cp` CNAME in Cloudflare as DNS only, and set the control panel variables in `terraform.tfvars`. The panel can be built and left in place before the lab exists.
 
 The lab can remain destroyed while waiting for domain delegation or Cloudflare activation. Those control-plane prerequisites do not require an EC2 instance or load balancer to be running.

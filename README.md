@@ -107,6 +107,10 @@ for the full prerequisites, security settings, and trade-offs.
 The EC2 instance does not receive a public application ingress rule. When domain
 access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 
+## Optional Control Panel
+
+A separate web app (`dashboards/`, at `https://cp.aiwebdemo.click`) lets customers start the instances they have been granted and open the service once it is ready. Administrators manage roles and grants on its User management page. It is built by hand and does not depend on the lab being deployed. See [dashboards/README.md](dashboards/README.md), [dashboards/SETUP.md](dashboards/SETUP.md) and [dashboards/api/README.md](dashboards/api/README.md). The panel's requirements are in "Optional: control panel" in [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
+
 ## Cost Guardrail: Auto-Stop
 
 The lab stops itself with two independent controls, each off when set to `0`:

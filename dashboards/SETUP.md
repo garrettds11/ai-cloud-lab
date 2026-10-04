@@ -1,21 +1,22 @@
 # Control panel setup (built by hand, outside Terraform)
 
-The control panel at `https://cp.aiwebdemo.click` is built and kept by hand. Terraform does not create it, change it or know about it. This page is the record of what exists, so nothing is a surprise later.
+The control panel at `https://cp.aiwebdemo.click` is built and kept by hand, so it does not depend on the lab being deployed. Terraform supplies only three things when the variables are set: the panel's Cognito app client, the demo users' rows in `panel_users`, and the authorizer's issuer and audience on apply and destroy. This page is the record of what exists, so nothing is a surprise later.
 
 Run every command in PowerShell, in the same window where `AWS_PROFILE` and `AWS_DEFAULT_REGION` are set. Account 394566733278, region us-east-1.
 
 ## What Terraform provides (the contract)
 
-The panel depends on these Terraform-owned things. Do not rename or replace them without updating the panel.
+The panel depends on these Terraform-owned things when you use the lab's Cognito pool. Do not rename or replace them without updating the panel. With another sign-in provider (Okta, Entra ID, any OpenID Connect provider) the panel needs none of them.
 
 | Needed by the panel | Where it comes from |
 |---|---|
-| Region, user pool ID, app client ID, API address | Terraform output `control_panel_config`, written to `dashboards/config.js` by `scripts/make-panel-config.ps1` |
-| Instance ID | Terraform output `instance_id` |
-| Table `panel_users` (key `email`), roles `operators` and `user_mgrs` (exact names); demo rows only when `control_panel_users_table` is set | `cognito.tf` |
+| Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform output `control_panel_config`, written to `dashboards/config.js` by `scripts/make-panel-config.ps1`. For another provider: written by hand from `config.example.js` |
+| Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set. Until then the authorizer trusts the empty holding pool and every route answers 401 |
+| Demo users and their roles in `panel_users` | `cognito.tf`, when `control_panel_users_table` is set |
+| Instance ID and ALB target group | Terraform outputs `instance_id` and `open_webui_target_group_arn`. Set by hand in the customer Lambda's `INSTANCE_IDS` and `TARGET_GROUP_ARN` after a lab exists. Automatic wiring is not built yet |
 | Auto-stop setting `/<project_name>/auto-stop` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init |
 
-Terraform needs `control_panel_url` set in `terraform.tfvars` (and `control_panel_api_url` once the API exists). After an apply, write the config file, then upload it with the pages:
+Terraform needs `control_panel_url` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. After an apply, write the config file, then upload it with the pages:
 
 ```powershell
 .\scripts\make-panel-config.ps1

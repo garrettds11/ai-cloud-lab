@@ -48,12 +48,11 @@ locals {
   cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
   # Roles for the demo accounts in the control panel's users table. Every demo account can
   # launch and access an instance (operators). The 1st, 3rd, 5th ... demo user (demo1,
-  # demo3 ...) and the administrator account are also user managers, who change grants.
-  # Only the administrator changes roles: that comes from its email being in the API's
-  # BOOTSTRAP_ADMINS, not from a stored role.
+  # demo3 ...) are also user managers, who change grants. The administrator account is an
+  # administrator, who changes roles and grants. More administrators are made in the panel.
   panel_demo_roles = merge(
     { for index, user in var.open_webui_demo_users : user.email => { name = user.name, roles = index % 2 == 0 ? ["operators", "user_mgrs"] : ["operators"] } },
-    { (var.open_webui_admin_email) = { name = var.open_webui_admin_name, roles = tolist(["operators", "user_mgrs"]) } }
+    { (var.open_webui_admin_email) = { name = var.open_webui_admin_name, roles = tolist(["operators", "admin"]) } }
   )
   open_webui_banners = var.security_banner_text == "" ? [] : [{
     id          = "security-notice"

@@ -37,8 +37,8 @@
     return parts.length ? parts.join(', ') : 'No role';
   }
 
-  const isManager = () => !!state.session && state.session.roles.includes('user_mgrs');
   const isAdmin = () => !!state.session && state.session.roles.includes('admin');
+  const isManager = () => !!state.session && (state.session.roles.includes('user_mgrs') || isAdmin());
 
   // ---- tiny DOM helpers --------------------------------------------------------------
 
@@ -661,7 +661,7 @@
     loadLogs();
   }
 
-  // ---- views: User management (user_mgrs only) -----------------------------------------
+  // ---- views: User management (user managers and administrators) -----------------------------------------
 
   function combobox(opts) {
     const wrap = h('div', { class: 'combo' });
@@ -737,6 +737,7 @@
   const ROLES = [
     { key: 'operators', label: 'Operator', help: 'May start the instances they are granted.' },
     { key: 'user_mgrs', label: 'User manager', help: 'May open User management and change who can start what.' },
+    { key: 'admin', label: 'Administrator', help: 'May also change roles, including who else is an administrator.' },
   ];
 
   const pendingCount = () => um().staged.size + um().stagedRoles.size;
@@ -878,7 +879,7 @@
             h('th', { scope: 'col', text: 'Role' }),
             h('th', { scope: 'col', text: 'Status' }))),
           h('tbody', null, ROLES.map((g) => {
-            const ownLock = isSelf && g.key === 'user_mgrs';
+            const ownLock = isSelf && g.key === 'admin';
             const locked = !isAdmin() || ownLock;
             const checked = hasRole(user, g.key);
             const pending = um().stagedRoles.has(g.key);
@@ -890,7 +891,7 @@
               })),
               h('td', null,
                 h('label', { id: 'role-name-' + g.key, for: 'role-' + g.key, class: 'name', text: g.label }),
-                h('div', { id: 'role-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (!isAdmin() ? ' Only an administrator can change roles.' : ownLock ? ' You cannot remove your own user manager role.' : '') }))),
+                h('div', { id: 'role-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (!isAdmin() ? ' Only an administrator can change roles.' : ownLock ? ' You cannot remove your own administrator role.' : '') }))),
               h('td', null, pending
                 ? h('span', { class: 'chip tone-amber' }, icon('dot'), checked ? 'Pending: add' : 'Pending: remove')
                 : (user.roles.includes(g.key)

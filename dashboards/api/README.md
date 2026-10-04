@@ -13,9 +13,9 @@ Each answers only its own routes (the other's return 404), and each has its own 
 
 - Every route needs a signed-in user, identified by their verified email. Roles are read from the `panel_users` table on every call and the roles in the token are ignored, so removing a role takes effect at once. If the table cannot be read, the call fails closed (503).
 - A customer sees and starts only the instances they hold an active grant for, and only with the `operators` role. Nobody can stop an instance through this API; there is no stop route.
-- Admin routes need `user_mgrs`. Two kinds of change, two kinds of person. Who someone is, meaning their roles, is changed only by an administrator. What someone may start, meaning their grants, is changed by user managers and administrators. Saving changes writes `panel_users` roles and `instance_entitlements` only. It never changes IAM, tags or instances.
-- Administrators are the addresses in `BOOTSTRAP_ADMINS`. They always have `user_mgrs`, so the panel can be opened with an empty table, and the API reports them as `admin` as well. `admin` is worked out on every call and never stored, and they cannot be demoted. Only an administrator can send role changes; a user manager who tries gets 403.
-- Nobody can remove their own `user_mgrs` role. Removing someone from `operators` revokes all their grants. A user who is not an operator cannot be granted an instance.
+- Admin routes need `user_mgrs` or `admin`. Two kinds of change, two kinds of person. Who someone is, meaning their roles, is changed only by an administrator. What someone may start, meaning their grants, is changed by user managers and administrators. Saving changes writes `panel_users` roles and `instance_entitlements` only. It never changes IAM, tags or instances.
+- `admin` is a stored role like the others, so any number of people can be administrators, and an administrator can make or remove others in the panel. The address in `BOOTSTRAP_ADMINS` is always an administrator whatever the table says, so the panel can be opened with an empty table and can never be locked out. It cannot be demoted. Only an administrator can send role changes; a user manager who tries gets 403.
+- Nobody can remove their own `admin` role. Removing someone from `operators` revokes all their grants. A user who is not an operator cannot be granted an instance.
 - Everything is validated before anything is written. Errors never include internal detail.
 
 ## Routes
@@ -29,11 +29,11 @@ All routes need `Authorization: Bearer <ID token>`. Times are milliseconds since
 | `POST /instances/{instanceId}/start` | operator with a grant | `{ok: true}`. 403 without a grant, 404 unknown, 409 not stopped, 503 no capacity |
 | `GET /logins` | anyone | The caller's last 10 panel sign-ins |
 | `GET /logs?source=&severity=&windowMinutes=` | anyone | The caller's own log lines, plus EC2 start/stop activity for instances they hold |
-| `GET /admin/users` | `user_mgrs` | Every user in `panel_users` with `roles` |
-| `GET /admin/instances` | `user_mgrs` | The managed instances |
-| `GET /admin/users/{userId}/grants` | `user_mgrs` | Instance IDs the user holds |
-| `GET /admin/changes` | `user_mgrs` | The last 12 access changes |
-| `PUT /admin/users/{userId}` | `user_mgrs` | Body `{roles:[{role,member}], grants:[{instanceId,grant}]}`; returns `{applied}` |
+| `GET /admin/users` | `user_mgrs` or `admin` | Every user in `panel_users` with `roles` |
+| `GET /admin/instances` | `user_mgrs` or `admin` | The managed instances |
+| `GET /admin/users/{userId}/grants` | `user_mgrs` or `admin` | Instance IDs the user holds |
+| `GET /admin/changes` | `user_mgrs` or `admin` | The last 12 access changes |
+| `PUT /admin/users/{userId}` | `user_mgrs` or `admin` (role changes: `admin` only) | Body `{roles:[{role,member}], grants:[{instanceId,grant}]}`; returns `{applied}` |
 
 An instance in `GET /instances` has `phase` (`stopped`, `pending`, `initializing`, `ready`, `stopping`), `checks` (`ec2`, `http`), `launchedAt`, the shared auto-stop `rule`, and `autoStop` while running. The Access button turns on at `ready`, which needs both EC2 status checks `ok` and the ALB target `healthy`.
 
@@ -57,7 +57,7 @@ Create all three in DynamoDB (on-demand billing).
 
 | Table | Keys | Notes |
 |---|---|---|
-| `panel_users` | `email` (string, partition) | One row per person: `name`, `sub`, `roles` (list of `operators` / `user_mgrs`; `admin` is never stored), `source`, `firstSeenAt`, `lastSeenAt`. The customer function creates a row with no `roles` attribute on first sign-in; only the admin function writes `roles` |
+| `panel_users` | `email` (string, partition) | One row per person: `name`, `sub`, `roles` (list of `operators` / `user_mgrs` / `admin`), `source`, `firstSeenAt`, `lastSeenAt`. The customer function creates a row with no `roles` attribute on first sign-in; only the admin function writes `roles` |
 | `instance_entitlements` | `userId` (string, partition), `instanceId` (string, sort) | Schema in the PRD, FR-4. Rows are never deleted: revoking sets `status` to `revoked` |
 | `control_panel_events` | `pk` (string, partition), `sk` (string, sort) | Turn on TTL for the attribute `expiresAt`. Holds `user#<id>` sign-ins and log lines, and the `changes` history |
 
@@ -65,7 +65,7 @@ Create all three in DynamoDB (on-demand billing).
 
 | Variable | Value | Function |
 |---|---|---|
-| `BOOTSTRAP_ADMINS` | Comma-separated emails of the administrators. They always have `user_mgrs` and are the only people who change roles, for example `garrettds11@gmail.com,admin@example.local` | both |
+| `BOOTSTRAP_ADMINS` | The one address that is always an administrator, for example `garrettds11@gmail.com`. It opens the panel when the table is empty. Further administrators are made in the panel | both |
 | `LAB_PARAMETER_PREFIX` | `/<project_name>/control-panel`. The lab's instance, target group and service address are read live from the SSM parameters under it, which Terraform publishes (see below) | both |
 | `AUTO_STOP_PARAMETER` | `/<project_name>/auto-stop` | customer |
 | `USERS_TABLE`, `ENTITLEMENTS_TABLE`, `EVENTS_TABLE` | Table names (defaults `panel_users`, `instance_entitlements`, `control_panel_events`) | both |

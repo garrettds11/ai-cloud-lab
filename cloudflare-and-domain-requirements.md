@@ -365,7 +365,7 @@ The control panel (`dashboards/`) is a separate web app where customers start th
 |---|---|
 | Hosting, DNS record, API, Lambdas, tables, IAM roles, the authorizer and its routes | Built by hand, kept when the lab is destroyed |
 | The panel's app client in the lab's Cognito pool | Terraform (`control_panel.tf`) |
-| The demo users' rows in `panel_users` (every demo user as `operators`, plus `user_mgrs` for the odd demo users and `admin@example.local`), when `control_panel_users_table` is set | Terraform |
+| The demo users' rows in `panel_users` (every demo user as `operators`, plus `user_mgrs` for the odd demo users and `admin` for `admin@example.local`), when `control_panel_users_table` is set | Terraform |
 | The lab's instance, target group and service address, as SSM parameters, and the `control-panel=managed` tag on the instance | Terraform (`control_panel_lab.tf`) |
 | The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
 | Real users, their roles and instance grants | The control panel. Terraform never touches them |

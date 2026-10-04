@@ -531,8 +531,8 @@ by hand. Check:
    each of the 11 demo accounts: `demo1@example.local`, `demo3@example.local` and the
    other odd demo users with `operators` and `user_mgrs` in `roles`;
    `demo2@example.local` and the other even demo users with `operators`;
-   `admin@example.local` with `operators` and `user_mgrs`. Only an address in the API's
-   `BOOTSTRAP_ADMINS` setting is an administrator and can change roles.
+   `admin@example.local` with `operators` and `admin`. Only an administrator can change
+   roles, and any administrator can make another.
 
 5. If `control_panel_api_id`, `control_panel_authorizer_id` and
    `control_panel_holding_pool_id` are set, `apply` pointed the control panel API's authorizer at

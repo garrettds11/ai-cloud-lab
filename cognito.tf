@@ -120,7 +120,7 @@ resource "aws_cognito_user" "lab" {
 # that table so the demo works straight away: the odd demo users (the 1st, 3rd, 5th ...
 # entry of open_webui_demo_users, so demo1, demo3 ... demo9) get operators and user_mgrs,
 # the even ones (demo2, demo4 ... demo10) get operators, and the administrator account gets
-# operators and user_mgrs, so every demo account can launch an instance. The rows
+# operators and admin, so every demo account can launch an instance. The rows
 # are removed again on destroy. Terraform never touches any other row, so real users
 # are managed in the control panel. After a demo user signs in the panel adds a few
 # fields (name, last seen) to their row, and the next apply puts the row back as seeded.

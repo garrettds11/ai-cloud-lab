@@ -11,13 +11,14 @@ Rules, checked on every call (see README.md):
     table, read on every call, so a role change takes effect at once.
   * Customers see and start only the instances they hold an active grant for, and only
     while they hold the operators role. Nobody here can stop an instance.
-  * Admin routes need the user_mgrs role. User managers change who may start which
-    instance (grants). Only an administrator changes anyone's roles. Saving changes writes
-    the panel's users and instance_entitlements tables only. It never changes IAM, tags,
-    Cognito or instances.
-  * Administrators are the people named in BOOTSTRAP_ADMINS. They are always user managers
-    too, so the panel is never locked out and is unreachable by anyone else until a real
-    person is added. "admin" is worked out on every call and is never stored in the table.
+  * Admin routes need the user_mgrs or the admin role. User managers and administrators
+    change who may start which instance (grants). Only an administrator changes anyone's
+    roles, including who else is an administrator. Saving changes writes the panel's users
+    and instance_entitlements tables only. It never changes IAM, tags, Cognito or instances.
+  * Any number of people can hold the admin role (it is stored in the table like the other
+    roles). People named in BOOTSTRAP_ADMINS are always administrators too, whatever the
+    table says, so the panel is never locked out and is unreachable by anyone else until a
+    real person is added.
 
 Times in responses are milliseconds since the epoch.
 """
@@ -35,8 +36,8 @@ from botocore.exceptions import ClientError
 
 ROLE_OPERATORS = "operators"
 ROLE_USER_MGRS = "user_mgrs"
-ROLE_ADMIN = "admin"  # derived from BOOTSTRAP_ADMINS, never stored
-ROLE_LABELS = {ROLE_OPERATORS: "Operator role", ROLE_USER_MGRS: "User manager role"}
+ROLE_ADMIN = "admin"
+ROLE_LABELS = {ROLE_OPERATORS: "Operator role", ROLE_USER_MGRS: "User manager role", ROLE_ADMIN: "Administrator role"}
 
 USERS_TABLE = os.environ.get("USERS_TABLE", "panel_users")
 BOOTSTRAP_ADMINS = {e.strip().lower() for e in os.environ.get("BOOTSTRAP_ADMINS", "").split(",") if e.strip()}
@@ -118,15 +119,19 @@ def _roles_of(email, row=None):
     """The person's current roles from the panel's table, read on every call."""
     row = row if row is not None else _user_row(email)
     roles = [r for r in (row or {}).get("roles", []) if r in ROLE_LABELS]
-    if email in BOOTSTRAP_ADMINS:
-        if ROLE_USER_MGRS not in roles:
-            roles.append(ROLE_USER_MGRS)
+    if email in BOOTSTRAP_ADMINS and ROLE_ADMIN not in roles:
         roles.append(ROLE_ADMIN)
     return roles
 
 
 def _require_role(caller, role):
     if role not in caller["roles"]:
+        raise ApiError(403, "You do not have permission to do that.")
+
+
+def _require_manager(caller):
+    """User managers and administrators may open User management and change grants."""
+    if ROLE_USER_MGRS not in caller["roles"] and ROLE_ADMIN not in caller["roles"]:
         raise ApiError(403, "You do not have permission to do that.")
 
 
@@ -558,7 +563,7 @@ def _all_users():
 
 
 def list_users(caller):
-    _require_role(caller, ROLE_USER_MGRS)
+    _require_manager(caller)
     rows = {r["email"]: r for r in _all_users()}
     for email in BOOTSTRAP_ADMINS:
         rows.setdefault(email, {"email": email, "roles": [], "source": "settings"})
@@ -579,7 +584,7 @@ def list_users(caller):
 
 
 def list_all_instances(caller):
-    _require_role(caller, ROLE_USER_MGRS)
+    _require_manager(caller)
     raws = _describe(_instance_ids())
     return [
         {"id": i, "name": _tag(raws[i]["instance"], "Name") or i, "type": raws[i]["instance"].get("InstanceType", "")}
@@ -589,12 +594,12 @@ def list_all_instances(caller):
 
 
 def get_grants(caller, user_id):
-    _require_role(caller, ROLE_USER_MGRS)
+    _require_manager(caller)
     return [i for i in _granted_ids(user_id.lower()) if i in _instance_ids()]
 
 
 def list_changes(caller):
-    _require_role(caller, ROLE_USER_MGRS)
+    _require_manager(caller)
     return [
         {
             "t": _num(r["t"]),
@@ -611,6 +616,8 @@ def list_changes(caller):
 
 def _role_label(roles):
     parts = []
+    if ROLE_ADMIN in roles:
+        parts.append("Administrator")
     if ROLE_OPERATORS in roles:
         parts.append("Operator")
     if ROLE_USER_MGRS in roles:
@@ -621,7 +628,7 @@ def _role_label(roles):
 def save_user(caller, user_id, payload):
     """Role changes first, then grants, so a user can be made an operator and granted
     instances in one save. Everything is validated before anything is written."""
-    _require_role(caller, ROLE_USER_MGRS)
+    _require_manager(caller)
     user_id = user_id.lower()
     role_changes = payload.get("roles") or []
     grant_changes = payload.get("grants") or []
@@ -638,11 +645,11 @@ def save_user(caller, user_id, payload):
         role, member = change.get("role"), bool(change.get("member"))
         if role not in ROLE_LABELS:
             raise ApiError(400, "Unknown role.")
-        if role == ROLE_USER_MGRS and not member:
+        if role == ROLE_ADMIN and not member:
             if user_id == caller["id"]:
-                raise ApiError(409, "You cannot remove your own user manager role. Ask another user manager to do it.")
+                raise ApiError(409, "You cannot remove your own administrator role. Ask another administrator to do it.")
             if user_id in BOOTSTRAP_ADMINS:
-                raise ApiError(409, f"{target_name} is a user manager set in the panel's settings, so this cannot be changed here.")
+                raise ApiError(409, f"{target_name} is an administrator set in the panel's settings, so this cannot be changed here.")
         if member and role not in final:
             final.append(role)
         if not member and role in final:

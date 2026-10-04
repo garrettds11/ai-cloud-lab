@@ -232,7 +232,7 @@
     listLogins: () => request('GET', '/logins'),
     listLogs: (filter) => request('GET', '/logs?' + new URLSearchParams(filter || {}).toString()),
 
-    // User management (user_mgrs only; the API checks again)
+    // User management (user managers and administrators; the API checks again)
     listUsers: () => request('GET', '/admin/users'),
     listAllInstances: () => request('GET', '/admin/instances'),
     getGrants: (userId) => request('GET', '/admin/users/' + enc(userId) + '/grants'),

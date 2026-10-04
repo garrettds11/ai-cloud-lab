@@ -499,6 +499,32 @@ To turn local password sign-in off, set `open_webui_enable_local_login = false`
 
 ==*Change the temporary password immediately*== after confirming access.
 
+### Control panel config test
+
+Skip this section unless `enable_cognito` is `true` and `control_panel_url` is set
+in `terraform.tfvars`. Terraform creates the control panel's Cognito app client
+and the `control_panel_config` output. After `apply` completes, write the file the
+panel loads. Run this from the repository directory, with
+`Invoke-TerraformWithCloudflareToken` loaded:
+
+```powershell
+.\scripts\make-panel-config.ps1
+```
+
+Then check:
+
+1. The script prints `Wrote ...\dashboards\config.js` and does not stop with an
+   error. A warning that there is no API address is expected until
+   `control_panel_api_url` is set.
+2. `dashboards\config.js` holds the region, the user pool ID, an app client ID and
+   the `redirectUri` `https://cp.aiwebdemo.click/`. It is not tracked by git
+   (`git status` does not list it).
+3. In the Cognito console, the user pool has a second app client named
+   `<project_name>-control-panel` with no client secret, and the groups
+   `operators` and `user_mgrs` exist. `demo1@example.local`, `demo3@example.local`
+   and the other odd demo users are in `operators`; `demo2@example.local` and the
+   other even demo users are not. `admin@example.local` is in `user_mgrs`.
+
 ## 6. Stop or destroy the test system
 
 If you may test again later, stop the instance to avoid ongoing compute charges:

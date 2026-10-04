@@ -444,6 +444,53 @@
       return clone(history.slice(0, 12));
     },
 
+    // Saves group membership and instance grants for one user in one call. Groups are
+    // applied first, so a user can be made an operator and granted instances together.
+    // Rules: an admin cannot remove their own user_mgrs membership, and a user who
+    // stops being an operator loses every grant. Terraform separately resets only
+    // the demo users to their roles on each apply.
+    async saveUserChanges(session, userId, payload) {
+      await latency();
+      const admin = requireUser(session);
+      requireGroup(admin, GROUP_USER_MGRS);
+      const target = users.find((u) => u.id === userId);
+      if (!target) throw new ApiError(404, 'User not found.');
+      const groupChanges = (payload && payload.groups) || [];
+      const grantChanges = (payload && payload.grants) || [];
+      const allowed = [GROUP_OPERATORS, GROUP_USER_MGRS];
+      groupChanges.forEach((c) => {
+        if (!allowed.includes(c.group)) throw new ApiError(400, 'Unknown group.');
+        if (c.group === GROUP_USER_MGRS && !c.member && target.id === admin.id) {
+          throw new ApiError(409, 'You cannot remove yourself from the user_mgrs group. Ask another user manager to do it.');
+        }
+      });
+      const t = now();
+      let applied = 0;
+      groupChanges.forEach((c) => {
+        const has = target.groups.includes(c.group);
+        if (c.member === has) return;
+        const label = c.group === GROUP_OPERATORS ? 'Operator group' : 'User manager group';
+        if (c.member) target.groups.push(c.group);
+        else target.groups = target.groups.filter((g) => g !== c.group);
+        history.unshift({ t, adminId: admin.id, userId, instanceId: null, group: label, action: c.member ? 'Added' : 'Removed', result: 'Applied' });
+        addLog(t, 'Control panel', 'info', (c.member ? 'Added ' : 'Removed ') + target.name + (c.member ? ' to ' : ' from ') + label, { userId: admin.id });
+        applied += 1;
+        if (c.group === GROUP_OPERATORS && !c.member) {
+          entitlements.filter((e) => e.userId === userId && e.status === 'applied').forEach((e) => {
+            e.status = 'revoked';
+            e.by = admin.id;
+            e.at = t;
+            history.unshift({ t, adminId: admin.id, userId, instanceId: e.instanceId, action: 'Revoked', result: 'Applied' });
+          });
+        }
+      });
+      if (grantChanges.length) {
+        await api.saveGrants(session, userId, grantChanges);
+        applied += grantChanges.length;
+      }
+      return { applied };
+    },
+
     async saveGrants(session, userId, changes) {
       await latency();
       const admin = requireUser(session);

@@ -92,7 +92,7 @@
 
   // ---- state ---------------------------------------------------------------------------
 
-  const freshUM = () => ({ users: null, instances: null, selectedId: null, saved: new Set(), staged: new Map(), changes: null, error: null });
+  const freshUM = () => ({ users: null, instances: null, selectedId: null, saved: new Set(), staged: new Map(), stagedGroups: new Map(), changes: null, error: null });
 
   const state = {
     session: null,
@@ -731,15 +731,23 @@
   const um = () => state.um;
   const umUser = () => (um().users || []).find((u) => u.id === um().selectedId);
 
+  const GROUPS = [
+    { key: 'operators', label: 'Operator', help: 'May start the instances they are granted.' },
+    { key: 'user_mgrs', label: 'User manager', help: 'May open User management and change who can start what.' },
+  ];
+
+  const pendingCount = () => um().staged.size + um().stagedGroups.size;
+  const inGroup = (user, key) => (um().stagedGroups.has(key) ? um().stagedGroups.get(key) : user.groups.includes(key));
+
   function umDirty() {
-    return um().staged.size > 0;
+    return pendingCount() > 0;
   }
 
   async function confirmDiscard() {
     if (!umDirty()) return true;
     return confirmDialog({
       title: 'Discard unsaved changes?',
-      body: h('p', { text: 'You have ' + um().staged.size + ' unsaved change' + (um().staged.size === 1 ? '' : 's') + '. They will be lost.' }),
+      body: h('p', { text: 'You have ' + pendingCount() + ' unsaved change' + (pendingCount() === 1 ? '' : 's') + '. They will be lost.' }),
       confirmLabel: 'Discard',
       cancelLabel: 'Keep editing',
     });
@@ -750,6 +758,7 @@
     if (!(await confirmDiscard())) { paintUM(); return; }
     um().selectedId = id;
     um().staged = new Map();
+    um().stagedGroups = new Map();
     um().saved = new Set();
     paintUM();
     try {
@@ -770,6 +779,13 @@
     paintUM();
   }
 
+  function toggleGroup(key, checked) {
+    const user = umUser();
+    if (checked === user.groups.includes(key)) um().stagedGroups.delete(key);
+    else um().stagedGroups.set(key, checked);
+    paintUM();
+  }
+
   function pendingChanges() {
     return Array.from(um().staged.entries()).map(([instanceId, grant]) => ({ instanceId, grant }));
   }
@@ -777,23 +793,33 @@
   async function saveChanges() {
     const user = umUser();
     const changes = pendingChanges();
+    const groupChanges = Array.from(um().stagedGroups.entries()).map(([group, member]) => ({ group, member }));
+    const total = changes.length + groupChanges.length;
     const nameOf = (id) => um().instances.find((i) => i.id === id).name;
+    const labelOfGroup = (key) => GROUPS.find((g) => g.key === key).label;
+    const losesOperator = groupChanges.some((c) => c.group === 'operators' && !c.member);
     const ok = await confirmDialog({
-      title: 'Save access changes for ' + user.name + '?',
+      title: 'Save changes for ' + user.name + '?',
       body: h('div', null,
-        h('ul', null, changes.map((c) => h('li', { text: (c.grant ? 'Grant: ' : 'Revoke: ') + nameOf(c.instanceId) }))),
-        h('p', { class: 'muted', text: 'This changes who may start each instance. It does not start or stop any instance: a running instance keeps running.' })),
+        h('ul', null,
+          groupChanges.map((c) => h('li', { text: (c.member ? 'Add to group: ' : 'Remove from group: ') + labelOfGroup(c.group) })),
+          changes.map((c) => h('li', { text: (c.grant ? 'Grant: ' : 'Revoke: ') + nameOf(c.instanceId) }))),
+        losesOperator ? h('p', { text: 'Removing ' + user.name + ' from Operator also revokes every instance they were granted.' }) : null,
+        h('p', { class: 'muted', text: 'This changes who may start each instance and which groups a person is in. It does not start or stop any instance: a running instance keeps running.' }),
+        groupChanges.length ? h('p', { class: 'muted', text: 'A group change reaches someone who is already signed in when their sign-in refreshes or they sign in again.' }) : null),
       confirmLabel: 'Save changes',
     });
     if (!ok) return;
     try {
-      await API.saveGrants(state.session, user.id, changes);
+      await API.saveUserChanges(state.session, user.id, { groups: groupChanges, grants: changes });
+      um().users = await API.listUsers(state.session);
       const granted = await API.getGrants(state.session, user.id);
       um().saved = new Set(granted);
       um().staged = new Map();
+      um().stagedGroups = new Map();
       um().changes = await API.listChanges(state.session);
-      toast('Saved ' + changes.length + ' change' + (changes.length === 1 ? '' : 's') + ' for ' + user.name, 'ok');
-      announce('Saved ' + changes.length + ' access change' + (changes.length === 1 ? '' : 's') + ' for ' + user.name);
+      toast('Saved ' + total + ' change' + (total === 1 ? '' : 's') + ' for ' + user.name, 'ok');
+      announce('Saved ' + total + ' change' + (total === 1 ? '' : 's') + ' for ' + user.name);
     } catch (err) {
       toast(err.message, 'error');
       announce(err.message);
@@ -830,14 +856,43 @@
       }
       const user = umUser();
       if (!user) {
-        body.append(h('p', { class: 'empty-small', text: 'Choose a user to see and change which instances they may start.' }));
+        body.append(h('p', { class: 'empty-small', text: 'Choose a user to see and change their groups and which instances they may start.' }));
         return;
       }
       const operator = user.groups.includes('operators');
       if (!operator) {
         body.append(h('div', { class: 'notice' }, icon('info'),
-          h('span', { text: user.name + ' is not in the operators group, so cannot be granted instances. Add them to the operators group in Cognito first.' })));
+          h('span', { text: user.name + ' is not in the Operator group, so cannot be granted instances. Add them to Operator in the Groups section below, save, then grant instances.' })));
       }
+      const isSelf = state.session && user.id === state.session.userId;
+      body.append(h('h2', { class: 'section-title', text: 'Groups' }),
+        h('table', { class: 'grid' },
+          h('caption', { class: 'sr-only', text: 'Groups ' + user.name + ' belongs to' }),
+          h('thead', null, h('tr', null,
+            h('th', { scope: 'col', class: 'check-cell' }, h('span', { class: 'sr-only', text: 'Member' })),
+            h('th', { scope: 'col', text: 'Group' }),
+            h('th', { scope: 'col', text: 'Status' }))),
+          h('tbody', null, GROUPS.map((g) => {
+            const locked = isSelf && g.key === 'user_mgrs';
+            const checked = inGroup(user, g.key);
+            const pending = um().stagedGroups.has(g.key);
+            return h('tr', null,
+              h('td', { class: 'check-cell' }, h('input', {
+                type: 'checkbox', id: 'group-' + g.key, checked, disabled: locked, 'data-key': 'group:' + g.key,
+                'aria-labelledby': 'group-name-' + g.key, 'aria-describedby': 'group-help-' + g.key,
+                onChange: (e) => toggleGroup(g.key, e.target.checked),
+              })),
+              h('td', null,
+                h('label', { id: 'group-name-' + g.key, for: 'group-' + g.key, class: 'name', text: g.label }),
+                h('div', { id: 'group-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (locked ? ' You cannot remove yourself from this group.' : '') }))),
+              h('td', null, pending
+                ? h('span', { class: 'chip tone-amber' }, icon('dot'), checked ? 'Pending: add' : 'Pending: remove')
+                : (user.groups.includes(g.key)
+                  ? h('span', { class: 'chip tone-green' }, icon('check'), 'Member')
+                  : h('span', { class: 'chip tone-grey' }, icon('dot'), 'Not a member'))));
+          }))),
+        h('p', { class: 'muted', text: 'Demo users are put back in their Terraform roles on every apply. Changes to anyone else stay.' }),
+        h('h2', { class: 'section-title', text: 'Instance access' }));
       body.append(h('table', { class: 'grid' },
         h('caption', { class: 'sr-only', text: 'Instances and whether ' + user.name + ' may start them' }),
         h('thead', null, h('tr', null,
@@ -857,11 +912,11 @@
               h('div', { class: 'idrow' }, h('code', { text: inst.id }), h('span', { text: ' ' + inst.type }))),
             h('td', null, accessChip(inst.id)));
         }))));
-      const n = um().staged.size;
+      const n = pendingCount();
       body.append(h('div', { class: 'savebar', role: 'region', 'aria-label': 'Unsaved changes', hidden: n === 0 },
         h('span', null, h('strong', { text: String(n) }), ' unsaved change' + (n === 1 ? '' : 's')),
         h('span', { class: 'spacer' }),
-        h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => { um().staged = new Map(); paintUM(); }, text: 'Discard' }),
+        h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => { um().staged = new Map(); um().stagedGroups = new Map(); paintUM(); }, text: 'Discard' }),
         h('button', { type: 'button', class: 'btn btn-live', onClick: saveChanges, text: 'Save changes' })));
     });
     paintChanges();
@@ -878,13 +933,13 @@
       rows.length
         ? h('table', { class: 'grid' },
           h('caption', { class: 'sr-only', text: 'Recent access changes, newest first' }),
-          h('thead', null, h('tr', null, ['Time', 'Changed by', 'User', 'Instance', 'Change', 'Result'].map((c) => h('th', { scope: 'col', text: c })))),
+          h('thead', null, h('tr', null, ['Time', 'Changed by', 'User', 'Item', 'Change', 'Result'].map((c) => h('th', { scope: 'col', text: c })))),
           h('tbody', null, rows.map((r) => h('tr', null,
             h('td', { text: fmt.dateTime(r.t) }),
             h('td', { text: nameOfUser(r.adminId) }),
             h('td', { text: nameOfUser(r.userId) }),
-            h('td', { text: nameOfInst(r.instanceId) }),
-            h('td', null, h('span', { class: 'chip ' + (r.action === 'Granted' ? 'tone-green' : 'tone-grey') }, r.action)),
+            h('td', { text: r.group || nameOfInst(r.instanceId) }),
+            h('td', null, h('span', { class: 'chip ' + (r.action === 'Granted' || r.action === 'Added' ? 'tone-green' : 'tone-grey') }, r.action)),
             h('td', null, h('span', { class: 'chip tone-green' }, icon('check'), r.result))))))
         : h('p', { class: 'empty-small', text: 'No changes yet.' }));
   }
@@ -901,7 +956,7 @@
     }
     main.replaceChildren(
       h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'User management' }),
-      h('p', { class: 'page-lead', text: 'Choose which instances a user may start. Nothing changes until you save.' }),
+      h('p', { class: 'page-lead', text: 'Choose which groups a user is in and which instances they may start. Nothing changes until you save.' }),
       h('div', { id: 'um-picker', class: 'um-picker' }),
       h('div', { id: 'um-body' }),
       h('div', { id: 'um-changes' }));

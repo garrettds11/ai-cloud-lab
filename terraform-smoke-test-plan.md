@@ -426,6 +426,20 @@ aws ssm start-session `
 
 Then open http://localhost:8081.
 
+### Outbound restriction test
+
+The instance may make outbound connections only on TCP 443 and 80. In an SSM shell
+on the instance (`aws ssm start-session --target $env:instance_id`):
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 https://ollama.com
+curl -sS --max-time 8 http://portquiz.net:8080 || echo "blocked"
+```
+
+The first command must print an HTTP status. The second must time out and print
+`blocked`. If bootstrap itself failed on a download, check the bootstrap log for the
+host it could not reach and add that destination to `extra_egress_cidrs`.
+
 ### Login with the admin and demo accounts
 
 Initial login credentials are as follows unless you changed `open_webui_admin_email`:

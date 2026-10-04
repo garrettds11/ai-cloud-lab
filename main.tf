@@ -103,12 +103,33 @@ resource "aws_security_group" "ai_lab" {
 
   # Open WebUI 8080 and Ollama 11434 are intentionally not exposed.
   # Use SSM port forwarding or the optional SSH tunnel for private access.
-  egress {
-    description = "Allow Internet access for package and model downloads"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  # Outbound traffic is limited to what bootstrap and normal use need: HTTPS for the
+  # AWS APIs, Docker images, the Ollama installer and model downloads, and HTTP for
+  # apt mirrors. DNS, the instance metadata service and the Amazon time service are
+  # not filtered by security groups, so they need no rule. Anything else, such as a
+  # private database, must be added through extra_egress_cidrs.
+  dynamic "egress" {
+    for_each = toset([443, 80])
+
+    content {
+      description = egress.value == 443 ? "HTTPS for AWS APIs, container images and model downloads" : "HTTP for apt package mirrors"
+      from_port   = egress.value
+      to_port     = egress.value
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  dynamic "egress" {
+    for_each = length(var.extra_egress_cidrs) > 0 ? { extra = var.extra_egress_cidrs } : {}
+
+    content {
+      description = "Additional outbound destinations from extra_egress_cidrs"
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = egress.value
+    }
   }
 
   tags = {

@@ -11,7 +11,7 @@ The active lab provisions:
 - Docker for running Open WebUI with a persistent `open-webui` volume
 - AWS Systems Manager Session Manager for shell access and port forwarding
 - An IAM instance profile with `AmazonSSMManagedInstanceCore`
-- A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic)
+- A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic), and outbound traffic limited to TCP 443 and 80 plus anything in `extra_egress_cidrs`
 - Optional public HTTPS access through an Application Load Balancer and ACM, fronted by Cloudflare (DNS, proxy, and Cloudflare Access), or by Route 53 when Cloudflare is disabled
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.

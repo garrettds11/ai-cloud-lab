@@ -300,6 +300,17 @@ variable "cloudflare_access_team_domain" {
   }
 }
 
+variable "extra_egress_cidrs" {
+  description = "Additional destination CIDRs the instance may reach on any port, on top of the default outbound HTTPS (443) and HTTP (80). Leave empty unless the lab must reach a private service."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.extra_egress_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "extra_egress_cidrs must contain valid CIDR ranges."
+  }
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

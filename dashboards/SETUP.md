@@ -45,12 +45,29 @@ Fill in the "Created" column as each piece is built.
 
 | Piece | Notes | Created |
 |---|---|---|
-| S3 bucket for the static files | Private. Block all public access. Only CloudFront reads it. | |
+| S3 bucket for the static files | Private. Block all public access. Only CloudFront reads it. | 2026-10-04: `aiwebdemo-control-panel-394566733278` |
+| ACM certificate for `cp.aiwebdemo.click` | Must be in us-east-1 for CloudFront. The existing `aiwebdemo.click` certificate does not cover this name. Validate it with the CNAME below. | 2026-10-04, `arn:aws:acm:us-east-1:394566733278:certificate/52e00bc0-78f6-4c11-909c-aacb16d471c8`, waiting for DNS validation |
 | CloudFront distribution | Origin access control to the bucket. Alias `cp.aiwebdemo.click`. Certificate in us-east-1 that covers that name. Response headers policy (CSP, HSTS). WAF if wanted. | |
 | DNS record `cp.aiwebdemo.click` | CNAME to the CloudFront domain, in the Cloudflare zone for aiwebdemo.click. | |
-| DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | |
+| DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | 2026-10-04 (TTL on `expiresAt` set) |
 | Control API (Lambda and API Gateway HTTP API) | Source in `api/handler.py`. Steps, settings and routes in `api/README.md`. | |
 | Role for the API | Least-privilege policy in `api/README.md`. It can start one instance and cannot stop any. | |
+
+## Still to build
+
+These need things Terraform creates when the lab is deployed (the instance, target group, user pool and panel app client), so they wait for `apply`:
+
+- Role for the API, the Lambda, the API Gateway routes and JWT authorizer.
+- CloudFront distribution (also waits for the certificate to validate).
+- DNS record `cp.aiwebdemo.click`, a CNAME to the CloudFront domain.
+
+## Certificate validation record
+
+Add this in Cloudflare (DNS only, not proxied):
+
+| Type | Name | Value |
+|---|---|---|
+| CNAME | `_b10f8b3db7ab139a6871da908eaad469.cp` | `_7959b1b55044055f3e50b35a49be3d58.wzccmgtwzk.acm-validations.aws` |
 
 ## Deploy the pages
 

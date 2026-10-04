@@ -46,8 +46,8 @@ Fill in the "Created" column as each piece is built.
 | Piece | Notes | Created |
 |---|---|---|
 | S3 bucket for the static files | Private. Block all public access. Only CloudFront reads it. | 2026-10-04: `aiwebdemo-control-panel-394566733278` |
-| ACM certificate for `cp.aiwebdemo.click` | Must be in us-east-1 for CloudFront. The existing `aiwebdemo.click` certificate does not cover this name. Validate it with the CNAME below. | 2026-10-04, `arn:aws:acm:us-east-1:394566733278:certificate/52e00bc0-78f6-4c11-909c-aacb16d471c8`, waiting for DNS validation |
-| CloudFront distribution | Origin access control to the bucket. Alias `cp.aiwebdemo.click`. Certificate in us-east-1 that covers that name. Response headers policy (CSP, HSTS). WAF if wanted. | |
+| Certificate for `cp.aiwebdemo.click` | Uses the existing ACM certificate `1163bb42-f265-4702-aad2-868c677ee07a` (us-east-1), which already covers `aiwebdemo.click` and `*.aiwebdemo.click`. No new certificate or validation record is needed. | 2026-10-04 |
+| CloudFront distribution | Origin access control `E155I4E0R9TNMQ` to the bucket, alias `cp.aiwebdemo.click`, TLS 1.2 minimum, HTTPS only, headers policy `aiwebdemo-control-panel-headers` (CSP, HSTS, no framing). The bucket policy lets only this distribution read it. WAF not added. | 2026-10-04: `E2799OUDXX2ED3`, `d11guvgb5r6hlh.cloudfront.net` |
 | DNS record `cp.aiwebdemo.click` | CNAME to the CloudFront domain, in the Cloudflare zone for aiwebdemo.click. | |
 | DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | 2026-10-04 (TTL on `expiresAt` set) |
 | Control API (Lambda and API Gateway HTTP API) | Source in `api/handler.py`. Steps, settings and routes in `api/README.md`. | |
@@ -55,19 +55,11 @@ Fill in the "Created" column as each piece is built.
 
 ## Still to build
 
-These need things Terraform creates when the lab is deployed (the instance, target group, user pool and panel app client), so they wait for `apply`:
+The API pieces need things Terraform creates when the lab is deployed (the instance, target group, user pool and panel app client), so they wait for `apply`:
 
 - Role for the API, the Lambda, the API Gateway routes and JWT authorizer.
-- CloudFront distribution (also waits for the certificate to validate).
-- DNS record `cp.aiwebdemo.click`, a CNAME to the CloudFront domain.
-
-## Certificate validation record
-
-Add this in Cloudflare (DNS only, not proxied):
-
-| Type | Name | Value |
-|---|---|---|
-| CNAME | `_b10f8b3db7ab139a6871da908eaad469.cp` | `_7959b1b55044055f3e50b35a49be3d58.wzccmgtwzk.acm-validations.aws` |
+- DNS record `cp.aiwebdemo.click`: a CNAME in Cloudflare to `d11guvgb5r6hlh.cloudfront.net`, DNS only (not proxied).
+- Upload the pages, after `config.js` exists.
 
 ## Deploy the pages
 

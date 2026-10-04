@@ -29,14 +29,14 @@
     return rest ? h + ' h ' + rest + ' min' : h + ' h';
   }
 
-  function roleLabel(groups) {
+  function roleLabel(roles) {
     const parts = [];
-    if (groups.includes('operators')) parts.push('Operator');
-    if (groups.includes('user_mgrs')) parts.push('User manager');
+    if (roles.includes('operators')) parts.push('Operator');
+    if (roles.includes('user_mgrs')) parts.push('User manager');
     return parts.length ? parts.join(', ') : 'No role';
   }
 
-  const isManager = () => !!state.session && state.session.groups.includes('user_mgrs');
+  const isManager = () => !!state.session && state.session.roles.includes('user_mgrs');
 
   // ---- tiny DOM helpers --------------------------------------------------------------
 
@@ -92,7 +92,7 @@
 
   // ---- state ---------------------------------------------------------------------------
 
-  const freshUM = () => ({ users: null, instances: null, selectedId: null, saved: new Set(), staged: new Map(), stagedGroups: new Map(), changes: null, error: null });
+  const freshUM = () => ({ users: null, instances: null, selectedId: null, saved: new Set(), staged: new Map(), stagedRoles: new Map(), changes: null, error: null });
 
   const state = {
     session: null,
@@ -732,13 +732,13 @@
   const um = () => state.um;
   const umUser = () => (um().users || []).find((u) => u.id === um().selectedId);
 
-  const GROUPS = [
+  const ROLES = [
     { key: 'operators', label: 'Operator', help: 'May start the instances they are granted.' },
     { key: 'user_mgrs', label: 'User manager', help: 'May open User management and change who can start what.' },
   ];
 
-  const pendingCount = () => um().staged.size + um().stagedGroups.size;
-  const inGroup = (user, key) => (um().stagedGroups.has(key) ? um().stagedGroups.get(key) : user.groups.includes(key));
+  const pendingCount = () => um().staged.size + um().stagedRoles.size;
+  const hasRole = (user, key) => (um().stagedRoles.has(key) ? um().stagedRoles.get(key) : user.roles.includes(key));
 
   function umDirty() {
     return pendingCount() > 0;
@@ -759,7 +759,7 @@
     if (!(await confirmDiscard())) { paintUM(); return; }
     um().selectedId = id;
     um().staged = new Map();
-    um().stagedGroups = new Map();
+    um().stagedRoles = new Map();
     um().saved = new Set();
     paintUM();
     try {
@@ -780,10 +780,10 @@
     paintUM();
   }
 
-  function toggleGroup(key, checked) {
+  function toggleRole(key, checked) {
     const user = umUser();
-    if (checked === user.groups.includes(key)) um().stagedGroups.delete(key);
-    else um().stagedGroups.set(key, checked);
+    if (checked === user.roles.includes(key)) um().stagedRoles.delete(key);
+    else um().stagedRoles.set(key, checked);
     paintUM();
   }
 
@@ -794,30 +794,30 @@
   async function saveChanges() {
     const user = umUser();
     const changes = pendingChanges();
-    const groupChanges = Array.from(um().stagedGroups.entries()).map(([group, member]) => ({ group, member }));
-    const total = changes.length + groupChanges.length;
+    const roleChanges = Array.from(um().stagedRoles.entries()).map(([role, member]) => ({ role, member }));
+    const total = changes.length + roleChanges.length;
     const nameOf = (id) => um().instances.find((i) => i.id === id).name;
-    const labelOfGroup = (key) => GROUPS.find((g) => g.key === key).label;
-    const losesOperator = groupChanges.some((c) => c.group === 'operators' && !c.member);
+    const labelOfRole = (key) => ROLES.find((g) => g.key === key).label;
+    const losesOperator = roleChanges.some((c) => c.role === 'operators' && !c.member);
     const ok = await confirmDialog({
       title: 'Save changes for ' + user.name + '?',
       body: h('div', null,
         h('ul', null,
-          groupChanges.map((c) => h('li', { text: (c.member ? 'Add to group: ' : 'Remove from group: ') + labelOfGroup(c.group) })),
+          roleChanges.map((c) => h('li', { text: (c.member ? 'Add role: ' : 'Remove role: ') + labelOfRole(c.role) })),
           changes.map((c) => h('li', { text: (c.grant ? 'Grant: ' : 'Revoke: ') + nameOf(c.instanceId) }))),
         losesOperator ? h('p', { text: 'Removing ' + user.name + ' from Operator also revokes every instance they were granted.' }) : null,
-        h('p', { class: 'muted', text: 'This changes who may start each instance and which groups a person is in. It does not start or stop any instance: a running instance keeps running.' }),
-        groupChanges.length ? h('p', { class: 'muted', text: 'A group change reaches someone who is already signed in when their sign-in refreshes or they sign in again.' }) : null),
+        h('p', { class: 'muted', text: 'This changes who may start each instance and which roles a person has. It does not start or stop any instance: a running instance keeps running.' }),
+        null),
       confirmLabel: 'Save changes',
     });
     if (!ok) return;
     try {
-      await API.saveUserChanges(user.id, { groups: groupChanges, grants: changes });
+      await API.saveUserChanges(user.id, { roles: roleChanges, grants: changes });
       um().users = await API.listUsers();
       const granted = await API.getGrants(user.id);
       um().saved = new Set(granted);
       um().staged = new Map();
-      um().stagedGroups = new Map();
+      um().stagedRoles = new Map();
       um().changes = await API.listChanges();
       toast('Saved ' + total + ' change' + (total === 1 ? '' : 's') + ' for ' + user.name, 'ok');
       announce('Saved ' + total + ' change' + (total === 1 ? '' : 's') + ' for ' + user.name);
@@ -845,7 +845,7 @@
         $('#um-picker').replaceChildren(combobox({
           id: 'um-user',
           label: 'User',
-          options: (um().users || []).map((u) => ({ id: u.id, label: u.name + ', ' + roleLabel(u.groups) })),
+          options: (um().users || []).map((u) => ({ id: u.id, label: u.name + ', ' + roleLabel(u.roles) })),
           selectedId: um().selectedId,
           onSelect: selectUser,
         }));
@@ -857,40 +857,40 @@
       }
       const user = umUser();
       if (!user) {
-        body.append(h('p', { class: 'empty-small', text: 'Choose a user to see and change their groups and which instances they may start.' }));
+        body.append(h('p', { class: 'empty-small', text: 'Choose a user to see and change their roles and which instances they may start.' }));
         return;
       }
-      const operator = user.groups.includes('operators');
+      const operator = user.roles.includes('operators');
       if (!operator) {
         body.append(h('div', { class: 'notice' }, icon('info'),
-          h('span', { text: user.name + ' is not in the Operator group, so cannot be granted instances. Add them to Operator in the Groups section below, save, then grant instances.' })));
+          h('span', { text: user.name + ' does not have the Operator role, so cannot be granted instances. Give them the Operator role in the Roles section below, save, then grant instances.' })));
       }
       const isSelf = state.session && user.id === state.session.userId;
-      body.append(h('h2', { class: 'section-title', text: 'Groups' }),
+      body.append(h('h2', { class: 'section-title', text: 'Roles' }),
         h('table', { class: 'grid' },
-          h('caption', { class: 'sr-only', text: 'Groups ' + user.name + ' belongs to' }),
+          h('caption', { class: 'sr-only', text: 'Roles ' + user.name + ' has' }),
           h('thead', null, h('tr', null,
-            h('th', { scope: 'col', class: 'check-cell' }, h('span', { class: 'sr-only', text: 'Member' })),
-            h('th', { scope: 'col', text: 'Group' }),
+            h('th', { scope: 'col', class: 'check-cell' }, h('span', { class: 'sr-only', text: 'Has role' })),
+            h('th', { scope: 'col', text: 'Role' }),
             h('th', { scope: 'col', text: 'Status' }))),
-          h('tbody', null, GROUPS.map((g) => {
+          h('tbody', null, ROLES.map((g) => {
             const locked = isSelf && g.key === 'user_mgrs';
-            const checked = inGroup(user, g.key);
-            const pending = um().stagedGroups.has(g.key);
+            const checked = hasRole(user, g.key);
+            const pending = um().stagedRoles.has(g.key);
             return h('tr', null,
               h('td', { class: 'check-cell' }, h('input', {
-                type: 'checkbox', id: 'group-' + g.key, checked, disabled: locked, 'data-key': 'group:' + g.key,
-                'aria-labelledby': 'group-name-' + g.key, 'aria-describedby': 'group-help-' + g.key,
-                onChange: (e) => toggleGroup(g.key, e.target.checked),
+                type: 'checkbox', id: 'role-' + g.key, checked, disabled: locked, 'data-key': 'role:' + g.key,
+                'aria-labelledby': 'role-name-' + g.key, 'aria-describedby': 'role-help-' + g.key,
+                onChange: (e) => toggleRole(g.key, e.target.checked),
               })),
               h('td', null,
-                h('label', { id: 'group-name-' + g.key, for: 'group-' + g.key, class: 'name', text: g.label }),
-                h('div', { id: 'group-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (locked ? ' You cannot remove yourself from this group.' : '') }))),
+                h('label', { id: 'role-name-' + g.key, for: 'role-' + g.key, class: 'name', text: g.label }),
+                h('div', { id: 'role-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (locked ? ' You cannot remove your own user manager role.' : '') }))),
               h('td', null, pending
                 ? h('span', { class: 'chip tone-amber' }, icon('dot'), checked ? 'Pending: add' : 'Pending: remove')
-                : (user.groups.includes(g.key)
-                  ? h('span', { class: 'chip tone-green' }, icon('check'), 'Member')
-                  : h('span', { class: 'chip tone-grey' }, icon('dot'), 'Not a member'))));
+                : (user.roles.includes(g.key)
+                  ? h('span', { class: 'chip tone-green' }, icon('check'), 'Has role')
+                  : h('span', { class: 'chip tone-grey' }, icon('dot'), 'No role'))));
           }))),
         h('p', { class: 'muted', text: 'Demo users are put back in their Terraform roles on every apply. Changes to anyone else stay.' }),
         h('h2', { class: 'section-title', text: 'Instance access' }));
@@ -917,7 +917,7 @@
       body.append(h('div', { class: 'savebar', role: 'region', 'aria-label': 'Unsaved changes', hidden: n === 0 },
         h('span', null, h('strong', { text: String(n) }), ' unsaved change' + (n === 1 ? '' : 's')),
         h('span', { class: 'spacer' }),
-        h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => { um().staged = new Map(); um().stagedGroups = new Map(); paintUM(); }, text: 'Discard' }),
+        h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => { um().staged = new Map(); um().stagedRoles = new Map(); paintUM(); }, text: 'Discard' }),
         h('button', { type: 'button', class: 'btn btn-live', onClick: saveChanges, text: 'Save changes' })));
     });
     paintChanges();
@@ -939,7 +939,7 @@
             h('td', { text: fmt.dateTime(r.t) }),
             h('td', { text: nameOfUser(r.adminId) }),
             h('td', { text: nameOfUser(r.userId) }),
-            h('td', { text: r.group || nameOfInst(r.instanceId) }),
+            h('td', { text: r.role || nameOfInst(r.instanceId) }),
             h('td', null, h('span', { class: 'chip ' + (r.action === 'Granted' || r.action === 'Added' ? 'tone-green' : 'tone-grey') }, r.action)),
             h('td', null, h('span', { class: 'chip tone-green' }, icon('check'), r.result))))))
         : h('p', { class: 'empty-small', text: 'No changes yet.' }));
@@ -952,12 +952,12 @@
         h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'User management' }),
         h('div', { class: 'empty-state' },
           h('h2', { text: 'You do not have access to this page.' }),
-          h('p', { text: 'User management is for members of the user_mgrs group.' })));
+          h('p', { text: 'User management is for user managers.' })));
       return;
     }
     main.replaceChildren(
       h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'User management' }),
-      h('p', { class: 'page-lead', text: 'Choose which groups a user is in and which instances they may start. Nothing changes until you save.' }),
+      h('p', { class: 'page-lead', text: 'Choose which roles a person has and which instances they may start. Nothing changes until you save.' }),
       h('div', { id: 'um-picker', class: 'um-picker' }),
       h('div', { id: 'um-body' }),
       h('div', { id: 'um-changes' }));

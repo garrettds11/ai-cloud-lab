@@ -520,10 +520,11 @@ Then check:
    the `redirectUri` `https://cp.aiwebdemo.click/`. It is not tracked by git
    (`git status` does not list it).
 3. In the Cognito console, the user pool has a second app client named
-   `<project_name>-control-panel` with no client secret, and the groups
-   `operators` and `user_mgrs` exist. `demo1@example.local`, `demo3@example.local`
-   and the other odd demo users are in `operators`; `demo2@example.local` and the
-   other even demo users are not. `admin@example.local` is in `user_mgrs`.
+   `<project_name>-control-panel` with no client secret.
+4. If `control_panel_users_table` is set, the DynamoDB table it names has a row for
+   each demo user: `demo1@example.local`, `demo3@example.local` and the other odd
+   demo users with `operators` in `roles`; `demo2@example.local` and the other even
+   demo users with an empty `roles` list; `admin@example.local` with `user_mgrs`.
 
 ## 6. Stop or destroy the test system
 

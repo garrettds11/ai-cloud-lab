@@ -508,3 +508,9 @@ variable "control_panel_api_url" {
   type        = string
   default     = null
 }
+
+variable "control_panel_users_table" {
+  description = "Name of the control panel's DynamoDB users table (built by hand, key attribute email). When set, Terraform adds the demo users and their roles to it so the demo works straight away: odd demo users as operators, the administrator as a user manager. Leave null to add nothing. Terraform never changes any other row."
+  type        = string
+  default     = null
+}

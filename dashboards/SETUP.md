@@ -12,7 +12,7 @@ The panel depends on these Terraform-owned things. Do not rename or replace them
 |---|---|
 | Region, user pool ID, app client ID, API address | Terraform output `control_panel_config`, written to `dashboards/config.js` by `scripts/make-panel-config.ps1` |
 | Instance ID | Terraform output `instance_id` |
-| Groups `operators` and `user_mgrs` (exact names) | `cognito.tf` |
+| Table `panel_users` (key `email`), roles `operators` and `user_mgrs` (exact names); demo rows only when `control_panel_users_table` is set | `cognito.tf` |
 | Auto-stop setting `/<project_name>/auto-stop` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init |
 
 Terraform needs `control_panel_url` set in `terraform.tfvars` (and `control_panel_api_url` once the API exists). After an apply, write the config file, then upload it with the pages:
@@ -27,14 +27,14 @@ Read other outputs through the repo's wrapper, not bare terraform:
 Invoke-TerraformWithCloudflareToken -Arguments @('output', '-raw', 'instance_id')
 ```
 
-Terraform changes that break the panel: replacing the user pool (every user ID and group is lost), replacing the instance (new instance ID), renaming the groups. Check the plan for these before every apply.
+Terraform changes that break the panel: replacing the user pool (users must sign in again), replacing the instance (new instance ID), renaming the roles. Check the plan for these before every apply.
 
 ## Who owns what
 
 | | Owner |
 |---|---|
 | Demo users, and which demo users are in `operators` (odd) and `user_mgrs` (`admin@example.local`) | Terraform. Every apply puts them back. |
-| Real users and their groups | The control panel. Terraform never touches them. |
+| Real users and their roles | The control panel. Terraform never touches them. |
 | Who may start which instance (`instance_entitlements`) | The control panel, through the Control API. |
 
 ## What is built by hand
@@ -57,7 +57,7 @@ Fill in the "Created" column as each piece is built.
 
 The API pieces need things Terraform creates when the lab is deployed (the instance, target group, user pool and panel app client), so they wait for `apply`:
 
-- Role for the API, the Lambda, the API Gateway routes and JWT authorizer.
+- Table `panel_users`, two roles for the API (customer and admin), the two Lambdas (`customer.py`, `admin.py`), the API Gateway routes and JWT authorizer.
 - DNS record `cp.aiwebdemo.click`: a CNAME in Cloudflare to `d11guvgb5r6hlh.cloudfront.net`, DNS only (not proxied).
 - Upload the pages, after `config.js` exists.
 

@@ -46,8 +46,13 @@ locals {
     var.cognito_extra_users
   )
   cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
-  # The demo users that are operators: the 1st, 3rd, 5th ... entry, so demo1, demo3 ...
-  demo_operator_emails = [for index, user in var.open_webui_demo_users : user.email if index % 2 == 0]
+  # Roles for the demo accounts in the control panel's users table: the 1st, 3rd, 5th ...
+  # demo user (demo1, demo3 ...) are operators, the others have no role, and the
+  # administrator account is a user manager.
+  panel_demo_roles = merge(
+    { for index, user in var.open_webui_demo_users : user.email => { name = user.name, roles = compact([index % 2 == 0 ? "operators" : ""]) } },
+    { (var.open_webui_admin_email) = { name = var.open_webui_admin_name, roles = tolist(["user_mgrs"]) } }
+  )
   open_webui_banners = var.security_banner_text == "" ? [] : [{
     id          = "security-notice"
     type        = "warning"

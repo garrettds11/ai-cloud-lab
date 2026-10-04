@@ -113,51 +113,28 @@ resource "aws_cognito_user" "lab" {
   }
 }
 
-# Groups that carry a user's role in the control panel dashboard. The names are
-# fixed because the dashboard and its API check them in the sign-in token's
-# cognito:groups claim.
-#   operators: may start the instances an administrator has granted them.
-#   user_mgrs: may open User management and change who can start which instance.
-# Everyone else can sign in but sees no instances to start.
+# Roles for the control panel dashboard live in the panel's own DynamoDB table
+# (panel_users), not in Cognito. Cognito here only proves who a person is.
 #
-# Terraform only places the demo users. Each apply puts the odd demo users (the 1st,
-# 3rd, 5th ... entry of open_webui_demo_users, so demo1, demo3 ... demo9) in operators
-# and leaves the even ones out, and puts the administrator account in user_mgrs. It
-# never touches anyone else, so real users are managed in the control panel.
-resource "aws_cognito_user_group" "operators" {
-  for_each = local.cognito_resources
+# When control_panel_users_table is set, Terraform adds one row per demo user to
+# that table so the demo works straight away: the odd demo users (the 1st, 3rd, 5th ...
+# entry of open_webui_demo_users, so demo1, demo3 ... demo9) get the operators role,
+# the even ones get no role, and the administrator account gets user_mgrs. The rows
+# are removed again on destroy. Terraform never touches any other row, so real users
+# are managed in the control panel. After a demo user signs in the panel adds a few
+# fields (name, last seen) to their row, and the next apply puts the row back as seeded.
+resource "aws_dynamodb_table_item" "panel_demo_user" {
+  for_each = var.control_panel_users_table == null ? {} : local.panel_demo_roles
 
-  name         = "operators"
-  user_pool_id = aws_cognito_user_pool.lab[each.key].id
-  description  = "May start the instances they have been granted in the control panel."
-}
+  table_name = var.control_panel_users_table
+  hash_key   = "email"
 
-resource "aws_cognito_user_group" "user_mgrs" {
-  for_each = local.cognito_resources
-
-  name         = "user_mgrs"
-  user_pool_id = aws_cognito_user_pool.lab[each.key].id
-  description  = "May use User management to grant or revoke instance access."
-}
-
-resource "aws_cognito_user_in_group" "demo_operators" {
-  for_each = var.enable_cognito ? toset(local.demo_operator_emails) : toset([])
-
-  user_pool_id = aws_cognito_user_pool.lab["domain"].id
-  group_name   = aws_cognito_user_group.operators["domain"].name
-  username     = each.key
-
-  depends_on = [aws_cognito_user.lab]
-}
-
-resource "aws_cognito_user_in_group" "demo_admin" {
-  for_each = local.cognito_resources
-
-  user_pool_id = aws_cognito_user_pool.lab[each.key].id
-  group_name   = aws_cognito_user_group.user_mgrs[each.key].name
-  username     = var.open_webui_admin_email
-
-  depends_on = [aws_cognito_user.lab]
+  item = jsonencode({
+    email  = { S = each.key }
+    name   = { S = each.value.name }
+    roles  = { L = [for role in each.value.roles : { S = role }] }
+    source = { S = "lab" }
+  })
 }
 
 # Cloudflare Access login method backed by the Cognito user pool.

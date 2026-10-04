@@ -1,6 +1,6 @@
 # Control panel
 
-The AI Cloud Lab control panel: one page with four views, **Instances**, **Logins**, **Logs** and **User management**. A customer signs in, starts the instances they have been granted, and opens the service when it is ready. They cannot stop anything. An administrator manages who may start what, and which groups people are in.
+The AI Cloud Lab control panel: one page with four views, **Instances**, **Logins**, **Logs** and **User management**. A customer signs in, starts the instances they have been granted, and opens the service when it is ready. They cannot stop anything. An administrator manages who may start what, and which roles people have.
 
 It is plain HTML, CSS and JavaScript with no build step. The page holds no permissions of its own: it shows what the Control API returns, and the API checks every rule again.
 
@@ -8,13 +8,13 @@ Live at `https://cp.aiwebdemo.click`. Setup of everything it needs is in [`SETUP
 
 ## Who sees what
 
-| Person | Cognito group | What they see |
+| Person | Role (panel's own table) | What they see |
 |---|---|---|
 | Customer with a grant | `operators` | Their instances, with Start and, once ready, Access |
 | A user with no role, or no grants | none | "You have no instances available for edit." |
 | Administrator | `user_mgrs` | The same pages, plus **User management** |
 
-A customer needs both the `operators` group and a grant in `instance_entitlements`. Terraform creates the two groups and puts only the demo users in them: the odd demo users in `operators`, `admin@example.local` in `user_mgrs`. Everyone else is managed on the User management page.
+A customer needs both the `operators` role and a grant in `instance_entitlements`. Roles live in the panel's own `panel_users` table, not in Cognito. When `control_panel_users_table` is set, Terraform adds only the demo users to that table: the odd demo users as `operators`, `admin@example.local` as `user_mgrs`. Everyone else is managed on the User management page. With no users in the table the panel shows no users, and only an address in the API's `BOOTSTRAP_ADMINS` setting can open User management.
 
 ## Files
 

@@ -70,6 +70,9 @@ cognito_extra_users           = []
 control_panel_url = "https://cp.aiwebdemo.click"
 # control_panel_api_url = "https://<api-id>.execute-api.us-east-1.amazonaws.com"
 
+# Optional: seed the demo users' roles into the control panel's users table.
+# control_panel_users_table = "panel_users"
+
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

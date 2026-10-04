@@ -1,16 +1,20 @@
 """Control API for the AI Cloud Lab control panel.
 
-One Lambda function behind an API Gateway HTTP API with a Cognito JWT authorizer.
+One Lambda function behind an API Gateway HTTP API with a JWT authorizer (any OIDC
+sign-in provider; Cognito is only the first one used).
 The page never reads DynamoDB or calls AWS itself; it calls these routes, and this
 function is the only thing that can start an instance or change who may.
 
 Rules, checked on every call (see README.md):
-  * Every route needs a signed-in user. Group membership is read live from Cognito,
-    not only from the token, so removing someone from a group takes effect at once.
+  * Every route needs a signed-in user. The sign-in provider only proves who they are
+    (an OIDC token with a verified email). What they may do comes from this panel's own
+    table, read on every call, so a role change takes effect at once.
   * Customers see and start only the instances they hold an active grant for, and only
-    while they are in the operators group. Nobody here can stop an instance.
-  * Admin routes need the user_mgrs group. Saving changes writes instance_entitlements
-    and Cognito group membership only. It never changes IAM, tags or instances.
+    while they hold the operators role. Nobody here can stop an instance.
+  * Admin routes need the user_mgrs role. Saving changes writes the panel's users and
+    instance_entitlements tables only. It never changes IAM, tags, Cognito or instances.
+  * People named in BOOTSTRAP_ADMINS are always user managers, so the panel is never
+    locked out and is unreachable by anyone else until a real person is added.
 
 Times in responses are milliseconds since the epoch.
 """
@@ -26,11 +30,12 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-GROUP_OPERATORS = "operators"
-GROUP_USER_MGRS = "user_mgrs"
-GROUP_LABELS = {GROUP_OPERATORS: "Operator group", GROUP_USER_MGRS: "User manager group"}
+ROLE_OPERATORS = "operators"
+ROLE_USER_MGRS = "user_mgrs"
+ROLE_LABELS = {ROLE_OPERATORS: "Operator role", ROLE_USER_MGRS: "User manager role"}
 
-USER_POOL_ID = os.environ.get("USER_POOL_ID", "")
+USERS_TABLE = os.environ.get("USERS_TABLE", "panel_users")
+BOOTSTRAP_ADMINS = {e.strip().lower() for e in os.environ.get("BOOTSTRAP_ADMINS", "").split(",") if e.strip()}
 ENTITLEMENTS_TABLE = os.environ.get("ENTITLEMENTS_TABLE", "instance_entitlements")
 EVENTS_TABLE = os.environ.get("EVENTS_TABLE", "control_panel_events")
 INSTANCE_IDS = [i.strip() for i in os.environ.get("INSTANCE_IDS", "").split(",") if i.strip()]
@@ -47,8 +52,8 @@ elbv2 = boto3.client("elbv2")
 ssm = boto3.client("ssm")
 cloudwatch = boto3.client("cloudwatch")
 cloudtrail = boto3.client("cloudtrail")
-cognito = boto3.client("cognito-idp")
 _dynamodb = boto3.resource("dynamodb")
+users = _dynamodb.Table(USERS_TABLE)
 entitlements = _dynamodb.Table(ENTITLEMENTS_TABLE)
 events = _dynamodb.Table(EVENTS_TABLE)
 
@@ -71,44 +76,46 @@ def _num(value):
 # ---- request helpers ----------------------------------------------------------------
 
 
-def _parse_groups(raw):
-    if isinstance(raw, (list, tuple, set)):
-        return list(raw)
-    text = str(raw or "").strip().strip("[]")
-    return [g for g in re.split(r"[\s,]+", text) if g]
-
-
 def _caller(event):
     claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("jwt", {}).get("claims") or {}
-    sub = claims.get("sub")
-    if not sub:
-        raise ApiError(401, "Please sign in again.")
+    email = str(claims.get("email", "")).strip().lower()
+    if not email:
+        raise ApiError(401, "Your sign-in has no email address, so the panel cannot tell who you are.")
+    if str(claims.get("email_verified", "true")).lower() == "false":
+        raise ApiError(401, "Your email address is not verified with your sign-in provider.")
     http = (event.get("requestContext") or {}).get("http") or {}
     headers = event.get("headers") or {}
     return {
-        "id": sub,
-        "username": claims.get("cognito:username") or sub,
-        "name": claims.get("name") or claims.get("email") or sub,
-        "email": claims.get("email", ""),
-        "groups": _parse_groups(claims.get("cognito:groups")),
+        "id": email,  # the panel identifies people by email, whichever provider signed them in
+        "sub": claims.get("sub", ""),
+        "name": claims.get("name") or email,
+        "email": email,
+        "roles": [],
         "auth_time": int(float(claims.get("auth_time", 0))) * 1000,
         "ip": http.get("sourceIp", ""),
         "user_agent": http.get("userAgent") or headers.get("user-agent", ""),
     }
 
 
-def _live_groups(username):
-    """Current groups from Cognito, so a removal does not wait for the token to expire."""
+def _user_row(email):
     try:
-        out = cognito.admin_list_groups_for_user(UserPoolId=USER_POOL_ID, Username=username)
+        return users.get_item(Key={"email": email}).get("Item")
     except ClientError as err:
-        print(json.dumps({"error": "admin_list_groups_for_user", "detail": str(err)}))
+        print(json.dumps({"error": "read users table", "detail": str(err)}))
         raise ApiError(503, "Could not check your permissions right now. Try again shortly.")
-    return [g["GroupName"] for g in out.get("Groups", [])]
 
 
-def _require_group(caller, group):
-    if group not in caller["groups"]:
+def _roles_of(email, row=None):
+    """The person's current roles from the panel's table, read on every call."""
+    row = row if row is not None else _user_row(email)
+    roles = [r for r in (row or {}).get("roles", []) if r in ROLE_LABELS]
+    if email in BOOTSTRAP_ADMINS and ROLE_USER_MGRS not in roles:
+        roles.append(ROLE_USER_MGRS)
+    return roles
+
+
+def _require_role(caller, role):
+    if role not in caller["roles"]:
         raise ApiError(403, "You do not have permission to do that.")
 
 
@@ -155,8 +162,8 @@ def _log(user_id, severity, text, instance_id=None):
     _put_event(f"user#{user_id}", "log", source="Control panel", severity=severity, event=text, instanceId=instance_id)
 
 
-def _history(admin, user_id, action, instance_id=None, group=None):
-    _put_event("changes", "chg", adminId=admin["id"], userId=user_id, instanceId=instance_id, group=group, action=action, result="Applied")
+def _history(admin, user_id, action, instance_id=None, role=None):
+    _put_event("changes", "chg", adminId=admin["id"], userId=user_id, instanceId=instance_id, role=role, action=action, result="Applied")
 
 
 def _query_events(pk, prefix, limit, since=None):
@@ -313,7 +320,7 @@ def _view(instance_id, raw, rule):
 
 
 def list_instances(caller):
-    if GROUP_OPERATORS not in caller["groups"]:
+    if ROLE_OPERATORS not in caller["roles"]:
         return []
     granted = set(_granted_ids(caller["id"]))
     wanted = [i for i in INSTANCE_IDS if i in granted]
@@ -323,7 +330,7 @@ def list_instances(caller):
 
 
 def start_instance(caller, instance_id):
-    _require_group(caller, GROUP_OPERATORS)
+    _require_role(caller, ROLE_OPERATORS)
     if instance_id not in INSTANCE_IDS:
         raise ApiError(404, "Instance not found.")
     if instance_id not in _granted_ids(caller["id"]):
@@ -352,7 +359,23 @@ def start_instance(caller, instance_id):
 
 
 def record_session(caller):
-    """Called when the page loads after sign-in. Records one login per sign-in."""
+    """Called when the page loads after sign-in. Adds the person to the panel's users table
+    the first time (with no roles) and records one login per sign-in."""
+    t = now_ms()
+    try:
+        users.put_item(
+            Item={"email": caller["email"], "source": "panel", "firstSeenAt": t},  # no roles attribute: the customer role cannot write one
+            ConditionExpression="attribute_not_exists(email)",
+        )
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+    users.update_item(
+        Key={"email": caller["email"]},
+        UpdateExpression="SET #n = :n, sub = :s, lastSeenAt = :t",
+        ExpressionAttributeNames={"#n": "name"},
+        ExpressionAttributeValues={":n": caller["name"], ":s": caller["sub"], ":t": t},
+    )
     if caller["auth_time"]:
         item = {
             "pk": f"user#{caller['id']}",
@@ -374,7 +397,7 @@ def record_session(caller):
         "userId": caller["id"],
         "name": caller["name"],
         "email": caller["email"],
-        "groups": caller["groups"],
+        "roles": caller["roles"],
         "signedInAt": caller["auth_time"] or now_ms(),
     }
 
@@ -456,7 +479,7 @@ def list_logs(caller, params):
         }
         for r in _query_events(f"user#{caller['id']}", "log#", 200, since)
     ]
-    if GROUP_OPERATORS in caller["groups"] and (source in ("all", "EC2")):
+    if ROLE_OPERATORS in caller["roles"] and (source in ("all", "EC2")):
         granted = set(_granted_ids(caller["id"]))
         ids = [i for i in INSTANCE_IDS if i in granted]
         if ids:
@@ -468,69 +491,42 @@ def list_logs(caller, params):
     return rows[:200]
 
 
-# ---- admin: users, grants, groups ------------------------------------------------------
+# ---- admin: users, grants, roles ------------------------------------------------------
 
 
-def _attr(user, name):
-    for a in user.get("Attributes", user.get("UserAttributes", [])):
-        if a["Name"] == name:
-            return a["Value"]
-    return ""
-
-
-def _pool_users():
-    users, token = [], None
+def _all_users():
+    rows, kwargs = [], {}
     while True:
-        kwargs = {"UserPoolId": USER_POOL_ID}
-        if token:
-            kwargs["NextToken"] = token
-        out = cognito.list_users(**kwargs)
-        users += out.get("Users", [])
-        token = out.get("NextToken")
-        if not token:
-            return users
-
-
-def _group_members(group):
-    names, token = set(), None
-    while True:
-        kwargs = {"UserPoolId": USER_POOL_ID, "GroupName": group}
-        if token:
-            kwargs["NextToken"] = token
-        out = cognito.list_users_in_group(**kwargs)
-        names |= {u["Username"] for u in out.get("Users", [])}
-        token = out.get("NextToken")
-        if not token:
-            return names
+        out = users.scan(**kwargs)
+        rows += out.get("Items", [])
+        if not out.get("LastEvaluatedKey"):
+            return rows
+        kwargs["ExclusiveStartKey"] = out["LastEvaluatedKey"]
 
 
 def list_users(caller):
-    _require_group(caller, GROUP_USER_MGRS)
-    members = {g: _group_members(g) for g in (GROUP_OPERATORS, GROUP_USER_MGRS)}
-    people = []
-    for u in _pool_users():
-        sub = _attr(u, "sub") or u["Username"]
-        people.append(
+    _require_role(caller, ROLE_USER_MGRS)
+    rows = {r["email"]: r for r in _all_users()}
+    for email in BOOTSTRAP_ADMINS:
+        rows.setdefault(email, {"email": email, "roles": [], "source": "settings"})
+    return sorted(
+        (
             {
-                "id": sub,
-                "name": _attr(u, "name") or _attr(u, "email") or u["Username"],
-                "email": _attr(u, "email"),
-                "groups": [g for g in (GROUP_OPERATORS, GROUP_USER_MGRS) if u["Username"] in members[g]],
+                "id": email,
+                "name": r.get("name") or email,
+                "email": email,
+                "roles": _roles_of(email, r),
+                "source": r.get("source", "panel"),
+                "lastSeenAt": _num(r.get("lastSeenAt")),
             }
-        )
-    return sorted(people, key=lambda p: p["name"].lower())
-
-
-def _find_user(sub):
-    out = cognito.list_users(UserPoolId=USER_POOL_ID, Filter=f'sub = "{sub}"', Limit=1)
-    users = out.get("Users", [])
-    if not users:
-        raise ApiError(404, "User not found.")
-    return users[0]
+            for email, r in rows.items()
+        ),
+        key=lambda p: p["name"].lower(),
+    )
 
 
 def list_all_instances(caller):
-    _require_group(caller, GROUP_USER_MGRS)
+    _require_role(caller, ROLE_USER_MGRS)
     raws = _describe(INSTANCE_IDS)
     return [
         {"id": i, "name": _tag(raws[i]["instance"], "Name") or i, "type": raws[i]["instance"].get("InstanceType", "")}
@@ -540,19 +536,19 @@ def list_all_instances(caller):
 
 
 def get_grants(caller, user_id):
-    _require_group(caller, GROUP_USER_MGRS)
-    return [i for i in _granted_ids(user_id) if i in INSTANCE_IDS]
+    _require_role(caller, ROLE_USER_MGRS)
+    return [i for i in _granted_ids(user_id.lower()) if i in INSTANCE_IDS]
 
 
 def list_changes(caller):
-    _require_group(caller, GROUP_USER_MGRS)
+    _require_role(caller, ROLE_USER_MGRS)
     return [
         {
             "t": _num(r["t"]),
             "adminId": r["adminId"],
             "userId": r["userId"],
             "instanceId": r.get("instanceId"),
-            "group": r.get("group"),
+            "role": r.get("role"),
             "action": r["action"],
             "result": r.get("result", "Applied"),
         }
@@ -560,60 +556,68 @@ def list_changes(caller):
     ]
 
 
-def _role_label(groups):
+def _role_label(roles):
     parts = []
-    if GROUP_OPERATORS in groups:
+    if ROLE_OPERATORS in roles:
         parts.append("Operator")
-    if GROUP_USER_MGRS in groups:
+    if ROLE_USER_MGRS in roles:
         parts.append("User manager")
     return ", ".join(parts) if parts else "No role"
 
 
 def save_user(caller, user_id, payload):
-    """Group membership first, then grants, so a user can be made an operator and granted
+    """Role changes first, then grants, so a user can be made an operator and granted
     instances in one save. Everything is validated before anything is written."""
-    _require_group(caller, GROUP_USER_MGRS)
-    group_changes = payload.get("groups") or []
+    _require_role(caller, ROLE_USER_MGRS)
+    user_id = user_id.lower()
+    role_changes = payload.get("roles") or []
     grant_changes = payload.get("grants") or []
-    target = _find_user(user_id)
-    username = target["Username"]
-    target_name = _attr(target, "name") or _attr(target, "email") or username
-    current = set(_live_groups(username))
+    row = _user_row(user_id)
+    if row is None and user_id not in BOOTSTRAP_ADMINS:
+        raise ApiError(404, "User not found.")
+    target_name = (row or {}).get("name") or user_id
+    stored = [r for r in (row or {}).get("roles", []) if r in ROLE_LABELS]
+    final = list(stored)
 
-    final = set(current)
-    for change in group_changes:
-        group, member = change.get("group"), bool(change.get("member"))
-        if group not in GROUP_LABELS:
-            raise ApiError(400, "Unknown group.")
-        if group == GROUP_USER_MGRS and not member and user_id == caller["id"]:
-            raise ApiError(409, "You cannot remove yourself from the user_mgrs group. Ask another user manager to do it.")
-        (final.add if member else final.discard)(group)
+    for change in role_changes:
+        role, member = change.get("role"), bool(change.get("member"))
+        if role not in ROLE_LABELS:
+            raise ApiError(400, "Unknown role.")
+        if role == ROLE_USER_MGRS and not member:
+            if user_id == caller["id"]:
+                raise ApiError(409, "You cannot remove your own user manager role. Ask another user manager to do it.")
+            if user_id in BOOTSTRAP_ADMINS:
+                raise ApiError(409, f"{target_name} is a user manager set in the panel's settings, so this cannot be changed here.")
+        if member and role not in final:
+            final.append(role)
+        if not member and role in final:
+            final.remove(role)
     for change in grant_changes:
         if change.get("instanceId") not in INSTANCE_IDS:
             raise ApiError(404, "Instance not found.")
-        if change.get("grant") and GROUP_OPERATORS not in final:
-            raise ApiError(409, f"{target_name} is not in the operators group, so cannot be granted instances.")
+        if change.get("grant") and ROLE_OPERATORS not in final:
+            raise ApiError(409, f"{target_name} does not have the operator role, so cannot be granted instances.")
 
-    raws = _describe(INSTANCE_IDS) if (grant_changes or GROUP_OPERATORS in (current - final)) else {}
+    losing_operator = ROLE_OPERATORS in stored and ROLE_OPERATORS not in final
+    raws = _describe(INSTANCE_IDS) if (grant_changes or losing_operator) else {}
     names = {i: (_tag(r["instance"], "Name") or i) for i, r in raws.items()}
     applied = 0
 
-    for change in group_changes:
-        group, member = change["group"], bool(change["member"])
-        if member == (group in current):
-            continue
-        try:
-            if member:
-                cognito.admin_add_user_to_group(UserPoolId=USER_POOL_ID, Username=username, GroupName=group)
-            else:
-                cognito.admin_remove_user_from_group(UserPoolId=USER_POOL_ID, Username=username, GroupName=group)
-        except ClientError as err:
-            print(json.dumps({"error": "group change", "detail": str(err)}))
-            raise ApiError(502, "Cognito could not change the group. Nothing further was saved.")
-        _history(caller, user_id, "Added" if member else "Removed", group=GROUP_LABELS[group])
-        _log(caller["id"], "info", f"{'Added' if member else 'Removed'} {target_name} {'to' if member else 'from'} {GROUP_LABELS[group]}")
-        applied += 1
-        if group == GROUP_OPERATORS and not member:
+    if sorted(final) != sorted(stored):
+        t = now_ms()
+        users.update_item(
+            Key={"email": user_id},
+            UpdateExpression="SET #r = :r, updatedAt = :t, updatedBy = :by",
+            ExpressionAttributeNames={"#r": "roles"},
+            ExpressionAttributeValues={":r": final, ":t": t, ":by": caller["id"]},
+        )
+        for role in ROLE_LABELS:
+            if (role in final) != (role in stored):
+                added = role in final
+                _history(caller, user_id, "Added" if added else "Removed", role=ROLE_LABELS[role])
+                _log(caller["id"], "info", f"{'Added' if added else 'Removed'} {target_name} {'to' if added else 'from'} the {ROLE_LABELS[role]}")
+                applied += 1
+        if losing_operator:
             for item in _grant_items(user_id):
                 if item.get("status") == "applied":
                     _set_grant(caller, user_id, item["instanceId"], False, target_name, final, names)
@@ -624,7 +628,7 @@ def save_user(caller, user_id, payload):
     return {"applied": applied}
 
 
-def _set_grant(caller, user_id, instance_id, grant, user_name, groups, names):
+def _set_grant(caller, user_id, instance_id, grant, user_name, roles, names):
     t = now_ms()
     instance_name = names.get(instance_id, instance_id)
     if grant:
@@ -633,7 +637,7 @@ def _set_grant(caller, user_id, instance_id, grant, user_name, groups, names):
                 "userId": user_id,
                 "instanceId": instance_id,
                 "userName": user_name,
-                "role": _role_label(groups),
+                "role": _role_label(roles),
                 "instanceName": instance_name,
                 "status": "applied",
                 "grantedBy": caller["id"],
@@ -660,7 +664,7 @@ def _set_grant(caller, user_id, instance_id, grant, user_name, groups, names):
 # ---- routing -------------------------------------------------------------------------
 
 
-def _route(event, caller):
+def _customer_routes(event, caller):
     key = event.get("routeKey", "")
     path = event.get("pathParameters") or {}
     query = event.get("queryStringParameters") or {}
@@ -674,6 +678,12 @@ def _route(event, caller):
         return list_logins(caller)
     if key == "GET /logs":
         return list_logs(caller, query)
+    return None
+
+
+def _admin_routes(event, caller):
+    key = event.get("routeKey", "")
+    path = event.get("pathParameters") or {}
     if key == "GET /admin/users":
         return list_users(caller)
     if key == "GET /admin/instances":
@@ -684,20 +694,32 @@ def _route(event, caller):
         return list_changes(caller)
     if key == "PUT /admin/users/{userId}":
         return save_user(caller, path["userId"], _body(event))
-    raise ApiError(404, "Not found.")
+    return None
 
 
 def _response(status, body):
     return {"statusCode": status, "headers": {"content-type": "application/json", "cache-control": "no-store"}, "body": json.dumps(body)}
 
 
-def lambda_handler(event, context):
-    try:
-        caller = _caller(event)
-        caller["groups"] = _live_groups(caller["username"])
-        return _response(200, _route(event, caller))
-    except ApiError as err:
-        return _response(err.status, {"message": err.message})
-    except Exception as err:  # never leak internals to the browser
-        print(json.dumps({"error": "unhandled", "detail": repr(err), "route": event.get("routeKey")}))
-        return _response(500, {"message": "Something went wrong. Try again."})
+def make_handler(routes):
+    """One Lambda entry point that answers only the routes it is given."""
+
+    def lambda_handler(event, context):
+        try:
+            caller = _caller(event)
+            caller["roles"] = _roles_of(caller["id"])
+            result = routes(event, caller)
+            if result is None:
+                raise ApiError(404, "Not found.")
+            return _response(200, result)
+        except ApiError as err:
+            return _response(err.status, {"message": err.message})
+        except Exception as err:  # never leak internals to the browser
+            print(json.dumps({"error": "unhandled", "detail": repr(err), "route": event.get("routeKey")}))
+            return _response(500, {"message": "Something went wrong. Try again."})
+
+    return lambda_handler
+
+
+customer_handler = make_handler(_customer_routes)
+admin_handler = make_handler(_admin_routes)

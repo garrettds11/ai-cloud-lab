@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError
 
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.update(
-    USER_POOL_ID="pool",
+    BOOTSTRAP_ADMINS="boot@x.test",
     INSTANCE_IDS="i-aaa,i-bbb",
     TARGET_GROUP_ARN="arn:tg",
     AUTO_STOP_PARAMETER="/lab/auto-stop",
@@ -39,22 +39,43 @@ class FakeTable:
     def __init__(self, key_names):
         self.keys = key_names
         self.items = {}
+        self.down = False
 
     def _k(self, item):
         return tuple(item[k] for k in self.keys)
 
+    def _check(self):
+        if self.down:
+            raise client_error("InternalServerError")
+
+    def get_item(self, Key):
+        self._check()
+        item = self.items.get(tuple(Key[k] for k in self.keys))
+        return {"Item": dict(item)} if item else {}
+
     def put_item(self, Item, ConditionExpression=None):
-        if ConditionExpression == "attribute_not_exists(pk)" and self._k(Item) in self.items:
+        self._check()
+        if ConditionExpression and "attribute_not_exists" in ConditionExpression and self._k(Item) in self.items:
             raise client_error("ConditionalCheckFailedException")
         self.items[self._k(Item)] = dict(Item)
 
-    def update_item(self, Key, UpdateExpression, ExpressionAttributeValues, ConditionExpression=None, **_):
+    def update_item(self, Key, UpdateExpression, ExpressionAttributeValues, ConditionExpression=None, ExpressionAttributeNames=None, **_):
+        self._check()
         k = tuple(Key[n] for n in self.keys)
         if k not in self.items:
-            raise client_error("ConditionalCheckFailedException")
-        self.items[k].update(status=ExpressionAttributeValues[":revoked"], revokedAt=ExpressionAttributeValues[":t"])
+            if ConditionExpression:
+                raise client_error("ConditionalCheckFailedException")
+            self.items[k] = dict(Key)
+        names = ExpressionAttributeNames or {}
+        for target, value in re.findall(r"(#?\w+) = (:\w+)", UpdateExpression):
+            self.items[k][names.get(target, target)] = ExpressionAttributeValues[value]
+
+    def scan(self, **_):
+        self._check()
+        return {"Items": [dict(v) for v in self.items.values()]}
 
     def query(self, KeyConditionExpression, ScanIndexForward=True, Limit=None):
+        self._check()
         conds = _flat(KeyConditionExpression)
         rows = list(self.items.values())
         for op, name, value in conds:
@@ -95,35 +116,6 @@ class FakeEC2:
             self.state[i] = "pending"
 
 
-class FakeCognito:
-    def __init__(self):
-        self.groups = {"u-op": {"operators"}, "u-adm": {"user_mgrs"}, "u-none": set(), "u-both": {"operators", "user_mgrs"}}
-        self.names = {"u-op": "Olive Operator", "u-adm": "Ada Admin", "u-none": "Nina None", "u-both": "Bo Both"}
-        self.down = False
-
-    def admin_list_groups_for_user(self, UserPoolId, Username):
-        if self.down:
-            raise client_error("InternalErrorException")
-        return {"Groups": [{"GroupName": g} for g in sorted(self.groups[Username])]}
-
-    def list_users(self, UserPoolId, Filter=None, Limit=None, NextToken=None):
-        users = [{"Username": u, "Attributes": [{"Name": "sub", "Value": u}, {"Name": "name", "Value": n}, {"Name": "email", "Value": u + "@x.test"}]}
-                 for u, n in self.names.items()]
-        if Filter:
-            sub = re.search(r'"(.+)"', Filter).group(1)
-            users = [u for u in users if u["Username"] == sub]
-        return {"Users": users}
-
-    def list_users_in_group(self, UserPoolId, GroupName, NextToken=None):
-        return {"Users": [{"Username": u} for u, g in self.groups.items() if GroupName in g]}
-
-    def admin_add_user_to_group(self, UserPoolId, Username, GroupName):
-        self.groups[Username].add(GroupName)
-
-    def admin_remove_user_from_group(self, UserPoolId, Username, GroupName):
-        self.groups[Username].discard(GroupName)
-
-
 class FakeCloudWatch:
     def __init__(self):
         self.points = {}
@@ -132,17 +124,23 @@ class FakeCloudWatch:
         return {"Datapoints": self.points.get(MetricName, [])}
 
 
+OP, ADM, NONE, BOTH, BOOT = "olive@x.test", "ada@x.test", "nina@x.test", "bo@x.test", "boot@x.test"
+
+
 @pytest.fixture(autouse=True)
 def aws(monkeypatch):
     fakes = {
         "ec2": FakeEC2(),
-        "cognito": FakeCognito(),
         "cloudwatch": FakeCloudWatch(),
+        "users": FakeTable(("email",)),
         "entitlements": FakeTable(("userId", "instanceId")),
         "events": FakeTable(("pk", "sk")),
     }
     for name, fake in fakes.items():
         monkeypatch.setattr(handler, name, fake)
+    for email, name, roles in [(OP, "Olive Operator", ["operators"]), (ADM, "Ada Admin", ["user_mgrs"]),
+                               (NONE, "Nina None", []), (BOTH, "Bo Both", ["operators", "user_mgrs"])]:
+        fakes["users"].items[(email,)] = {"email": email, "name": name, "roles": roles, "source": "panel"}
     monkeypatch.setattr(handler, "elbv2", type("E", (), {"describe_target_health": lambda self, TargetGroupArn: {"TargetHealthDescriptions": []}})())
     monkeypatch.setattr(handler, "ssm", type("S", (), {"get_parameter": lambda self, Name: {"Parameter": {"Value": json.dumps({"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 90})}}})())
     monkeypatch.setattr(handler, "cloudtrail", type("C", (), {"lookup_events": lambda self, **k: {"Events": []}})())
@@ -150,7 +148,9 @@ def aws(monkeypatch):
     return type("AWS", (), fakes)
 
 
-def call(route, user, path=None, query=None, body=None, claims_groups=None):
+def call(route, user, path=None, query=None, body=None, extra_claims=None):
+    claims = {"sub": "sub-" + user, "email": user, "name": user, "auth_time": "1790000000"}
+    claims.update(extra_claims or {})
     event = {
         "routeKey": route,
         "pathParameters": path or {},
@@ -158,14 +158,11 @@ def call(route, user, path=None, query=None, body=None, claims_groups=None):
         "body": json.dumps(body) if body is not None else None,
         "requestContext": {
             "http": {"sourceIp": "203.0.113.9", "userAgent": "Mozilla/5.0 (Windows NT 10.0) Chrome/120"},
-            "authorizer": {"jwt": {"claims": {
-                "sub": user, "cognito:username": user, "name": user, "email": user + "@x.test",
-                "cognito:groups": claims_groups if claims_groups is not None else "[]",
-                "auth_time": "1790000000",
-            }}},
+            "authorizer": {"jwt": {"claims": claims}},
         },
     }
-    out = handler.lambda_handler(event, None)
+    entry = handler.admin_handler if route.split(" ", 1)[1].startswith("/admin") else handler.customer_handler
+    out = entry(event, None)
     return out["statusCode"], json.loads(out["body"])
 
 
@@ -178,34 +175,33 @@ def set_health(monkeypatch, state):
         "TargetHealthDescriptions": [{"Target": {"Id": "i-aaa"}, "TargetHealth": {"State": state}}]}})())
 
 
-def test_groups_claim_formats():
-    assert handler._parse_groups("[operators user_mgrs]") == ["operators", "user_mgrs"]
-    assert handler._parse_groups("operators") == ["operators"]
-    assert handler._parse_groups("") == []
-    assert handler._parse_groups(["a"]) == ["a"]
-
-
-def test_missing_token_is_401():
-    out = handler.lambda_handler({"routeKey": "GET /instances", "requestContext": {}}, None)
+def test_missing_email_or_unverified_email_is_401():
+    out = handler.customer_handler({"routeKey": "GET /instances", "requestContext": {}}, None)
     assert out["statusCode"] == 401
+    assert call("GET /instances", OP, extra_claims={"email": ""})[0] == 401
+    assert call("GET /instances", OP, extra_claims={"email_verified": "false"})[0] == 401
 
 
-def test_cognito_outage_fails_closed():
-    aws = handler.cognito
-    aws.down = True
-    status, body = call("GET /instances", "u-op")
-    assert status == 503
+def test_email_case_does_not_matter(aws):
+    grant(aws, OP, "i-aaa")
+    assert call("GET /instances", "Olive@X.test")[0] == 200
+    assert len(call("GET /instances", "Olive@X.test")[1]) == 1
+
+
+def test_table_outage_fails_closed(aws):
+    aws.users.down = True
+    assert call("GET /instances", OP)[0] == 503
 
 
 def test_non_operator_sees_no_instances(aws):
-    grant(aws, "u-none", "i-aaa")
-    assert call("GET /instances", "u-none") == (200, [])
+    grant(aws, NONE, "i-aaa")
+    assert call("GET /instances", NONE) == (200, [])
 
 
 def test_operator_sees_only_granted_instances(aws):
-    grant(aws, "u-op", "i-aaa")
-    grant(aws, "u-op", "i-bbb", status="revoked")
-    status, body = call("GET /instances", "u-op")
+    grant(aws, OP, "i-aaa")
+    grant(aws, OP, "i-bbb", status="revoked")
+    status, body = call("GET /instances", OP)
     assert status == 200
     assert [i["id"] for i in body] == ["i-aaa"]
     assert body[0]["phase"] == "stopped" and body[0]["autoStop"] is None and body[0]["url"] == "https://example.test"
@@ -213,151 +209,201 @@ def test_operator_sees_only_granted_instances(aws):
 
 
 def test_phase_needs_status_checks_and_alb_health(aws, monkeypatch):
-    grant(aws, "u-op", "i-aaa")
+    grant(aws, OP, "i-aaa")
     aws.ec2.state["i-aaa"] = "running"
     set_health(monkeypatch, "initial")
-    assert call("GET /instances", "u-op")[1][0]["phase"] == "initializing"
+    assert call("GET /instances", OP)[1][0]["phase"] == "initializing"
     set_health(monkeypatch, "healthy")
     aws.ec2.checks["i-aaa"] = "initializing"
-    assert call("GET /instances", "u-op")[1][0]["phase"] == "initializing"
+    assert call("GET /instances", OP)[1][0]["phase"] == "initializing"
     aws.ec2.checks["i-aaa"] = "ok"
-    view = call("GET /instances", "u-op")[1][0]
+    view = call("GET /instances", OP)[1][0]
     assert view["phase"] == "ready" and view["checks"] == {"ec2": True, "http": True}
 
 
 def test_auto_stop_setting_up_then_silent(aws, monkeypatch):
-    grant(aws, "u-op", "i-aaa")
+    grant(aws, OP, "i-aaa")
     aws.ec2.state["i-aaa"] = "running"
     now = datetime.datetime.now(datetime.timezone.utc)
     aws.ec2.launched["i-aaa"] = now - datetime.timedelta(minutes=10)
-    a = call("GET /instances", "u-op")[1][0]["autoStop"]
-    assert a["setupDone"] is False
+    assert call("GET /instances", OP)[1][0]["autoStop"]["setupDone"] is False
     aws.ec2.launched["i-aaa"] = now - datetime.timedelta(minutes=45)
-    a = call("GET /instances", "u-op")[1][0]["autoStop"]
+    a = call("GET /instances", OP)[1][0]["autoStop"]
     assert a["setupDone"] is True and a["heartbeatAgeMinutes"] >= 10
     aws.cloudwatch.points = {
         "Heartbeat": [{"Timestamp": now - datetime.timedelta(seconds=30), "Sum": 1}],
         "IdleMinutes": [{"Timestamp": now, "Maximum": 7}],
         "ActiveUsers": [{"Timestamp": now, "Maximum": 0}],
     }
-    a = call("GET /instances", "u-op")[1][0]["autoStop"]
+    a = call("GET /instances", OP)[1][0]["autoStop"]
     assert a["idleMinutes"] == 7 and a["activeUsers"] == 0 and a["heartbeatAgeMinutes"] < 2
 
 
+START = "POST /instances/{instanceId}/start"
+
+
 def test_start_happy_path(aws):
-    grant(aws, "u-op", "i-aaa")
-    assert call("POST /instances/{instanceId}/start", "u-op", path={"instanceId": "i-aaa"}) == (200, {"ok": True})
+    grant(aws, OP, "i-aaa")
+    assert call(START, OP, path={"instanceId": "i-aaa"}) == (200, {"ok": True})
     assert aws.ec2.started == ["i-aaa"]
     assert any("Start requested" in e.get("event", "") for e in aws.events.items.values())
 
 
 def test_start_needs_a_grant(aws):
-    status, body = call("POST /instances/{instanceId}/start", "u-op", path={"instanceId": "i-aaa"})
+    status, _ = call(START, OP, path={"instanceId": "i-aaa"})
     assert status == 403 and aws.ec2.started == []
     assert any("Start refused" in e.get("event", "") for e in aws.events.items.values())
 
 
-def test_start_needs_operators_group_even_with_a_grant(aws):
-    grant(aws, "u-none", "i-aaa")
-    assert call("POST /instances/{instanceId}/start", "u-none", path={"instanceId": "i-aaa"})[0] == 403
+def test_start_needs_operator_role_even_with_a_grant(aws):
+    grant(aws, NONE, "i-aaa")
+    assert call(START, NONE, path={"instanceId": "i-aaa"})[0] == 403
     assert aws.ec2.started == []
 
 
-def test_stale_token_group_does_not_help(aws):
-    grant(aws, "u-none", "i-aaa")
-    status, _ = call("POST /instances/{instanceId}/start", "u-none", path={"instanceId": "i-aaa"}, claims_groups="[operators]")
+def test_roles_in_the_token_are_ignored(aws):
+    grant(aws, NONE, "i-aaa")
+    status, _ = call(START, NONE, path={"instanceId": "i-aaa"}, extra_claims={"cognito:groups": "[operators user_mgrs]", "groups": ["operators"]})
     assert status == 403 and aws.ec2.started == []
+    assert call("GET /admin/users", NONE, extra_claims={"cognito:groups": "[user_mgrs]"})[0] == 403
 
 
 def test_start_rejects_unmanaged_and_running_and_capacity(aws):
-    grant(aws, "u-op", "i-aaa")
-    assert call("POST /instances/{instanceId}/start", "u-op", path={"instanceId": "i-zzz"})[0] == 404
+    grant(aws, OP, "i-aaa")
+    assert call(START, OP, path={"instanceId": "i-zzz"})[0] == 404
     aws.ec2.state["i-aaa"] = "running"
-    assert call("POST /instances/{instanceId}/start", "u-op", path={"instanceId": "i-aaa"})[0] == 409
+    assert call(START, OP, path={"instanceId": "i-aaa"})[0] == 409
     aws.ec2.state["i-aaa"] = "stopped"
     aws.ec2.start_error = "InsufficientInstanceCapacity"
-    status, body = call("POST /instances/{instanceId}/start", "u-op", path={"instanceId": "i-aaa"})
+    status, body = call(START, OP, path={"instanceId": "i-aaa"})
     assert status == 503 and "capacity" in body["message"]
 
 
 def test_no_route_can_stop_an_instance():
-    assert call("POST /instances/{instanceId}/stop", "u-both", path={"instanceId": "i-aaa"})[0] == 404
+    assert call("POST /instances/{instanceId}/stop", BOTH, path={"instanceId": "i-aaa"})[0] == 404
+
+
+def test_first_sign_in_adds_a_user_with_no_roles(aws):
+    newcomer = "new@x.test"
+    assert call("GET /instances", newcomer) == (200, [])
+    status, me = call("POST /session", newcomer)
+    assert status == 200 and me["roles"] == [] and me["email"] == newcomer
+    row = aws.users.items[(newcomer,)]
+    assert "roles" not in row and row["source"] == "panel" and row["sub"] == "sub-" + newcomer
+    assert call("GET /admin/users", newcomer)[0] == 403
+
+
+def test_sign_in_keeps_existing_roles(aws):
+    call("POST /session", OP)
+    assert aws.users.items[(OP,)]["roles"] == ["operators"]
+    assert call("POST /session", OP)[1]["roles"] == ["operators"]
+
+
+def test_bootstrap_admin_works_with_an_empty_table(aws):
+    aws.users.items.clear()
+    status, me = call("POST /session", BOOT)
+    assert status == 200 and me["roles"] == ["user_mgrs"]
+    assert call("GET /admin/users", BOOT)[0] == 200
+    assert call("GET /admin/users", ADM)[0] == 403
+
+
+def test_bootstrap_admin_cannot_be_demoted(aws):
+    status, body = call("PUT /admin/users/{userId}", ADM, path={"userId": BOOT}, body={"roles": [{"role": "user_mgrs", "member": False}]})
+    assert status == 409 and "settings" in body["message"]
 
 
 def test_login_recorded_once_and_marked_current(aws):
-    call("POST /session", "u-op")
-    call("POST /session", "u-op")
-    status, rows = call("GET /logins", "u-op")
+    call("POST /session", OP)
+    call("POST /session", OP)
+    status, rows = call("GET /logins", OP)
     assert len(rows) == 1 and rows[0]["current"] is True and rows[0]["browser"] == "Chrome on Windows"
     assert rows[0]["ip"] == "203.0.113.9"
-    assert call("GET /logins", "u-adm")[1] == []
+    assert call("GET /logins", ADM)[1] == []
 
 
 def test_logs_are_only_the_callers_own(aws):
-    call("POST /session", "u-op")
-    call("POST /session", "u-adm")
-    status, rows = call("GET /logs", "u-op")
-    assert status == 200 and all(r["userId"] == "u-op" for r in rows) and len(rows) == 1
+    call("POST /session", OP)
+    call("POST /session", ADM)
+    status, rows = call("GET /logs", OP)
+    assert status == 200 and all(r["userId"] == OP for r in rows) and len(rows) == 1
 
 
 def test_admin_routes_need_user_mgrs(aws):
     for route, path in [("GET /admin/users", None), ("GET /admin/instances", None), ("GET /admin/changes", None),
-                        ("GET /admin/users/{userId}/grants", {"userId": "u-op"})]:
-        assert call(route, "u-op", path=path)[0] == 403
-    assert call("PUT /admin/users/{userId}", "u-op", path={"userId": "u-none"}, body={"groups": []})[0] == 403
+                        ("GET /admin/users/{userId}/grants", {"userId": OP})]:
+        assert call(route, OP, path=path)[0] == 403
+    assert call("PUT /admin/users/{userId}", OP, path={"userId": NONE}, body={"roles": []})[0] == 403
 
 
-def test_admin_lists_users_with_groups(aws):
-    status, users = call("GET /admin/users", "u-adm")
+def test_admin_lists_users_with_roles(aws):
+    status, users = call("GET /admin/users", ADM)
     by = {u["id"]: u for u in users}
-    assert status == 200 and by["u-op"]["groups"] == ["operators"] and by["u-none"]["groups"] == [] and by["u-both"]["name"] == "Bo Both"
-    assert [i["id"] for i in call("GET /admin/instances", "u-adm")[1]] == ["i-aaa", "i-bbb"]
+    assert status == 200 and by[OP]["roles"] == ["operators"] and by[NONE]["roles"] == [] and by[BOTH]["name"] == "Bo Both"
+    assert by[BOOT]["roles"] == ["user_mgrs"] and by[BOOT]["source"] == "settings"
+    assert [i["id"] for i in call("GET /admin/instances", ADM)[1]] == ["i-aaa", "i-bbb"]
 
 
 def test_admin_makes_operator_and_grants_in_one_save(aws):
-    status, body = call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-none"},
-                        body={"groups": [{"group": "operators", "member": True}], "grants": [{"instanceId": "i-aaa", "grant": True}]})
+    status, body = call("PUT /admin/users/{userId}", ADM, path={"userId": NONE},
+                        body={"roles": [{"role": "operators", "member": True}], "grants": [{"instanceId": "i-aaa", "grant": True}]})
     assert (status, body) == (200, {"applied": 2})
-    assert "operators" in aws.cognito.groups["u-none"]
-    assert call("GET /admin/users/{userId}/grants", "u-adm", path={"userId": "u-none"})[1] == ["i-aaa"]
-    kinds = [(c["action"], c.get("group") or c.get("instanceId")) for c in call("GET /admin/changes", "u-adm")[1]]
-    assert ("Added", "Operator group") in kinds and ("Granted", "i-aaa") in kinds
-    assert aws.entitlements.items[("u-none", "i-aaa")]["status"] == "applied"
+    assert aws.users.items[(NONE,)]["roles"] == ["operators"]
+    assert call("GET /admin/users/{userId}/grants", ADM, path={"userId": NONE})[1] == ["i-aaa"]
+    kinds = [(c["action"], c.get("role") or c.get("instanceId")) for c in call("GET /admin/changes", ADM)[1]]
+    assert ("Added", "Operator role") in kinds and ("Granted", "i-aaa") in kinds
+    assert aws.entitlements.items[(NONE, "i-aaa")]["status"] == "applied"
+    assert call("GET /instances", NONE)[1][0]["id"] == "i-aaa"  # takes effect on the very next call
 
 
 def test_cannot_grant_a_non_operator(aws):
-    status, body = call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-none"}, body={"grants": [{"instanceId": "i-aaa", "grant": True}]})
-    assert status == 409 and ("u-none", "i-aaa") not in aws.entitlements.items
+    status, _ = call("PUT /admin/users/{userId}", ADM, path={"userId": NONE}, body={"grants": [{"instanceId": "i-aaa", "grant": True}]})
+    assert status == 409 and (NONE, "i-aaa") not in aws.entitlements.items
 
 
 def test_removing_operator_revokes_grants(aws):
-    grant(aws, "u-op", "i-aaa")
-    status, _ = call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-op"}, body={"groups": [{"group": "operators", "member": False}]})
-    assert status == 200 and aws.entitlements.items[("u-op", "i-aaa")]["status"] == "revoked"
-    assert call("GET /instances", "u-op") == (200, [])
+    grant(aws, OP, "i-aaa")
+    status, _ = call("PUT /admin/users/{userId}", ADM, path={"userId": OP}, body={"roles": [{"role": "operators", "member": False}]})
+    assert status == 200 and aws.entitlements.items[(OP, "i-aaa")]["status"] == "revoked"
+    assert call("GET /instances", OP) == (200, [])
 
 
-def test_admin_cannot_remove_own_user_mgrs(aws):
-    status, body = call("PUT /admin/users/{userId}", "u-both", path={"userId": "u-both"}, body={"groups": [{"group": "user_mgrs", "member": False}]})
-    assert status == 409 and "user_mgrs" in aws.cognito.groups["u-both"]
-    # Another admin may remove them.
-    assert call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-both"}, body={"groups": [{"group": "user_mgrs", "member": False}]})[0] == 200
+def test_admin_cannot_remove_own_user_manager_role(aws):
+    status, _ = call("PUT /admin/users/{userId}", BOTH, path={"userId": BOTH}, body={"roles": [{"role": "user_mgrs", "member": False}]})
+    assert status == 409 and "user_mgrs" in aws.users.items[(BOTH,)]["roles"]
+    assert call("PUT /admin/users/{userId}", ADM, path={"userId": BOTH}, body={"roles": [{"role": "user_mgrs", "member": False}]})[0] == 200
+    assert "user_mgrs" not in aws.users.items[(BOTH,)]["roles"]
 
 
 def test_validation_happens_before_any_write(aws):
-    status, _ = call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-none"},
-                     body={"groups": [{"group": "operators", "member": True}], "grants": [{"instanceId": "i-nope", "grant": True}]})
-    assert status == 404 and aws.cognito.groups["u-none"] == set()
-    assert call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-none"}, body={"groups": [{"group": "root", "member": True}]})[0] == 400
-    assert call("PUT /admin/users/{userId}", "u-adm", path={"userId": "nobody"}, body={})[0] == 404
+    status, _ = call("PUT /admin/users/{userId}", ADM, path={"userId": NONE},
+                     body={"roles": [{"role": "operators", "member": True}], "grants": [{"instanceId": "i-nope", "grant": True}]})
+    assert status == 404 and aws.users.items[(NONE,)]["roles"] == []
+    assert call("PUT /admin/users/{userId}", ADM, path={"userId": NONE}, body={"roles": [{"role": "root", "member": True}]})[0] == 400
+    assert call("PUT /admin/users/{userId}", ADM, path={"userId": "nobody@x.test"}, body={})[0] == 404
 
 
 def test_revoking_a_never_granted_instance_adds_nothing(aws):
-    call("PUT /admin/users/{userId}", "u-adm", path={"userId": "u-op"}, body={"grants": [{"instanceId": "i-bbb", "grant": False}]})
-    assert ("u-op", "i-bbb") not in aws.entitlements.items
+    call("PUT /admin/users/{userId}", ADM, path={"userId": OP}, body={"grants": [{"instanceId": "i-bbb", "grant": False}]})
+    assert (OP, "i-bbb") not in aws.entitlements.items
 
 
 def test_unexpected_errors_do_not_leak(aws, monkeypatch):
     monkeypatch.setattr(handler, "list_logins", lambda caller: 1 / 0)
-    status, body = call("GET /logins", "u-op")
+    status, body = call("GET /logins", OP)
     assert status == 500 and "division" not in json.dumps(body)
+
+
+def _raw(entry, route, user, path=None):
+    event = {"routeKey": route, "pathParameters": path or {}, "requestContext": {"authorizer": {"jwt": {"claims": {"email": user, "sub": "s"}}}}}
+    out = entry(event, None)
+    return out["statusCode"]
+
+
+def test_customer_lambda_has_no_admin_routes(aws):
+    for route in ("GET /admin/users", "GET /admin/changes", "PUT /admin/users/{userId}"):
+        assert _raw(handler.customer_handler, route, ADM, {"userId": OP}) == 404
+
+
+def test_admin_lambda_cannot_start_or_sign_in(aws):
+    for route in ("POST /instances/{instanceId}/start", "POST /session", "GET /instances"):
+        assert _raw(handler.admin_handler, route, BOTH, {"instanceId": "i-aaa"}) == 404

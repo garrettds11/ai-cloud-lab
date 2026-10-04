@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VERSION: "1.9.8"
+
+jobs:
+  terraform:
+    name: Terraform fmt, validate, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Format check
+        run: terraform fmt -check -recursive -diff
+
+      - name: Init without a backend
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      # Mocked providers: no AWS or Cloudflare credentials are needed or used.
+      - name: Test
+        run: terraform test
+
+  scripts:
+    name: Shell scripts and Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      # cloud-init.sh.tpl is a Terraform template, so fill in its ${...} placeholders
+      # before linting. SC2157/SC2050 are expected once values are constants.
+      - name: Render cloud-init template
+        run: |
+          python3 - <<'PY'
+          import re
+          t = open("cloud-init.sh.tpl").read()
+          t = t.replace("$${", "\0DS{").replace("%%{", "%{")
+          t = re.sub(r"\$\{[a-z_0-9]+\}", "placeholder", t).replace("\0DS{", "${")
+          open("cloud-init.rendered.sh", "w").write(t)
+          PY
+
+      - name: Shellcheck
+        run: shellcheck --severity=warning --exclude=SC2157,SC2050 cloud-init.rendered.sh scripts/ai-lab-idle-check.sh
+
+      - name: Watchdog unit tests
+        run: |
+          pip install boto3
+          python -m unittest discover -s tests
+
+  # Advisory for now: findings show in the log but do not fail the build.
+  # Review the first run, fix or suppress what is real, then remove continue-on-error.
+  lint-and-scan:
+    name: tflint and trivy (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint
+        run: tflint --recursive --minimum-failure-severity=warning
+
+      - name: trivy config scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"

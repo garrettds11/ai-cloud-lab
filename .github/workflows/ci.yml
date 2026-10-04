@@ -87,13 +87,16 @@ jobs:
       - name: tflint
         run: tflint --recursive --minimum-failure-severity=warning
 
+      # Run checkov even if tflint reports findings, so both results show.
       - uses: actions/setup-python@v5
+        if: ${{ !cancelled() }}
         with:
           python-version: "3.12"
 
       # Checkov reads the Terraform source and reports misconfigurations. It is
       # installed from PyPI, so no third-party action version is involved.
       - name: checkov
+        if: ${{ !cancelled() }}
         run: |
           pip install checkov
           checkov -d . --framework terraform --compact --quiet

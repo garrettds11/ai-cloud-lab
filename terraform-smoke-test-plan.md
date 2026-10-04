@@ -214,6 +214,13 @@ local `terraform.tfvars`, so the later steps do not fail on formatting. It
 changes no values. Use `fmt -check -recursive` only in CI, where the files must
 not be modified.
 
+When `control_panel_url` is set, the plan also shows the control panel changes: three
+new `aws_ssm_parameter` resources under `/<project_name>/control-panel/`, the
+`control-panel=managed` tag on the lab instance, and, if the three authorizer
+variables are set, the `terraform_data` resource that points the API's authorizer at
+the lab's pool. Section 5, "Control panel config test", has the steps that finish the
+panel after `apply`.
+
 ## 3. Deploy
 
 ```powershell
@@ -514,8 +521,8 @@ panel loads. Run this from the repository directory, with
 Then check:
 
 1. The script prints `Wrote ...\dashboards\config.js` and does not stop with an
-   error. A warning that there is no API address is expected until
-   `control_panel_api_url` is set.
+   error. A warning that there is no API address means `control_panel_api_url` is
+   not set in `terraform.tfvars`.
 2. `dashboards\config.js` holds the region, the user pool ID, an app client ID and
    the `redirectUri` `https://cp.aiwebdemo.click/`. It is not tracked by git
    (`git status` does not list it).
@@ -537,6 +544,39 @@ Then check:
    The issuer must end with the lab's `cognito_user_pool_id` and the audience must be the
    control panel app client ID. After `destroy`, the same command must show the holding
    pool's issuer and the audience `holding-unused`.
+
+6. Upload the new `config.js`. The panel page and a partial `config.js` (API address,
+   redirect address and region only) were uploaded before this test, so sign-in does
+   not work until the full file is in the bucket. Upload it and clear the cache:
+
+   ```powershell
+   $bucket = "aiwebdemo-control-panel-394566733278"
+   aws s3 cp .\dashboards\config.js "s3://$bucket/config.js" --content-type "application/javascript; charset=utf-8"
+   aws cloudfront create-invalidation --distribution-id E2799OUDXX2ED3 --paths "/config.js"
+   ```
+
+   Open `https://cp.aiwebdemo.click`. The page must show a sign-in button, not a
+   message about a missing `clientId`.
+
+7. The lab publishes its wiring for the panel. With `control_panel_url` set, `apply`
+   creates three SSM parameters and tags the lab instance `control-panel=managed`.
+   Check:
+
+   ```powershell
+   aws ssm get-parameters-by-path --path "/<project_name>/control-panel" --query "Parameters[].[Name,Value]" --output table
+   aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[].Instances[].Tags[?Key=='control-panel']"
+   ```
+
+   The parameters are `instance-ids` (the lab instance ID), `target-group-arn` and
+   `service-url` (`https://<domain_name>`). `target-group-arn` and `service-url` exist
+   only when `enable_domain_access` is also `true`. The tag value is `managed`.
+
+8. Sign in at `https://cp.aiwebdemo.click` as a user in the lab's Cognito pool. The
+   panel must list the lab instance with no setting copied into the Lambda functions.
+   Only a sign-in whose email is in `BOOTSTRAP_ADMINS` (`garrettds11@gmail.com`) can
+   open the admin screens; other users get only the customer view.
+
+   After `destroy`, the parameters are gone and the panel lists no instances.
 
 ## 6. Stop or destroy the test system
 

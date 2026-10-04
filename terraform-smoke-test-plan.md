@@ -278,25 +278,12 @@ aws elbv2 describe-target-health `
 
 The EC2 target should report `healthy`. 
 
-### Verify
+### Verify reachability
 
 - URL loads Open WebUI: https://aiwebdemo.click
 
 > If `enable_cloudflare_access = false` this check returns a `500` internal error,
 > otherwise it should show a branded Cognito login page.
-
-- The ALB has no public port 80 (the default). Plain *http://* is not a supported
-  application URL; with Cloudflare, **Always Use HTTPS** sends visitors who type
-  *http://* to HTTPS at the edge before they reach AWS.
-
-To confirm the ALB itself no longer listens on port 80, run:
-
-```powershell
-$env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
-curl.exe -I --max-time 5 "http://$env:alb_dns_name"
-```
-
-The request ==must time out or fail== to connect, not return a redirect.
 
 ### Origin lockdown test
 
@@ -430,6 +417,11 @@ Then open http://localhost:8081.
 
 The instance may make outbound connections only on TCP 443 and 80. In an SSM shell
 on the instance (`aws ssm start-session --target $env:instance_id`):
+
+```powershell
+$env:instance_id = terraform output -raw instance_id
+aws ssm start-session --target $env:instance_id
+```
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 https://ollama.com

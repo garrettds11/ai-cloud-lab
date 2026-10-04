@@ -97,7 +97,7 @@ enable_origin_lockdown = true
 # Demo: idle 0 and limit 90, so it always stops 90 minutes after boot.
 # Production: idle 60 and limit 0, so it stops only when nobody is using it.
 auto_stop_idle_minutes       = 0
-auto_stop_max_uptime_minutes = 90
+auto_stop_max_uptime_minutes = 20
 auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link
 
 # Grafana Cloud telemetry (host metrics, logs and Open WebUI traces through Grafana

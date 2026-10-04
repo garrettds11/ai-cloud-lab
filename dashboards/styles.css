@@ -414,3 +414,9 @@ input[type="checkbox"]:disabled { cursor: not-allowed; opacity: .5; }
     scroll-behavior: auto !important;
   }
 }
+
+/* Until someone is signed in the page shows nothing but a plain message. */
+.gate-msg { display: none; }
+body.gate > :not(.gate-msg):not(script) { display: none !important; }
+body.gate .gate-msg { display: block; padding: 48px 24px; text-align: center; font: 15px/1.5 system-ui, sans-serif; }
+.gate-msg button { margin-top: 12px; }

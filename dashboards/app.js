@@ -1001,6 +1001,7 @@
   }
 
   function openSession(session) {
+    document.body.classList.remove('gate');
     clearTimeout(pollTimer);
     state.session = session;
     state.instances = null; state.instError = null;
@@ -1016,6 +1017,13 @@
   // Shown instead of the page when it cannot sign in or has no settings.
   function showFatal(message, canRetry) {
     clearTimeout(pollTimer);
+    if (document.body.classList.contains('gate')) {
+      // Not signed in: no app shell, just the message.
+      const box = $('#gate');
+      box.replaceChildren(h('p', { role: 'alert', text: message }),
+        canRetry ? h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => location.reload(), text: 'Try again' }) : null);
+      return;
+    }
     $('#nav').replaceChildren();
     $('#main').replaceChildren(
       h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Control panel' }),

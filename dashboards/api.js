@@ -42,7 +42,7 @@
   const announce = (ok) => window.dispatchEvent(new CustomEvent('api-status', { detail: { ok } }));
 
   function configProblem() {
-    if (!cfg) return 'This page has no settings file. Apply the lab's Terraform to publish config.js, or upload one by hand.';
+    if (!cfg) return 'This page has no settings file. Apply the Terraform for the lab to publish config.js, or upload one by hand.';
     const missing = [];
     if (!clientId) missing.push('clientId');
     if (!cfg.redirectUri) missing.push('redirectUri');

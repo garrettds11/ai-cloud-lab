@@ -74,23 +74,26 @@ jobs:
           python -m unittest discover -s tests
 
   # Advisory for now: findings show in the log but do not fail the build.
-  # Review the first run, fix or suppress what is real, then remove continue-on-error.
+  # Review the first clean run, fix or suppress what is real, then remove continue-on-error.
   lint-and-scan:
-    name: tflint and trivy (advisory)
+    name: tflint and checkov (advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - uses: terraform-linters/setup-tflint@v4
+      - uses: terraform-linters/setup-tflint@v6
 
       - name: tflint
         run: tflint --recursive --minimum-failure-severity=warning
 
-      - name: trivy config scan
-        uses: aquasecurity/trivy-action@0.28.0
+      - uses: actions/setup-python@v5
         with:
-          scan-type: config
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: "1"
+          python-version: "3.12"
+
+      # Checkov reads the Terraform source and reports misconfigurations. It is
+      # installed from PyPI, so no third-party action version is involved.
+      - name: checkov
+        run: |
+          pip install checkov
+          checkov -d . --framework terraform --compact --quiet

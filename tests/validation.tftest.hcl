@@ -39,6 +39,57 @@ mock_provider "aws" {
       zone_id = "Z0123456789ABCDEFGHIJ"
     }
   }
+
+  # Resources that other resources reference by ARN. The provider validates ARN
+  # arguments, so the mock must return well-formed ARNs, not random strings.
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/test-role"
+    }
+  }
+
+  mock_resource "aws_iam_instance_profile" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:instance-profile/test-profile"
+    }
+  }
+
+  mock_resource "aws_sns_topic" {
+    defaults = {
+      arn = "arn:aws:sns:us-east-1:123456789012:test-topic"
+    }
+  }
+
+  mock_resource "aws_lambda_function" {
+    defaults = {
+      arn        = "arn:aws:lambda:us-east-1:123456789012:function:test-function"
+      invoke_arn = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:test-function/invocations"
+    }
+  }
+
+  mock_resource "aws_cloudwatch_event_rule" {
+    defaults = {
+      arn = "arn:aws:events:us-east-1:123456789012:rule/test-rule"
+    }
+  }
+
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = {
+      arn = "arn:aws:logs:us-east-1:123456789012:log-group:/test/log-group"
+    }
+  }
+
+  mock_resource "aws_security_group" {
+    defaults = {
+      arn = "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0"
+    }
+  }
+
+  mock_resource "aws_instance" {
+    defaults = {
+      arn = "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0"
+    }
+  }
 }
 
 mock_provider "cloudflare" {}

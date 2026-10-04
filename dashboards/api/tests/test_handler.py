@@ -35,6 +35,9 @@ def _flat(cond):
     return [(e["operator"], e["values"][0].name, e["values"][1])]
 
 
+RESERVED = {"name", "sub", "status", "role", "user", "key", "value", "data", "comment", "count", "timestamp"}
+
+
 class FakeTable:
     def __init__(self, key_names):
         self.keys = key_names
@@ -67,6 +70,9 @@ class FakeTable:
                 raise client_error("ConditionalCheckFailedException")
             self.items[k] = dict(Key)
         names = ExpressionAttributeNames or {}
+        for target, _value in re.findall(r"(#?\w+) = (:\w+)", UpdateExpression):
+            # DynamoDB rejects these words when they are not behind a #name placeholder
+            assert target.startswith("#") or target.lower() not in RESERVED, f"{target} is a DynamoDB reserved word"
         for target, value in re.findall(r"(#?\w+) = (:\w+)", UpdateExpression):
             self.items[k][names.get(target, target)] = ExpressionAttributeValues[value]
 

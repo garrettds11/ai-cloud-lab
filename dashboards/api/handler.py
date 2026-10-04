@@ -430,8 +430,8 @@ def record_session(caller):
             raise
     users.update_item(
         Key={"email": caller["email"]},
-        UpdateExpression="SET #n = :n, sub = :s, lastSeenAt = :t",
-        ExpressionAttributeNames={"#n": "name"},
+        UpdateExpression="SET #n = :n, #sub = :s, lastSeenAt = :t",
+        ExpressionAttributeNames={"#n": "name", "#sub": "sub"},
         ExpressionAttributeValues={":n": caller["name"], ":s": caller["sub"], ":t": t},
     )
     if caller["auth_time"]:

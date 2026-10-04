@@ -5,9 +5,9 @@
 #   terraform init -backend=false
 #   terraform test
 #
-# Requires Terraform 1.7 or later (mock_provider). If a local terraform.tfvars changes
-# the defaults these tests rely on (for example enable_cloudflare_access), move it aside
-# while testing, or run: terraform test -var-file=/dev/null
+# Requires Terraform 1.7 or later (mock_provider). A local terraform.tfvars is still
+# loaded by terraform test, so the variables block below pins every setting the tests
+# depend on; values in the test file take precedence over terraform.tfvars.
 
 mock_provider "aws" {
   mock_data "aws_vpc" {
@@ -45,9 +45,32 @@ mock_provider "cloudflare" {}
 
 # A valid baseline. Each run block below changes only what it tests.
 variables {
+  # Secrets and alerts
   open_webui_admin_password_secret_arn     = "arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-AbCdEf"
   open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:demo-AbCdEf"
   auto_stop_alert_email                    = "test@example.com"
+
+  # Everything that can change which resources exist, pinned to the plain defaults
+  enable_domain_access            = false
+  enable_cloudflare_access        = false
+  enable_alb_http_redirect        = false
+  enable_cognito                  = false
+  enable_origin_lockdown          = false
+  enable_ssh                      = false
+  open_webui_enable_local_login   = true
+  allowed_ssh_cidr                = null
+  ssh_key_name                    = null
+  extra_egress_cidrs              = []
+  origin_lockdown_extra_cidrs     = []
+  cloudflare_account_id           = null
+  cloudflare_api_token_secret_arn = null
+  cloudflare_access_team_domain   = null
+  cognito_domain_prefix           = null
+  cognito_extra_users             = []
+  root_volume_size                = 80
+  open_webui_host_port            = 8080
+  auto_stop_idle_minutes          = 60
+  auto_stop_max_uptime_minutes    = 0
 }
 
 run "baseline_plan_succeeds" {

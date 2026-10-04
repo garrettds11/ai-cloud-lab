@@ -239,10 +239,26 @@ Do these in the Cloudflare dashboard after the zone is **Active**. They are list
 2. **Enforce HTTPS at the edge.** Turn on **Always Use HTTPS** and **Automatic HTTPS Rewrites**, set the minimum TLS version to 1.2, and keep TLS 1.3 enabled. Add HSTS only after the site works correctly over HTTPS, and start with a short max-age.
 3. **Check the Access policy.** Confirm the application covers the whole hostname, that only the intended email addresses are allowed, and that a sign-in from an unlisted address is denied. Review the identity provider settings under Zero Trust > Settings > Authentication.
 4. **Lock the origin to Cloudflare.** By default the ALB's security group allows port 443 from the whole internet, and Access is enforced only at Cloudflare's edge. Anyone who learns the ALB's DNS name can reach Open WebUI's login page without going through Access or the WAF. Set `enable_origin_lockdown = true` to restrict the ALB to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/). See "Origin lockdown" below for the rollout order and recovery path. Authenticated Origin Pulls or validating the Access JWT at the origin are stronger options that this repo does not implement.
-5. **Turn on WAF protections and bot defenses.** Enable the managed WAF rules and Bot Fight Mode if the plan includes them. Consider a rate-limiting rule for the sign-in path. With Access in front, these are a second layer rather than the first.
+5. **Turn on WAF protections and bot defenses.** With Access in front, these are a second layer rather than the first. Decisions for the Free plan:
+   - **Free managed ruleset:** always active.
+   - **Bot Fight Mode: on** (Security > Settings > Bot traffic). It cannot be exempted per path, so after enabling it confirm that the Access sign-in, a chat message and streaming replies still work. If one breaks, turn it off.
+   - **Sign-in rate limit: skipped.** The Free plan allows one rate-limiting rule (per IP, 10-second window, 10-second block), and that slot is used by a "Leaked credential check" rule that blocks requests with leaked passwords. That rule is the more useful one to keep. Whether Cloudflare's leaked-credential detection recognises Open WebUI's sign-in request is not verified. Replacing it with a sign-in rate limit would be a weak speed bump, not brute-force protection. Cloudflare Access and Cognito sit in front of the sign-in path.
 6. **Publish email protections even though the domain sends no mail.** This stops others from spoofing the domain: a null MX record (`0 .`), an SPF record of `v=spf1 -all`, and a DMARC record such as `v=DMARC1; p=reject`.
-7. **Consider DNSSEC.** Enable it in Cloudflare and add the DS record at the registrar, if the registrar supports it for the domain's TLD.
+7. **DNSSEC: on.** See "DNSSEC" below. A wrong key at the registrar makes the whole domain fail to resolve for validating resolvers, so follow the steps and checks exactly.
 8. **Protect the accounts.** Use two-factor authentication on the Cloudflare account and on the AWS and registrar accounts. Keep the API token scoped, set an expiry, and rotate the Secrets Manager copy when it changes. Keep the registrar's transfer lock on.
+
+## DNSSEC
+
+The domain is registered in Route 53 and its DNS is hosted at Cloudflare, so the signing key comes from Cloudflare and the DS record is registered at Route 53.
+
+1. In Cloudflare, open DNS > Settings and choose **Enable DNSSEC**. Cloudflare shows the DS record details (key tag, algorithm, digest type, digest) and the public key. Do not click **Confirm** yet.
+2. In Route 53, open Registered domains > your domain > **DNSSEC keys** > **Add key**. Set **Key type** to **257 - KSK** (matching Cloudflare's flags of 257), **Algorithm** to **13 - ECDSAP256SHA256**, and paste the **public key** from Cloudflare. Route 53 takes the public key, not the DS digest.
+3. Compare the key tag and digest that Route 53 then lists with the ones Cloudflare shows. They must match exactly. Then click **Confirm** in Cloudflare.
+4. Wait for the registry to publish the DS record (resolvers may cache the old value for up to 15 minutes), then run the DNSSEC check in the smoke test.
+
+**Do not add the key as 256 - ZSK.** The flags are part of the DS calculation, so the registered DS will not match Cloudflare's key. Once the zone is signed, validating resolvers such as 8.8.8.8 and 1.1.1.1 return `SERVFAIL` and the site is unreachable for most visitors. To recover, remove the wrong key at Route 53 and add the correct one.
+
+**Rollback order.** Remove the key at Route 53 first and wait for the DS record to expire, then disable DNSSEC in Cloudflare. Disabling it in Cloudflare first leaves a DS record with no matching key, which causes the same outage. Remove the DS record at the registrar before moving DNS to another provider.
 
 ## Origin lockdown
 

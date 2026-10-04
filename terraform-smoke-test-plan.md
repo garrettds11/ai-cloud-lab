@@ -440,6 +440,19 @@ The first command must print an HTTP status. The second must time out and print
 `blocked`. If bootstrap itself failed on a download, check the bootstrap log for the
 host it could not reach and add that destination to `extra_egress_cidrs`.
 
+### Edge protections test
+
+1. **Bot Fight Mode:** with it on, sign in through Cloudflare Access, send a chat message, and confirm the reply streams in. If any step fails, turn Bot Fight Mode off and re-test.
+2. **DNSSEC:** run these in PowerShell. Google's resolver validates DNSSEC, so a bad key shows up as a failure.
+
+```powershell
+Clear-DnsClientCache
+Resolve-DnsName <domain> -Type DS -Server 8.8.8.8
+Resolve-DnsName <domain> -Type A -Server 8.8.8.8
+```
+
+The DS record's key tag must equal the one in the Route 53 DNSSEC keys table, and the A lookup must not return `DNS server failure`. In a browser, `https://dns.google/resolve?name=<domain>&type=A` should show `"AD": true`.
+
 ### Login with the admin and demo accounts
 
 Initial login credentials are as follows unless you changed `open_webui_admin_email`:

@@ -23,7 +23,7 @@ A customer needs both the `operators` role and a grant in `instance_entitlements
 | `index.html` | The page shell |
 | `styles.css` | Docker Desktop style, dark, desktop only (1024 px and up) |
 | `app.js` | The four views |
-| `api.js` | Cognito sign-in (authorization code with PKCE) and calls to the Control API |
+| `api.js` | OpenID Connect sign-in (authorization code with PKCE, any provider) and calls to the Control API |
 | `config.js` | Region, user pool ID, app client ID and API address. Written by `scripts\make-panel-config.ps1`; not committed |
 | `config.example.js` | Shows what `config.js` looks like |
 | `api/` | The Control API Lambda, its tests and its setup guide |
@@ -31,7 +31,7 @@ A customer needs both the `operators` role and a grant in `instance_entitlements
 
 ## Run it
 
-The page signs in through Cognito, which sends the browser back to `https://cp.aiwebdemo.click/`, so it works from that address. Opening `index.html` from a file shows the page without settings or sign-in.
+The page signs in through the provider named in `config.js` (Okta, Entra ID, Cognito or any OIDC provider), which sends the browser back to `https://cp.aiwebdemo.click/`, so it works from that address. Opening `index.html` from a file shows the page without settings or sign-in.
 
 1. Build what `SETUP.md` lists.
 2. Apply Terraform, then write the settings: `.\scripts\make-panel-config.ps1`.

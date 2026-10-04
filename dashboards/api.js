@@ -1,9 +1,18 @@
 /*
- * Client for the Control API. Signs the user in with Cognito (authorization code with
- * PKCE through the hosted sign-in page) and calls the API with the ID token.
+ * Client for the Control API. Signs the user in with any OpenID Connect provider
+ * (authorization code with PKCE) and calls the API with the ID token.
  *
- * Settings come from config.js (window.PANEL_CONFIG), written by
- * scripts/make-panel-config.ps1 from Terraform's control_panel_config output.
+ * Settings come from config.js (window.PANEL_CONFIG):
+ *   issuer       the provider's issuer URL; its endpoints are found from
+ *                <issuer>/.well-known/openid-configuration (Okta, Entra ID, Cognito, ...)
+ *   clientId     the single-page app client ID (also what the API's authorizer expects)
+ *   redirectUri  where the provider sends the browser back (this page's address)
+ *   apiUrl       the Control API address
+ *   scope        optional, default "openid email profile" (Okta and Entra also want offline_access)
+ * Cognito pools can still be given as userPoolId + region (the issuer is built from them),
+ * and hostedLoginDomain keeps Cognito's own sign-in and sign-out addresses.
+ * scripts/make-panel-config.ps1 writes these from Terraform for the lab's Cognito pool;
+ * any other provider's file is written by hand.
  *
  * Tokens live in sessionStorage, so closing the tab signs the user out of this page.
  * The page keeps no permissions of its own: every rule is checked again by the API.
@@ -12,6 +21,8 @@
   'use strict';
 
   const cfg = window.PANEL_CONFIG || null;
+  const clientId = cfg ? cfg.clientId || cfg.appClientId || '' : '';
+  const issuer = cfg ? cfg.issuer || (cfg.userPoolId && cfg.region ? 'https://cognito-idp.' + cfg.region + '.amazonaws.com/' + cfg.userPoolId : '') : '';
   const TOKENS = 'panel.tokens';
   const FLOW = 'panel.flow';
 
@@ -32,13 +43,49 @@
 
   function configProblem() {
     if (!cfg) return 'This page has no settings file. Run scripts\\make-panel-config.ps1 and upload dashboards/config.js.';
-    const missing = ['region', 'userPoolId', 'appClientId', 'hostedLoginDomain', 'redirectUri'].filter((k) => !cfg[k]);
+    const missing = [];
+    if (!clientId) missing.push('clientId');
+    if (!cfg.redirectUri) missing.push('redirectUri');
+    if (!issuer && !cfg.hostedLoginDomain && !(cfg.authorizationEndpoint && cfg.tokenEndpoint)) missing.push('issuer');
     if (missing.length) return 'The settings file is missing: ' + missing.join(', ') + '.';
     if (!cfg.apiUrl) return 'The Control API address is not set. Set control_panel_api_url in terraform.tfvars, apply, and run scripts\\make-panel-config.ps1 again.';
     return null;
   }
 
-  // ---- sign-in (Cognito hosted UI, authorization code with PKCE) --------------------
+  // ---- sign-in (OpenID Connect, authorization code with PKCE) -----------------------
+
+  let found = null;
+
+  // Where to send the browser and the token requests. Explicit addresses win, then
+  // Cognito's hosted sign-in domain, then the provider's discovery document.
+  function endpoints() {
+    if (!found) {
+      found = loadEndpoints().catch((err) => {
+        found = null;
+        throw err;
+      });
+    }
+    return found;
+  }
+
+  async function loadEndpoints() {
+    if (cfg.authorizationEndpoint && cfg.tokenEndpoint) {
+      return { authorize: cfg.authorizationEndpoint, token: cfg.tokenEndpoint, logout: cfg.logoutEndpoint || null, style: 'oidc' };
+    }
+    if (cfg.hostedLoginDomain) {
+      const base = 'https://' + cfg.hostedLoginDomain;
+      return { authorize: base + '/oauth2/authorize', token: base + '/oauth2/token', logout: base + '/logout', style: 'cognito' };
+    }
+    let doc;
+    try {
+      const res = await fetch(issuer.replace(/\/+$/, '') + '/.well-known/openid-configuration');
+      doc = await res.json();
+    } catch (err) {
+      throw new ApiError(0, 'Could not reach the sign-in service.');
+    }
+    if (!doc || !doc.authorization_endpoint || !doc.token_endpoint) throw new ApiError(0, 'The sign-in service did not describe itself correctly.');
+    return { authorize: doc.authorization_endpoint, token: doc.token_endpoint, logout: doc.end_session_endpoint || null, style: 'oidc' };
+  }
 
   const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const random = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
@@ -48,12 +95,12 @@
     const state = random(16);
     const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
     store.set(FLOW, { verifier, state, hash: location.hash });
-    const url = new URL('https://' + cfg.hostedLoginDomain + '/oauth2/authorize');
+    const url = new URL((await endpoints()).authorize);
     url.search = new URLSearchParams({
       response_type: 'code',
-      client_id: cfg.appClientId,
+      client_id: clientId,
       redirect_uri: cfg.redirectUri,
-      scope: 'openid email profile',
+      scope: cfg.scope || 'openid email profile',
       state,
       code_challenge: challenge,
       code_challenge_method: 'S256',
@@ -65,13 +112,13 @@
   async function tokenRequest(params) {
     let res;
     try {
-      res = await fetch('https://' + cfg.hostedLoginDomain + '/oauth2/token', {
+      res = await fetch((await endpoints()).token, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(Object.assign({ client_id: cfg.appClientId }, params)).toString(),
+        body: new URLSearchParams(Object.assign({ client_id: clientId }, params)).toString(),
       });
     } catch (err) {
-      throw new ApiError(0, 'Could not reach the sign-in service.');
+      throw err instanceof ApiError ? err : new ApiError(0, 'Could not reach the sign-in service.');
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.id_token) throw new ApiError(401, 'Sign-in did not complete. Please sign in again.');
@@ -117,11 +164,23 @@
     return startLogin();
   }
 
-  function signOut() {
+  // Clears this page's tokens, then ends the provider's session when it has a sign-out
+  // address. Without one the page just reloads, and the next visit asks for sign-in again.
+  async function signOut() {
+    const previous = store.get(TOKENS);
     store.remove(TOKENS);
     store.remove(FLOW);
-    const url = new URL('https://' + cfg.hostedLoginDomain + '/logout');
-    url.search = new URLSearchParams({ client_id: cfg.appClientId, logout_uri: cfg.redirectUri }).toString();
+    let e = null;
+    try {
+      e = await endpoints();
+    } catch (err) { /* provider unreachable: sign out locally */ }
+    if (!e || !e.logout) return location.assign(cfg.redirectUri);
+    const url = new URL(e.logout);
+    url.search = new URLSearchParams(
+      e.style === 'cognito'
+        ? { client_id: clientId, logout_uri: cfg.redirectUri }
+        : Object.assign({ post_logout_redirect_uri: cfg.redirectUri }, previous ? { id_token_hint: previous.idToken } : {})
+    ).toString();
     location.assign(url.toString());
   }
 
@@ -156,10 +215,10 @@
     ApiError,
     now: () => Date.now(),
     configProblem,
-    region: () => (cfg ? cfg.region : ''),
+    region: () => (cfg ? cfg.region || '' : ''),
 
     // Completes a sign-in in progress, or sends the browser to the sign-in page. Resolves
-    // with the signed-in user, or never when the browser is leaving for Cognito.
+    // with the signed-in user, or never when the browser is leaving for the sign-in page.
     async start() {
       const params = new URLSearchParams(location.search);
       if (params.has('code') || params.has('error')) await finishLogin(params);

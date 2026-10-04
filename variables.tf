@@ -452,3 +452,31 @@ variable "auto_stop_alert_email" {
     error_message = "auto_stop_alert_email must be a valid email address."
   }
 }
+
+variable "enable_grafana_telemetry" {
+  description = "Send host metrics and logs to Grafana Cloud over OTLP/HTTP using Grafana Alloy on the instance. Off by default. Needs grafana_otlp_endpoint and grafana_credentials_secret_arn, and outbound TCP 443 (already allowed). Changing it replaces the instance. Logs and metrics add to Grafana Cloud data usage; see grafana-telemetry.md."
+  type        = bool
+  default     = false
+}
+
+variable "grafana_otlp_endpoint" {
+  description = "Grafana Cloud OTLP endpoint, for example https://otlp-gateway-prod-us-east-3.grafana.net/otlp (no trailing slash). Not a secret. Required when enable_grafana_telemetry is true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_otlp_endpoint == null || can(regex("^https://[^\\s/]+(/[^\\s]*[^\\s/])?$", var.grafana_otlp_endpoint))
+    error_message = "grafana_otlp_endpoint must be an https:// URL without a trailing slash."
+  }
+}
+
+variable "grafana_credentials_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret holding the Grafana Cloud OTLP credentials as JSON: {\"instance_id\": \"<OTLP instance ID>\", \"token\": \"<access policy token>\"}. The token needs only the metrics:write and logs:write scopes. Required when enable_grafana_telemetry is true. The instance reads it at boot, so the token is never in Terraform state or user-data."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_credentials_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.grafana_credentials_secret_arn))
+    error_message = "grafana_credentials_secret_arn must be a valid Secrets Manager ARN."
+  }
+}

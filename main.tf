@@ -232,7 +232,8 @@ resource "aws_iam_role_policy" "open_webui_admin_password" {
       Action = "secretsmanager:GetSecretValue"
       Resource = concat(
         [data.aws_secretsmanager_secret.open_webui_admin_password.arn],
-        var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn]
+        var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn],
+        var.enable_grafana_telemetry && var.grafana_credentials_secret_arn != null ? [var.grafana_credentials_secret_arn] : []
       )
     }]
   })
@@ -301,6 +302,10 @@ resource "aws_instance" "ai_lab" {
     aws_region                           = var.aws_region
     auto_stop_parameter_name             = local.auto_stop_parameter_name
     auto_stop_script_b64                 = base64encode(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
+    grafana_enabled                      = var.enable_grafana_telemetry ? "true" : "false"
+    grafana_otlp_endpoint                = var.grafana_otlp_endpoint == null ? "" : var.grafana_otlp_endpoint
+    grafana_credentials_secret_arn       = var.grafana_credentials_secret_arn == null ? "" : var.grafana_credentials_secret_arn
+    alloy_config_b64                     = var.enable_grafana_telemetry ? base64encode(replace(file("${path.module}/scripts/alloy-config.alloy"), "\r\n", "\n")) : ""
   }), "\r\n", "\n"))
 
   user_data_replace_on_change = true
@@ -334,6 +339,11 @@ resource "aws_instance" "ai_lab" {
     precondition {
       condition     = length(var.open_webui_demo_users) == 0 || var.open_webui_demo_user_password_secret_arn != null
       error_message = "open_webui_demo_user_password_secret_arn must reference a pre-created Secrets Manager secret when demo users are enabled."
+    }
+
+    precondition {
+      condition     = !var.enable_grafana_telemetry || (var.grafana_otlp_endpoint != null && var.grafana_credentials_secret_arn != null)
+      error_message = "enable_grafana_telemetry requires grafana_otlp_endpoint and grafana_credentials_secret_arn."
     }
 
   }

@@ -99,3 +99,10 @@ enable_origin_lockdown = true
 auto_stop_idle_minutes       = 0
 auto_stop_max_uptime_minutes = 90
 auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link
+
+# Optional Grafana Cloud telemetry (host metrics and logs through Grafana Alloy).
+# Off by default. The token lives only in a Secrets Manager secret; see
+# grafana-telemetry.md for how to create it. Changing these replaces the instance.
+# enable_grafana_telemetry       = true
+# grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
+# grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:aiwebdemo/grafana-otlp-AbCdEf"

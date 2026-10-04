@@ -348,6 +348,68 @@ else
     echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
 fi
 
+# Optional Grafana Cloud telemetry through Grafana Alloy. A failure here is logged but
+# never fails bootstrap, because the lab must come up even if telemetry cannot. The
+# credentials are read from Secrets Manager through the instance role, so they are
+# never in user-data or Terraform state.
+setup_grafana_telemetry() {
+    local credentials instance_id token
+
+    install -d -m 0755 /etc/apt/keyrings
+    apt-get install -y gpg || return 1
+    curl --fail --silent --show-error --location https://apt.grafana.com/gpg.key |
+        gpg --dearmor --yes -o /etc/apt/keyrings/grafana.gpg || return 1
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
+        > /etc/apt/sources.list.d/grafana.list
+    apt-get update || return 1
+    apt-get install -y alloy || return 1
+
+    credentials="$(aws secretsmanager get-secret-value \
+        --secret-id '${grafana_credentials_secret_arn}' \
+        --query SecretString \
+        --output text \
+        --region '${aws_region}')" || return 1
+    instance_id="$(printf '%s' "$credentials" | jq -er '.instance_id')" || return 1
+    token="$(printf '%s' "$credentials" | jq -er '.token')" || return 1
+
+    install -d -m 0755 /etc/alloy
+    printf '%s' '${alloy_config_b64}' | base64 --decode > /etc/alloy/config.alloy || return 1
+
+    # Root-only: systemd reads this file and hands the values to Alloy.
+    (umask 077 && printf 'GRAFANA_OTLP_ENDPOINT=%s\nGRAFANA_OTLP_INSTANCE_ID=%s\nGRAFANA_OTLP_TOKEN=%s\n' \
+        '${grafana_otlp_endpoint}' "$instance_id" "$token" > /etc/alloy/grafana.env) || return 1
+
+    cat > /etc/default/alloy <<'EOF'
+CONFIG_FILE="/etc/alloy/config.alloy"
+CUSTOM_ARGS="--disable-reporting"
+RESTART_ON_UPGRADE=true
+EOF
+
+    mkdir -p /etc/systemd/system/alloy.service.d
+    cat > /etc/systemd/system/alloy.service.d/grafana.conf <<'EOF'
+[Service]
+EnvironmentFile=/etc/alloy/grafana.env
+EOF
+
+    # Docker and journal access for the log sources.
+    usermod -aG docker,systemd-journal alloy || return 1
+    systemctl daemon-reload
+    systemctl enable alloy
+    systemctl restart alloy
+    sleep 5
+    systemctl is-active --quiet alloy
+}
+
+if [[ "${grafana_enabled}" == "true" ]]; then
+    if setup_grafana_telemetry; then
+        echo "Grafana telemetry is running."
+    else
+        echo "WARNING: Grafana telemetry setup failed; continuing without it. See $LOG_FILE and journalctl -u alloy."
+    fi
+else
+    echo "Skipping Grafana telemetry (disabled)."
+fi
+
 # Idle-aware auto-stop: a systemd timer runs the idle monitor every minute. It does
 # nothing until the ready file exists, so it cannot stop the instance mid-bootstrap,
 # and it reads its on/off switch and timeout from an SSM parameter at run time.

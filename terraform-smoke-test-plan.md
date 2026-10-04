@@ -453,6 +453,24 @@ Resolve-DnsName <domain> -Type A -Server 8.8.8.8
 
 The DS record's key tag must equal the one in the Route 53 DNSSEC keys table, and the A lookup must not return `DNS server failure`. In a browser, `https://dns.google/resolve?name=<domain>&type=A` should show `"AD": true`.
 
+### Grafana telemetry test
+
+Only when `enable_grafana_telemetry = true`. In an SSM shell on the instance:
+
+```bash
+sudo systemctl status alloy --no-pager
+sudo journalctl -u alloy -n 50 --no-pager
+```
+
+Alloy must be `active (running)` and the log must not repeat authentication or connection errors (a `401` means the instance ID or token in the secret is wrong). If the bootstrap log printed `WARNING: Grafana telemetry setup failed`, run `grep -i -B5 WARNING /var/log/ai-lab-bootstrap.log`.
+
+Then in Grafana Cloud, open **Explore** and check, after a few minutes:
+
+- Metrics: query `node_load1` and `node_systemd_unit_state{name="ollama.service"}`. Both should return recent values.
+- Logs: pick the Loki logs data source and look for recent entries from the lab, such as the bootstrap log lines or Open WebUI container output. Label names in Grafana can differ from the ones in the Alloy config, so browse the available labels.
+
+Confirm no secret appears in a log line, and that the instance still needs no inbound rule for this (`aws ec2 describe-security-groups` shows only the inbound rules you chose).
+
 ### Login with the admin and demo accounts
 
 Initial login credentials are as follows unless you changed `open_webui_admin_email`:

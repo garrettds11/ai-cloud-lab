@@ -112,6 +112,9 @@ variables {
   allowed_ssh_cidr                = null
   ssh_key_name                    = null
   extra_egress_cidrs              = []
+  enable_grafana_telemetry        = false
+  grafana_otlp_endpoint           = null
+  grafana_credentials_secret_arn  = null
   origin_lockdown_extra_cidrs     = []
   cloudflare_account_id           = null
   cloudflare_api_token_secret_arn = null
@@ -343,4 +346,56 @@ run "auto_stop_alert_email_must_look_like_an_email" {
   }
 
   expect_failures = [var.auto_stop_alert_email]
+}
+
+# ---- Grafana telemetry ----
+
+run "grafana_telemetry_needs_endpoint_and_secret" {
+  command = plan
+
+  variables {
+    enable_grafana_telemetry = true
+  }
+
+  expect_failures = [aws_instance.ai_lab]
+}
+
+run "grafana_telemetry_plan_succeeds_when_configured" {
+  command = plan
+
+  variables {
+    enable_grafana_telemetry       = true
+    grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
+    grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana-AbCdEf"
+  }
+}
+
+run "grafana_endpoint_must_be_https" {
+  command = plan
+
+  variables {
+    grafana_otlp_endpoint = "http://otlp-gateway-prod-us-east-3.grafana.net/otlp"
+  }
+
+  expect_failures = [var.grafana_otlp_endpoint]
+}
+
+run "grafana_endpoint_rejects_trailing_slash" {
+  command = plan
+
+  variables {
+    grafana_otlp_endpoint = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp/"
+  }
+
+  expect_failures = [var.grafana_otlp_endpoint]
+}
+
+run "grafana_secret_arn_must_be_valid" {
+  command = plan
+
+  variables {
+    grafana_credentials_secret_arn = "not-an-arn"
+  }
+
+  expect_failures = [var.grafana_credentials_secret_arn]
 }

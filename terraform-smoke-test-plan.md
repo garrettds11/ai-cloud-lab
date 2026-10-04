@@ -578,7 +578,7 @@ Check:
    `service-url` (`https://$domainName`). `target-group-arn` and `service-url` exist
    only when `enable_domain_access` is also `true`. The tag value is `managed`.
 
-7. Sign in at `https://cp.aiwebdemo.click` as a user in the lab's Cognito pool. The
+7. Sign in at https://cp.aiwebdemo.click as a user in the lab's Cognito pool. The
    panel must list the lab instance with no setting copied into the Lambda functions.
    Only a sign-in whose email is in `BOOTSTRAP_ADMINS` (`garrettds11@gmail.com`) can
    open the admin screens; other users get only the customer view.

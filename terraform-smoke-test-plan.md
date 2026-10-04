@@ -455,7 +455,7 @@ The DS record's key tag must equal the one in the Route 53 DNSSEC keys table, an
 
 ### Grafana telemetry test
 
-Only when `enable_grafana_telemetry = true`. In an SSM shell on the instance:
+Telemetry is on by default; skip this if `enable_grafana_telemetry = false`. In an SSM shell on the instance:
 
 ```bash
 sudo systemctl status alloy --no-pager
@@ -467,6 +467,7 @@ Alloy must be `active (running)` and the log must not repeat authentication or c
 Then in Grafana Cloud, open **Explore** and check, after a few minutes:
 
 - Metrics: query `node_load1` and `node_systemd_unit_state{name="ollama.service"}`. Both should return recent values.
+- Traces: after you have used Open WebUI for a minute (sign in, send a chat message), open Explore with the Tempo traces data source and search for service `open-webui`. If nothing appears, check `sudo docker logs open-webui 2>&1 | grep -i otel`.
 - Logs: pick the Loki logs data source and look for recent entries from the lab, such as the bootstrap log lines or Open WebUI container output. Label names in Grafana can differ from the ones in the Alloy config, so browse the available labels.
 
 Confirm no secret appears in a log line, and that the instance still needs no inbound rule for this (`aws ec2 describe-security-groups` shows only the inbound rules you chose).

@@ -315,6 +315,23 @@ docker volume create "${open_webui_docker_volume}"
 docker pull "${open_webui_container_image}"
 docker rm -f "${open_webui_container_name}" 2>/dev/null || true
 
+# With Grafana telemetry on, Open WebUI exports traces and metrics over OTLP/gRPC to
+# the Alloy receiver on loopback (the container shares the host network). Container
+# logs are collected by Alloy from Docker, so OTLP log export stays off.
+otel_args=()
+if [[ "${grafana_enabled}" == "true" ]]; then
+    otel_args=(
+        -e ENABLE_OTEL=true
+        -e ENABLE_OTEL_TRACES=true
+        -e ENABLE_OTEL_METRICS=true
+        -e ENABLE_OTEL_LOGS=false
+        -e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+        -e OTEL_METRICS_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+        -e OTEL_EXPORTER_OTLP_INSECURE=true
+        -e OTEL_SERVICE_NAME=open-webui
+    )
+fi
+
 docker run -d \
     --name "${open_webui_container_name}" \
     --restart unless-stopped \
@@ -334,6 +351,7 @@ docker run -d \
     -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \
     -e WEBUI_ADMIN_PASSWORD="$open_webui_admin_password" \
     "$${oauth_args[@]}" \
+    "$${otel_args[@]}" \
     "${open_webui_container_image}"
 
 wait_for_open_webui

@@ -454,9 +454,9 @@ variable "auto_stop_alert_email" {
 }
 
 variable "enable_grafana_telemetry" {
-  description = "Send host metrics and logs to Grafana Cloud over OTLP/HTTP using Grafana Alloy on the instance. Off by default. Needs grafana_otlp_endpoint and grafana_credentials_secret_arn, and outbound TCP 443 (already allowed). Changing it replaces the instance. Logs and metrics add to Grafana Cloud data usage; see grafana-telemetry.md."
+  description = "Send host metrics, logs and Open WebUI traces to Grafana Cloud over OTLP/HTTP using Grafana Alloy on the instance. On by default, so grafana_otlp_endpoint and grafana_credentials_secret_arn must be set; set this to false to run without telemetry. Needs outbound TCP 443 (already allowed). Changing it replaces the instance. Telemetry adds to Grafana Cloud data usage; see grafana-telemetry.md."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "grafana_otlp_endpoint" {

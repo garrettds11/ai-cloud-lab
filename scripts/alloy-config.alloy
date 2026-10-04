@@ -27,6 +27,22 @@ otelcol.receiver.prometheus "default" {
 	}
 }
 
+// ---- Traces and application metrics from Open WebUI ----
+//
+// Open WebUI exports OTLP/gRPC to this receiver. It listens on loopback only, so no
+// telemetry port is exposed to the network.
+
+otelcol.receiver.otlp "local" {
+	grpc {
+		endpoint = "127.0.0.1:4317"
+	}
+
+	output {
+		metrics = [otelcol.processor.batch.default.input]
+		traces  = [otelcol.processor.batch.default.input]
+	}
+}
+
 // ---- Logs: bootstrap, Ollama, Docker and the Open WebUI container ----
 
 local.file_match "bootstrap" {
@@ -120,6 +136,7 @@ otelcol.processor.batch "default" {
 	output {
 		metrics = [otelcol.exporter.otlphttp.grafana.input]
 		logs    = [otelcol.exporter.otlphttp.grafana.input]
+		traces  = [otelcol.exporter.otlphttp.grafana.input]
 	}
 }
 

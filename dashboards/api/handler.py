@@ -11,10 +11,13 @@ Rules, checked on every call (see README.md):
     table, read on every call, so a role change takes effect at once.
   * Customers see and start only the instances they hold an active grant for, and only
     while they hold the operators role. Nobody here can stop an instance.
-  * Admin routes need the user_mgrs role. Saving changes writes the panel's users and
-    instance_entitlements tables only. It never changes IAM, tags, Cognito or instances.
-  * People named in BOOTSTRAP_ADMINS are always user managers, so the panel is never
-    locked out and is unreachable by anyone else until a real person is added.
+  * Admin routes need the user_mgrs role. User managers change who may start which
+    instance (grants). Only an administrator changes anyone's roles. Saving changes writes
+    the panel's users and instance_entitlements tables only. It never changes IAM, tags,
+    Cognito or instances.
+  * Administrators are the people named in BOOTSTRAP_ADMINS. They are always user managers
+    too, so the panel is never locked out and is unreachable by anyone else until a real
+    person is added. "admin" is worked out on every call and is never stored in the table.
 
 Times in responses are milliseconds since the epoch.
 """
@@ -32,6 +35,7 @@ from botocore.exceptions import ClientError
 
 ROLE_OPERATORS = "operators"
 ROLE_USER_MGRS = "user_mgrs"
+ROLE_ADMIN = "admin"  # derived from BOOTSTRAP_ADMINS, never stored
 ROLE_LABELS = {ROLE_OPERATORS: "Operator role", ROLE_USER_MGRS: "User manager role"}
 
 USERS_TABLE = os.environ.get("USERS_TABLE", "panel_users")
@@ -114,8 +118,10 @@ def _roles_of(email, row=None):
     """The person's current roles from the panel's table, read on every call."""
     row = row if row is not None else _user_row(email)
     roles = [r for r in (row or {}).get("roles", []) if r in ROLE_LABELS]
-    if email in BOOTSTRAP_ADMINS and ROLE_USER_MGRS not in roles:
-        roles.append(ROLE_USER_MGRS)
+    if email in BOOTSTRAP_ADMINS:
+        if ROLE_USER_MGRS not in roles:
+            roles.append(ROLE_USER_MGRS)
+        roles.append(ROLE_ADMIN)
     return roles
 
 
@@ -619,6 +625,8 @@ def save_user(caller, user_id, payload):
     user_id = user_id.lower()
     role_changes = payload.get("roles") or []
     grant_changes = payload.get("grants") or []
+    if role_changes and ROLE_ADMIN not in caller["roles"]:
+        raise ApiError(403, "Only an administrator can change roles.")
     row = _user_row(user_id)
     if row is None and user_id not in BOOTSTRAP_ADMINS:
         raise ApiError(404, "User not found.")

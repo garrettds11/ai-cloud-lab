@@ -31,12 +31,14 @@
 
   function roleLabel(roles) {
     const parts = [];
+    if (roles.includes('admin')) parts.push('Administrator');
     if (roles.includes('operators')) parts.push('Operator');
     if (roles.includes('user_mgrs')) parts.push('User manager');
     return parts.length ? parts.join(', ') : 'No role';
   }
 
   const isManager = () => !!state.session && state.session.roles.includes('user_mgrs');
+  const isAdmin = () => !!state.session && state.session.roles.includes('admin');
 
   // ---- tiny DOM helpers --------------------------------------------------------------
 
@@ -863,7 +865,9 @@
       const operator = user.roles.includes('operators');
       if (!operator) {
         body.append(h('div', { class: 'notice' }, icon('info'),
-          h('span', { text: user.name + ' does not have the Operator role, so cannot be granted instances. Give them the Operator role in the Roles section below, save, then grant instances.' })));
+          h('span', { text: user.name + ' does not have the Operator role, so cannot be granted instances. ' + (isAdmin()
+            ? 'Give them the Operator role in the Roles section below, save, then grant instances.'
+            : 'Ask an administrator to give them the Operator role.') })));
       }
       const isSelf = state.session && user.id === state.session.userId;
       body.append(h('h2', { class: 'section-title', text: 'Roles' }),
@@ -874,7 +878,8 @@
             h('th', { scope: 'col', text: 'Role' }),
             h('th', { scope: 'col', text: 'Status' }))),
           h('tbody', null, ROLES.map((g) => {
-            const locked = isSelf && g.key === 'user_mgrs';
+            const ownLock = isSelf && g.key === 'user_mgrs';
+            const locked = !isAdmin() || ownLock;
             const checked = hasRole(user, g.key);
             const pending = um().stagedRoles.has(g.key);
             return h('tr', null,
@@ -885,7 +890,7 @@
               })),
               h('td', null,
                 h('label', { id: 'role-name-' + g.key, for: 'role-' + g.key, class: 'name', text: g.label }),
-                h('div', { id: 'role-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (locked ? ' You cannot remove your own user manager role.' : '') }))),
+                h('div', { id: 'role-help-' + g.key, class: 'idrow' }, h('span', { text: g.help + (!isAdmin() ? ' Only an administrator can change roles.' : ownLock ? ' You cannot remove your own user manager role.' : '') }))),
               h('td', null, pending
                 ? h('span', { class: 'chip tone-amber' }, icon('dot'), checked ? 'Pending: add' : 'Pending: remove')
                 : (user.roles.includes(g.key)

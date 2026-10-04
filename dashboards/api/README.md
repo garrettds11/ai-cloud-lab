@@ -13,9 +13,9 @@ Each answers only its own routes (the other's return 404), and each has its own 
 
 - Every route needs a signed-in user, identified by their verified email. Roles are read from the `panel_users` table on every call and the roles in the token are ignored, so removing a role takes effect at once. If the table cannot be read, the call fails closed (503).
 - A customer sees and starts only the instances they hold an active grant for, and only with the `operators` role. Nobody can stop an instance through this API; there is no stop route.
-- Admin routes need `user_mgrs`. Saving changes writes `panel_users` roles and `instance_entitlements` only. It never changes IAM, tags or instances.
-- Addresses in `BOOTSTRAP_ADMINS` always have `user_mgrs`, so the panel can be opened with an empty table. They cannot be demoted.
-- An admin cannot remove their own `user_mgrs` role. Removing someone from `operators` revokes all their grants. A user who is not an operator cannot be granted an instance.
+- Admin routes need `user_mgrs`. Two kinds of change, two kinds of person. Who someone is, meaning their roles, is changed only by an administrator. What someone may start, meaning their grants, is changed by user managers and administrators. Saving changes writes `panel_users` roles and `instance_entitlements` only. It never changes IAM, tags or instances.
+- Administrators are the addresses in `BOOTSTRAP_ADMINS`. They always have `user_mgrs`, so the panel can be opened with an empty table, and the API reports them as `admin` as well. `admin` is worked out on every call and never stored, and they cannot be demoted. Only an administrator can send role changes; a user manager who tries gets 403.
+- Nobody can remove their own `user_mgrs` role. Removing someone from `operators` revokes all their grants. A user who is not an operator cannot be granted an instance.
 - Everything is validated before anything is written. Errors never include internal detail.
 
 ## Routes
@@ -57,7 +57,7 @@ Create all three in DynamoDB (on-demand billing).
 
 | Table | Keys | Notes |
 |---|---|---|
-| `panel_users` | `email` (string, partition) | One row per person: `name`, `sub`, `roles` (list of `operators` / `user_mgrs`), `source`, `firstSeenAt`, `lastSeenAt`. The customer function creates a row with no `roles` attribute on first sign-in; only the admin function writes `roles` |
+| `panel_users` | `email` (string, partition) | One row per person: `name`, `sub`, `roles` (list of `operators` / `user_mgrs`; `admin` is never stored), `source`, `firstSeenAt`, `lastSeenAt`. The customer function creates a row with no `roles` attribute on first sign-in; only the admin function writes `roles` |
 | `instance_entitlements` | `userId` (string, partition), `instanceId` (string, sort) | Schema in the PRD, FR-4. Rows are never deleted: revoking sets `status` to `revoked` |
 | `control_panel_events` | `pk` (string, partition), `sk` (string, sort) | Turn on TTL for the attribute `expiresAt`. Holds `user#<id>` sign-ins and log lines, and the `changes` history |
 
@@ -65,7 +65,7 @@ Create all three in DynamoDB (on-demand billing).
 
 | Variable | Value | Function |
 |---|---|---|
-| `BOOTSTRAP_ADMINS` | Comma-separated emails that always have `user_mgrs`, for example `garrettds11@gmail.com` | both |
+| `BOOTSTRAP_ADMINS` | Comma-separated emails of the administrators. They always have `user_mgrs` and are the only people who change roles, for example `garrettds11@gmail.com,admin@example.local` | both |
 | `LAB_PARAMETER_PREFIX` | `/<project_name>/control-panel`. The lab's instance, target group and service address are read live from the SSM parameters under it, which Terraform publishes (see below) | both |
 | `AUTO_STOP_PARAMETER` | `/<project_name>/auto-stop` | customer |
 | `USERS_TABLE`, `ENTITLEMENTS_TABLE`, `EVENTS_TABLE` | Table names (defaults `panel_users`, `instance_entitlements`, `control_panel_events`) | both |

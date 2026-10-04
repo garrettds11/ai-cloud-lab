@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError
 
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.update(
-    BOOTSTRAP_ADMINS="boot@x.test",
+    BOOTSTRAP_ADMINS="boot@x.test,ada@x.test",
     INSTANCE_IDS="i-aaa,i-bbb",
     TARGET_GROUP_ARN="arn:tg",
     AUTO_STOP_PARAMETER="/lab/auto-stop",
@@ -303,9 +303,9 @@ def test_sign_in_keeps_existing_roles(aws):
 def test_bootstrap_admin_works_with_an_empty_table(aws):
     aws.users.items.clear()
     status, me = call("POST /session", BOOT)
-    assert status == 200 and me["roles"] == ["user_mgrs"]
+    assert status == 200 and me["roles"] == ["user_mgrs", "admin"]
     assert call("GET /admin/users", BOOT)[0] == 200
-    assert call("GET /admin/users", ADM)[0] == 403
+    assert call("GET /admin/users", OP)[0] == 403
 
 
 def test_bootstrap_admin_cannot_be_demoted(aws):
@@ -340,7 +340,8 @@ def test_admin_lists_users_with_roles(aws):
     status, users = call("GET /admin/users", ADM)
     by = {u["id"]: u for u in users}
     assert status == 200 and by[OP]["roles"] == ["operators"] and by[NONE]["roles"] == [] and by[BOTH]["name"] == "Bo Both"
-    assert by[BOOT]["roles"] == ["user_mgrs"] and by[BOOT]["source"] == "settings"
+    assert by[BOOT]["roles"] == ["user_mgrs", "admin"] and by[BOOT]["source"] == "settings"
+    assert by[ADM]["roles"] == ["user_mgrs", "admin"] and by[BOTH]["roles"] == ["operators", "user_mgrs"]
     assert [i["id"] for i in call("GET /admin/instances", ADM)[1]] == ["i-aaa", "i-bbb"]
 
 
@@ -369,10 +370,32 @@ def test_removing_operator_revokes_grants(aws):
 
 
 def test_admin_cannot_remove_own_user_manager_role(aws):
-    status, _ = call("PUT /admin/users/{userId}", BOTH, path={"userId": BOTH}, body={"roles": [{"role": "user_mgrs", "member": False}]})
-    assert status == 409 and "user_mgrs" in aws.users.items[(BOTH,)]["roles"]
+    status, _ = call("PUT /admin/users/{userId}", ADM, path={"userId": ADM}, body={"roles": [{"role": "user_mgrs", "member": False}]})
+    assert status == 409 and "user_mgrs" in aws.users.items[(ADM,)]["roles"]
     assert call("PUT /admin/users/{userId}", ADM, path={"userId": BOTH}, body={"roles": [{"role": "user_mgrs", "member": False}]})[0] == 200
     assert "user_mgrs" not in aws.users.items[(BOTH,)]["roles"]
+
+
+def test_user_manager_changes_grants_but_not_roles(aws):
+    status, body = call("PUT /admin/users/{userId}", BOTH, path={"userId": OP}, body={"grants": [{"instanceId": "i-aaa", "grant": True}]})
+    assert (status, body) == (200, {"applied": 1}) and aws.entitlements.items[(OP, "i-aaa")]["status"] == "applied"
+    status, _ = call("PUT /admin/users/{userId}", BOTH, path={"userId": NONE}, body={"roles": [{"role": "operators", "member": True}]})
+    assert status == 403 and aws.users.items[(NONE,)]["roles"] == []
+    status, _ = call("PUT /admin/users/{userId}", BOTH, path={"userId": BOTH}, body={"roles": [{"role": "user_mgrs", "member": False}]})
+    assert status == 403 and "user_mgrs" in aws.users.items[(BOTH,)]["roles"]
+    assert call("GET /admin/users", BOTH)[0] == 200
+
+
+def test_operator_only_cannot_use_admin_routes_or_launch_without_grant(aws):
+    assert call("PUT /admin/users/{userId}", OP, path={"userId": NONE}, body={"grants": []})[0] == 403
+    assert call("POST /instances/{instanceId}/start", OP, path={"instanceId": "i-aaa"})[0] in (403, 404)
+
+
+def test_admin_is_worked_out_from_settings_and_never_stored(aws):
+    aws.users.items[(OP,)]["roles"] = ["operators", "admin"]  # a stored "admin" means nothing
+    assert "admin" not in call("POST /session", OP)[1]["roles"]
+    assert "admin" in call("POST /session", ADM)[1]["roles"]
+    assert call("PUT /admin/users/{userId}", ADM, path={"userId": NONE}, body={"roles": [{"role": "admin", "member": True}]})[0] == 400
 
 
 def test_validation_happens_before_any_write(aws):

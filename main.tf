@@ -46,13 +46,14 @@ locals {
     var.cognito_extra_users
   )
   cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
-  # Roles for the demo accounts in the control panel's users table: the 1st, 3rd, 5th ...
-  # demo user (demo1, demo3 ...) are user managers, the 2nd, 4th ... (demo2, demo4 ...)
-  # are customers (the operators role), and the administrator account is a user manager.
-  # The administrator is also the site admin when its email is in the API's BOOTSTRAP_ADMINS.
+  # Roles for the demo accounts in the control panel's users table. Every demo account can
+  # launch and access an instance (operators). The 1st, 3rd, 5th ... demo user (demo1,
+  # demo3 ...) and the administrator account are also user managers, who change grants.
+  # Only the administrator changes roles: that comes from its email being in the API's
+  # BOOTSTRAP_ADMINS, not from a stored role.
   panel_demo_roles = merge(
-    { for index, user in var.open_webui_demo_users : user.email => { name = user.name, roles = [index % 2 == 0 ? "user_mgrs" : "operators"] } },
-    { (var.open_webui_admin_email) = { name = var.open_webui_admin_name, roles = tolist(["user_mgrs"]) } }
+    { for index, user in var.open_webui_demo_users : user.email => { name = user.name, roles = index % 2 == 0 ? ["operators", "user_mgrs"] : ["operators"] } },
+    { (var.open_webui_admin_email) = { name = var.open_webui_admin_name, roles = tolist(["operators", "user_mgrs"]) } }
   )
   open_webui_banners = var.security_banner_text == "" ? [] : [{
     id          = "security-notice"

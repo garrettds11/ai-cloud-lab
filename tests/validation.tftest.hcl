@@ -78,9 +78,11 @@ run "baseline_plan_succeeds" {
 }
 
 # ---- Default network exposure ----
+# These runs use apply (still mocked and offline) because the security group rule sets
+# are not known during a plan.
 
 run "no_inbound_rules_by_default" {
-  command = plan
+  command = apply
 
   assert {
     condition     = length(aws_security_group.ai_lab.ingress) == 0
@@ -89,7 +91,7 @@ run "no_inbound_rules_by_default" {
 }
 
 run "outbound_limited_to_https_and_http_by_default" {
-  command = plan
+  command = apply
 
   assert {
     condition     = length(aws_security_group.ai_lab.egress) == 2
@@ -103,7 +105,7 @@ run "outbound_limited_to_https_and_http_by_default" {
 }
 
 run "extra_egress_cidrs_adds_one_rule" {
-  command = plan
+  command = apply
 
   variables {
     extra_egress_cidrs = ["10.0.0.0/16"]
@@ -149,7 +151,7 @@ run "ssh_without_key_is_rejected" {
 }
 
 run "ssh_with_key_and_cidr_opens_only_port_22" {
-  command = plan
+  command = apply
 
   variables {
     enable_ssh       = true

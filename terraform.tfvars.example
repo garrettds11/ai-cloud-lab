@@ -2,14 +2,14 @@ aws_region = "us-east-1"
 # Optional. Leave null to use environment variables, SSO, or an instance/CI role.
 aws_profile = null
 
-project_name = "aiwebdemo"
+project_name = "ai-lab"
 
 # AWS tags applied to every resource. Uncommenting this REPLACES the defaults
 # (Environment, ManagedBy, Application), so list every tag you want. Use your own
 # tag keys, such as the project tag your other AWS resources already carry.
 # Each resource's Name tag is derived from project_name, not from this map.
 # tags = {
-#   project     = "aiwebdemo"
+#   project     = "ai-lab"
 #   Environment = "lab"
 #   ManagedBy   = "terraform"
 #   Application = "Open-WebUI"
@@ -23,10 +23,10 @@ open_webui_admin_email = "admin@example.local"
 open_webui_admin_name  = "Lab Admin"
 
 # This pre-created secret contains the initial Open WebUI administrator password.
-open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
+open_webui_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:openwebui-admin-pass-AbCdEf"
 
 # Create a second secret for the demo users and set its ARN here.
-open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
+open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:open_webui_demo_user_password-AbCdEf"
 
 # The default configuration creates demo1@example.local through
 # demo10@example.local. Override open_webui_demo_users to change their names
@@ -35,14 +35,14 @@ open_webui_demo_user_password_secret_arn = "arn:aws:secretsmanager:us-east-1:394
 # Public HTTPS access through the ALB and Cloudflare.
 enable_domain_access     = true
 enable_cloudflare_access = true
-domain_name              = "aiwebdemo.click"
-route53_zone_name        = "aiwebdemo.click"
-acm_certificate_arn      = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
+domain_name              = "example.com"
+route53_zone_name        = "example.com"
+acm_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
 
 # Cloudflare deployment values. Replace this block when cloning the repo; do
 # not store the API token itself here.
-cloudflare_account_id            = "d45c08a8bcf24bb2bf81fe0df99fcbc8"
-cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:394566733278:secret:CLOUDFLARE_API_TOKEN-LxdgxA"
+cloudflare_account_id            = "00000000000000000000000000000000"
+cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:CLOUDFLARE_API_TOKEN-AbCdEf"
 cloudflare_access_allowed_emails = []
 
 # Optional Cloudflare Access settings. The defaults are shown; uncomment to change.
@@ -59,27 +59,27 @@ cloudflare_access_allowed_emails = []
 # Identity Providers, and Groups Edit". cognito_domain_prefix must be unique in
 # the region and must not contain aws, amazon, or cognito.
 enable_cognito                = true
-cognito_domain_prefix         = "aiwebdemo"
-cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
+cognito_domain_prefix         = "my-unique-prefix"
+cloudflare_access_team_domain = "your-team.cloudflareaccess.com"
 cognito_extra_users           = []
 
-# Control panel dashboard. Terraform only supplies its sign-in settings: an app
-# client in the Cognito pool and the config.js the page loads, which apply publishes to the
-# panel's bucket. The panel's hosting, DNS and API are built by hand (see dashboards/SETUP.md).
-control_panel_url = "https://cp.aiwebdemo.click"
-# The control panel API is built by hand ahead of Terraform (dashboards/SETUP.md). Its
-# address goes into the published config.js. The three ids let apply point the API's
-# sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
-control_panel_api_url         = "https://65j334bc19.execute-api.us-east-1.amazonaws.com"
-control_panel_api_id          = "65j334bc19"
-control_panel_authorizer_id   = "pnlj78"
-control_panel_holding_pool_id = "us-east-1_xcTOLNQJM"
-# The panel's bucket and CloudFront distribution (built by hand). Apply writes config.js into
-# the bucket and clears it from the distribution's cache; destroy removes that one object.
-control_panel_bucket          = "aiwebdemo-control-panel-394566733278"
-control_panel_distribution_id = "E2799OUDXX2ED3"
-
-# Optional: seed the demo users' roles into the control panel's users table.
+# Optional: the control panel dashboard (dashboards/). Leave these commented out to skip it.
+# Terraform supplies the panel's sign-in settings: an app client in the Cognito pool and the
+# config.js the page loads, which apply publishes to the panel's bucket. The panel's hosting,
+# DNS and API are built by hand (see dashboards/SETUP.md). Requires enable_cognito = true.
+# control_panel_url = "https://cp.example.com"
+# The API's address goes into the published config.js. The three ids let apply point the
+# API's sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
+# control_panel_api_url         = "https://abc123defg.execute-api.us-east-1.amazonaws.com"
+# control_panel_api_id          = "abc123defg"
+# control_panel_authorizer_id   = "abc123"
+# control_panel_holding_pool_id = "us-east-1_AbCdEfGhI"
+# The panel's bucket and CloudFront distribution. Apply writes config.js into the bucket and
+# clears it from the distribution's cache; destroy removes that one object.
+# control_panel_bucket          = "my-control-panel-bucket"
+# control_panel_distribution_id = "E1234567890ABC"
+# Seed the demo users' roles into the panel's users table (odd demo users and the admin as
+# user managers, even demo users as customers).
 # control_panel_users_table = "panel_users"
 
 # SSH is disabled by default. Prefer SSM port forwarding.
@@ -116,14 +116,14 @@ enable_origin_lockdown = true
 # Demo: idle 0 and limit 90, so it always stops 90 minutes after boot.
 # Production: idle 60 and limit 0, so it stops only when nobody is using it.
 auto_stop_idle_minutes       = 0
-auto_stop_max_uptime_minutes = 20
-auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link
+auto_stop_max_uptime_minutes = 90
+auto_stop_alert_email        = "you@example.com" # Replace; AWS sends a confirmation link
 
 # Grafana Cloud telemetry (host metrics, logs and Open WebUI traces through Grafana
 # Alloy). On by default; set enable_grafana_telemetry = false to run without it. The
 # token lives only in a Secrets Manager secret; see grafana-telemetry.md for how to
 # create it. Changing these replaces the instance.
 enable_grafana_telemetry       = true
-grafana_otlp_instance_id       = "1846719"
-grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
-grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:grafana-api-token-aiwebdemo-MakqN8"
+grafana_otlp_instance_id       = "1234567"                                              # Replace with your OTLP instance ID
+grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp" # Replace with your stack's endpoint
+grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:ai-lab/grafana-otlp-AbCdEf"  # Replace

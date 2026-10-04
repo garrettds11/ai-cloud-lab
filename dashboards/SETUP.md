@@ -30,7 +30,7 @@ Terraform changes that break the panel: replacing the user pool (users must sign
 
 | | Owner |
 |---|---|
-| Demo users, and which demo users are in `operators` (odd) and `user_mgrs` (`admin@example.local`) | Terraform. Every apply puts them back. |
+| Demo users, and their roles: `user_mgrs` for the odd demo users and `admin@example.local`, `operators` (customers) for the even demo users | Terraform. Every apply puts them back. |
 | Real users and their roles | The control panel. Terraform never touches them. |
 | Who may start which instance (`instance_entitlements`) | The control panel, through the Control API. |
 

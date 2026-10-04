@@ -14,7 +14,7 @@ Live at `https://cp.aiwebdemo.click`. Setup of everything it needs is in [`SETUP
 | A user with no role, or no grants | none | "You have no instances available for edit." |
 | Administrator | `user_mgrs` | The same pages, plus **User management** |
 
-A customer needs both the `operators` role and a grant in `instance_entitlements`. Roles live in the panel's own `panel_users` table, not in Cognito. When `control_panel_users_table` is set, Terraform adds only the demo users to that table: the odd demo users as `operators`, `admin@example.local` as `user_mgrs`. Everyone else is managed on the User management page. With no users in the table the panel shows no users, and only an address in the API's `BOOTSTRAP_ADMINS` setting can open User management.
+A customer needs both the `operators` role and a grant in `instance_entitlements`. Roles live in the panel's own `panel_users` table, not in Cognito. When `control_panel_users_table` is set, Terraform adds only the demo users to that table: the odd demo users and `admin@example.local` as `user_mgrs` (user managers), the even demo users as `operators` (customers). Everyone else is managed on the User management page. With no users in the table the panel shows no users, and only an address in the API's `BOOTSTRAP_ADMINS` setting can open User management.
 
 ## Files
 

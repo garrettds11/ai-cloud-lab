@@ -528,9 +528,9 @@ by hand. Check:
 3. In the Cognito console, the user pool has a second app client named
    `<project_name>-control-panel` with no client secret.
 4. If `control_panel_users_table` is set, the DynamoDB table it names has a row for
-   each demo user: `demo1@example.local`, `demo3@example.local` and the other odd
-   demo users with `operators` in `roles`; `demo2@example.local` and the other even
-   demo users with an empty `roles` list; `admin@example.local` with `user_mgrs`.
+   each of the 11 demo accounts: `demo1@example.local`, `demo3@example.local` and the
+   other odd demo users with `user_mgrs` in `roles`; `demo2@example.local` and the
+   other even demo users with `operators`; `admin@example.local` with `user_mgrs`.
 
 5. If `control_panel_api_id`, `control_panel_authorizer_id` and
    `control_panel_holding_pool_id` are set, `apply` pointed the control panel API's authorizer at

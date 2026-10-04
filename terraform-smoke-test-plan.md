@@ -436,6 +436,39 @@ Then in Grafana Cloud, open **Explore** and check, after a few minutes:
 
 Confirm no secret appears in a log line, and that the instance still needs no inbound rule for this (`aws ec2 describe-security-groups` shows only the inbound rules you chose).
 
+### Vulnerability MCP server test
+
+Skip this if `vuln_mcp_table_name` is not set. The findings table (`aiwebdemo-vuln-findings`, created by `create_vuln_table.py` in the `sec-data` repository) and the token secret are built by hand, so do the first step before section 2.
+
+Before section 2, create the token secret and put its ARN in `vuln_mcp_token_secret_arn` (in `terraform.tfvars.example` first, then `terraform.tfvars`):
+
+```powershell
+$bytes = New-Object byte[] 32
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
+$token = [Convert]::ToBase64String($bytes)
+aws secretsmanager create-secret --name vuln-mcp-token-aiwebdemo --secret-string $token --region us-east-1 --query ARN --output text
+```
+
+After apply, call the function with the token (the `$token` variable above, if it is still set in this window) and without it:
+
+```powershell
+$url = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")
+$body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $body | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $body
+```
+
+The first call must list six tools. The second must fail with `401`. Then check that a tool reads the table:
+
+```powershell
+$call = '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"summarize_findings","arguments":{"group_by":"severity","status":"open"}}}'
+Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $call | ConvertTo-Json -Depth 10
+```
+
+With the standard test data this shows 9 open Critical findings. If a call returns an error, read the function's log group `/aws/lambda/<project_name>-vuln-mcp` in CloudWatch.
+
 ### Login with the admin and demo accounts
 
 Initial login credentials are as follows unless you changed `open_webui_admin_email`:

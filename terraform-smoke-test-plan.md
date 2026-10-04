@@ -81,42 +81,6 @@ $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 ```
 
-The Secrets Manager secret must already exist and contain the desired admin
-password. The value may be plain text or a one-key key/value secret; bootstrap
-extracts the single string value from either format. Terraform only grants the
-instance role read access and retrieves the password during bootstrap. Terraform
-does not create, update, or destroy this secret. To rotate an existing lab,
-change the password in Open WebUI first, then update the matching value in the
-AWS console.
-
-Retrieve the two initial passwords from Secrets Manager when you need them for
-login verification. These commands print the values to the current terminal;
-do not paste the output into tickets, source files, or logs:
-
-```powershell
-$adminPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
-$demoPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
-
-aws secretsmanager get-secret-value `
-  --secret-id $adminPasswordSecretArn `
-  --query SecretString `
-  --output text `
-  --region $env:AWS_DEFAULT_REGION `
-  --profile $env:AWS_PROFILE
-
-aws secretsmanager get-secret-value `
-  --secret-id $demoPasswordSecretArn `
-  --query SecretString `
-  --output text `
-  --region $env:AWS_DEFAULT_REGION `
-  --profile $env:AWS_PROFILE
-```
-
-The first value is used for `admin@example.local`, both its local Open WebUI
-account and its Cognito user; the second is the password shared by the demo
-users. With `enable_cognito = false`, each demo user should change it from
-Profile after first login.
-
 ### Set Cloudflare tokens if provider is in use.
 
 When Cloudflare resources are enabled, Terraform retrieves the Cloudflare API
@@ -492,6 +456,42 @@ demo1@example.local
 They all use the value stored in the Secrets Manager secret identified by
 `open_webui_demo_user_password_secret_arn`.
 
+The Secrets Manager secret must already exist and contain the desired admin
+password. The value may be plain text or a one-key key/value secret; bootstrap
+extracts the single string value from either format. Terraform only grants the
+instance role read access and retrieves the password during bootstrap. Terraform
+does not create, update, or destroy this secret. To rotate an existing lab,
+change the password in Open WebUI first, then update the matching value in the
+AWS console.
+
+Retrieve the two initial passwords from Secrets Manager when you need them for
+login verification. These commands print the values to the current terminal;
+do not paste the output into tickets, source files, or logs:
+
+```powershell
+$adminPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
+$demoPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
+
+aws secretsmanager get-secret-value `
+  --secret-id $adminPasswordSecretArn `
+  --query SecretString `
+  --output text `
+  --region $env:AWS_DEFAULT_REGION `
+  --profile $env:AWS_PROFILE
+
+aws secretsmanager get-secret-value `
+  --secret-id $demoPasswordSecretArn `
+  --query SecretString `
+  --output text `
+  --region $env:AWS_DEFAULT_REGION `
+  --profile $env:AWS_PROFILE
+```
+
+The first value is used for `admin@example.local`, both its local Open WebUI
+account and its Cognito user; the second is the password shared by the demo
+users. With `enable_cognito = false`, each demo user should change it from
+Profile after first login.
+
 Where they sign in depends on `enable_cognito`:
 
 - **`true` (default):** the admin is a local Open WebUI account and a Cognito
@@ -552,6 +552,11 @@ Check:
    `demo2@example.local` and the other even demo users with `operators`;
    `admin@example.local` with `operators` and `admin`. Only an administrator can change
    roles, and any administrator can make another.
+   If `control_panel_entitlements_table` is also set, the table it names has one row per
+   demo user (all 11, because all have `operators`) for the lab instance, with
+   `status` `applied` and `grantedBy` `terraform`. Signed in as `demo1@example.local`
+   (or any demo user), the Instances page lists the lab instance. Signed in as an
+   administrator, it lists every managed instance with or without a grant.
 
 5. If `control_panel_api_id`, `control_panel_authorizer_id` and
    `control_panel_holding_pool_id` are set, `apply` pointed the control panel API's authorizer at
@@ -585,6 +590,18 @@ Check:
 
    After `destroy`, the parameters are gone and the panel lists no instances. The
    `config.js` object is deleted too, so the page reports that it has no settings file.
+
+8. If the instance is shutdown and you need to restart it or check its status, use these commands:
+
+```powershell
+aws ec2 stop-instances `
+  --instance-ids $env:instance_id
+```
+
+```powershell
+aws ec2 describe-instance-status `
+  --instance-ids $env:instance_id
+```
 
 ## 6. Stop or destroy the test system
 

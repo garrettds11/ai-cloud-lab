@@ -515,6 +515,12 @@ variable "control_panel_users_table" {
   default     = null
 }
 
+variable "control_panel_entitlements_table" {
+  description = "Name of the control panel's DynamoDB grants table (built by hand, keys userId and instanceId). When set, Terraform grants the lab instance to every demo user who has the operators role, so the demo works straight away. Leave null to grant nothing; grants are then made in the panel. Terraform adds only these rows and removes them on destroy, and a later apply puts them back as seeded."
+  type        = string
+  default     = null
+}
+
 variable "control_panel_api_id" {
   description = "ID of the control panel's HTTP API in API Gateway (built by hand). Together with control_panel_authorizer_id and control_panel_holding_pool_id, it lets apply point the API's sign-in authorizer at this lab's Cognito pool, and point it back at the holding pool on destroy. Leave null to leave the authorizer alone."
   type        = string

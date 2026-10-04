@@ -40,3 +40,26 @@ resource "aws_ssm_parameter" "control_panel_service_url" {
   type        = "String"
   value       = "https://${var.domain_name}"
 }
+
+# One grant per demo user who has the operators role, for the lab instance, in the same
+# shape the panel writes. Needs the lab (this file's instance) and the table name. Without
+# a grant an operator sees nothing, because the panel shows only granted instances.
+resource "aws_dynamodb_table_item" "control_panel_demo_grant" {
+  for_each = var.control_panel_entitlements_table == null ? {} : {
+    for email, user in local.panel_demo_roles : email => user if contains(user.roles, "operators") && var.control_panel_url != null
+  }
+
+  table_name = var.control_panel_entitlements_table
+  hash_key   = "userId"
+  range_key  = "instanceId"
+
+  item = jsonencode({
+    userId       = { S = lower(each.key) }
+    instanceId   = { S = aws_instance.ai_lab.id }
+    userName     = { S = each.value.name }
+    role         = { S = join(", ", compact([contains(each.value.roles, "admin") ? "Administrator" : "", "Operator", contains(each.value.roles, "user_mgrs") ? "User manager" : ""])) }
+    instanceName = { S = try(aws_instance.ai_lab.tags["Name"], aws_instance.ai_lab.id) }
+    status       = { S = "applied" }
+    grantedBy    = { S = "terraform" }
+  })
+}

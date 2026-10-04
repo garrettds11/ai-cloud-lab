@@ -82,6 +82,9 @@ control_panel_distribution_id = "E2799OUDXX2ED3"
 # Optional: seed the demo users' roles into the control panel's users table.
 control_panel_users_table = "panel_users"
 
+# Optional: grant the lab instance to every demo user with the operators role.
+control_panel_entitlements_table = "instance_entitlements"
+
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
 ssh_key_name     = null

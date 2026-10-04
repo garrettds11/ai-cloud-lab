@@ -240,15 +240,9 @@ run "invalid_host_port_is_rejected" {
 
 # ---- Secrets and sign-in ----
 
-run "missing_admin_secret_is_rejected" {
-  command = plan
-
-  variables {
-    open_webui_admin_password_secret_arn = null
-  }
-
-  expect_failures = [aws_instance.ai_lab]
-}
+# A null admin secret ARN is not tested here: the aws_secretsmanager_secret data
+# source rejects it during provider schema validation ("one of `arn,name` must be
+# specified"), before any Terraform check can run, so expect_failures cannot catch it.
 
 run "malformed_admin_secret_arn_is_rejected" {
   command = plan

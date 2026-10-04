@@ -182,6 +182,7 @@ The API token should be limited to this account and zone, with an expiry date. C
 | --- | --- | --- |
 | Zone (this domain) | **Zone: Zone Read** | Looking up the zone |
 | Zone (this domain) | **Zone: DNS Edit** | The proxied record for the hostname |
+| Zone (this domain) | **Zone: Custom Errors Edit** | The page that sends people to the control panel when the lab does not load. Needed only when `control_panel_url` is set |
 | Account | **Account: Access: Apps and Policies Edit** | The Access application and its allow policy |
 | Account | **Account: Access: Organizations, Identity Providers, and Groups Edit** | The Cognito login method. Needed only when `enable_cognito = true`; without it the apply fails with a 403 when creating the identity provider |
 

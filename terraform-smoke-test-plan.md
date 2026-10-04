@@ -603,6 +603,22 @@ aws ec2 describe-instance-status `
   --instance-ids $env:instance_id
 ```
 
+### Lab unavailable page test
+
+Needs `control_panel_url` set and the Cloudflare token to have **Zone: Custom Errors Edit**
+(a 403 on `cloudflare_ruleset.lab_unavailable_page` during apply means it does not).
+
+1. With the instance stopped (the commands above), open the lab address in a browser, for
+   example `https://<domain_name>`, after signing in through Access. Expected: the dark
+   "The lab is not available right now" page with an **Open the control panel** button, not
+   a Cloudflare or load balancer error.
+2. Choose the button. Expected: the control panel opens. Start the lab from there.
+3. When the lab is healthy again, the same address loads Open WebUI normally.
+4. Calls that are not page loads are untouched: in a shell,
+   `curl.exe -s -o NUL -w "%{http_code}" https://<domain_name>/health` while the lab is
+   stopped should still return a plain error code (no HTML), because curl does not ask for
+   HTML.
+
 ## 6. Stop or destroy the test system
 
 If you may test again later, stop the instance to avoid ongoing compute charges:

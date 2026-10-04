@@ -514,9 +514,28 @@ in `terraform.tfvars`. Terraform creates the control panel's Cognito app client
 and publishes the panel's `config.js` into its bucket during `apply`, then clears
 that file from CloudFront's cache. This needs `control_panel_bucket`, and
 `control_panel_distribution_id` for the cache. There is nothing to write or upload
-by hand. Check:
+by hand.
 
-1. `aws s3 cp "s3://aiwebdemo-control-panel-394566733278/config.js" -` prints a
+The checks below need values that live in `terraform.tfvars`. Read them into
+variables first, from the repository directory, in the same PowerShell window as
+`AWS_PROFILE`:
+
+```powershell
+function Get-TfVar([string]$Name) {
+  $m = Select-String -Path .\terraform.tfvars -Pattern ('^\s*' + $Name + '\s*=\s*"([^"]+)"') | Select-Object -First 1
+  if (-not $m) { throw "$Name is not set in terraform.tfvars" }
+  $m.Matches.Groups[1].Value
+}
+$projectName       = Get-TfVar project_name
+$domainName        = Get-TfVar domain_name
+$panelApiId        = Get-TfVar control_panel_api_id
+$panelAuthorizerId = Get-TfVar control_panel_authorizer_id
+$panelBucket       = Get-TfVar control_panel_bucket
+```
+
+Check:
+
+1. `aws s3 cp "s3://$panelBucket/config.js" -` prints a
    file that starts with `// Written by Terraform` and holds the region, the user
    pool ID, an app client ID, the API address and the `redirectUri`
    `https://cp.aiwebdemo.click/`. A `null` for `apiUrl` means `control_panel_api_url`
@@ -539,7 +558,7 @@ by hand. Check:
    this lab's pool. Check:
 
    ```powershell
-   aws apigatewayv2 get-authorizer --api-id <api id> --authorizer-id <authorizer id> --query JwtConfiguration
+   aws apigatewayv2 get-authorizer --api-id $panelApiId --authorizer-id $panelAuthorizerId --query JwtConfiguration
    ```
 
    The issuer must end with the lab's `cognito_user_pool_id` and the audience must be the
@@ -551,12 +570,12 @@ by hand. Check:
    Check:
 
    ```powershell
-   aws ssm get-parameters-by-path --path "/<project_name>/control-panel" --query "Parameters[].[Name,Value]" --output table
+   aws ssm get-parameters-by-path --path "/$projectName/control-panel" --query "Parameters[].[Name,Value]" --output table
    aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[].Instances[].Tags[?Key=='control-panel']"
    ```
 
    The parameters are `instance-ids` (the lab instance ID), `target-group-arn` and
-   `service-url` (`https://<domain_name>`). `target-group-arn` and `service-url` exist
+   `service-url` (`https://$domainName`). `target-group-arn` and `service-url` exist
    only when `enable_domain_access` is also `true`. The tag value is `managed`.
 
 7. Sign in at `https://cp.aiwebdemo.click` as a user in the lab's Cognito pool. The

@@ -50,16 +50,16 @@ Fill in the "Created" column as each piece is built.
 | CloudFront distribution | Origin access control `E155I4E0R9TNMQ` to the bucket, alias `cp.aiwebdemo.click`, TLS 1.2 minimum, HTTPS only, headers policy `aiwebdemo-control-panel-headers` (CSP, HSTS, no framing). The bucket policy lets only this distribution read it. WAF not added. | 2026-10-04: `E2799OUDXX2ED3`, `d11guvgb5r6hlh.cloudfront.net` |
 | DNS record `cp.aiwebdemo.click` | CNAME to the CloudFront domain, in the Cloudflare zone for aiwebdemo.click. | |
 | DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | 2026-10-04 (TTL on `expiresAt` set) |
-| Control API (Lambda and API Gateway HTTP API) | Source in `api/handler.py`. Steps, settings and routes in `api/README.md`. | |
-| Role for the API | Least-privilege policy in `api/README.md`. It can start one instance and cannot stop any. | |
+| Control API (two Lambdas and an HTTP API) | Source in `api/`. Steps, settings and routes in `api/README.md`. Lambdas `ai-lab-control-customer` and `ai-lab-control-admin`, API `65j334bc19` (`https://65j334bc19.execute-api.us-east-1.amazonaws.com`) with all ten routes. | 2026-10-04 |
+| Roles for the API | `ai-lab-control-customer` (can start tagged instances, cannot write roles) and `ai-lab-control-admin` (cannot start). Policies in `api/README.md`. | 2026-10-04 |
+| Table `panel_users` | Key `email`. Roles live here. | 2026-10-04 |
+| Holding pool and authorizer | Empty Cognito pool `us-east-1_xcTOLNQJM` (no users, no app clients) and JWT authorizer `pnlj78` on the API. Every route answers 401 until the authorizer is pointed at a real provider. Terraform does that on apply (`control_panel_api.tf`); for Okta or Entra, update the authorizer's issuer and audience by hand. | 2026-10-04 |
 
 ## Still to build
 
-The API pieces need things Terraform creates when the lab is deployed (the instance, target group, user pool and panel app client), so they wait for `apply`:
-
-- Table `panel_users`, two roles for the API (customer and admin), the two Lambdas (`customer.py`, `admin.py`), the API Gateway routes and JWT authorizer.
 - DNS record `cp.aiwebdemo.click`: a CNAME in Cloudflare to `d11guvgb5r6hlh.cloudfront.net`, DNS only (not proxied).
 - Upload the pages, after `config.js` exists.
+- Instance IDs and the target group in the customer Lambda's settings, once a lab is deployed (`INSTANCE_IDS`, `TARGET_GROUP_ARN`).
 
 ## Deploy the pages
 

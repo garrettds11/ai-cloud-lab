@@ -514,3 +514,21 @@ variable "control_panel_users_table" {
   type        = string
   default     = null
 }
+
+variable "control_panel_api_id" {
+  description = "ID of the control panel's HTTP API in API Gateway (built by hand). Together with control_panel_authorizer_id and control_panel_holding_pool_id, it lets apply point the API's sign-in authorizer at this lab's Cognito pool, and point it back at the holding pool on destroy. Leave null to leave the authorizer alone."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_authorizer_id" {
+  description = "ID of the JWT authorizer on the control panel's API (built by hand). Terraform only updates its issuer and audience, never creates or deletes it."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_holding_pool_id" {
+  description = "ID of the empty Cognito user pool that holds the authorizer's place when no lab is deployed (no users, no app clients, so it can never issue a usable token). Terraform points the authorizer back at it on destroy."
+  type        = string
+  default     = null
+}

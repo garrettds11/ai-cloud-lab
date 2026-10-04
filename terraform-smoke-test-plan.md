@@ -526,6 +526,18 @@ Then check:
    demo users with `operators` in `roles`; `demo2@example.local` and the other even
    demo users with an empty `roles` list; `admin@example.local` with `user_mgrs`.
 
+5. If `control_panel_api_id`, `control_panel_authorizer_id` and
+   `control_panel_holding_pool_id` are set, `apply` ran the AWS CLI through PowerShell to
+   point the control panel API's authorizer at this lab's pool. Check:
+
+   ```powershell
+   aws apigatewayv2 get-authorizer --api-id <api id> --authorizer-id <authorizer id> --query JwtConfiguration
+   ```
+
+   The issuer must end with the lab's `cognito_user_pool_id` and the audience must be the
+   control panel app client ID. After `destroy`, the same command must show the holding
+   pool's issuer and the audience `holding-unused`.
+
 ## 6. Stop or destroy the test system
 
 If you may test again later, stop the instance to avoid ongoing compute charges:

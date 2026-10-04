@@ -128,8 +128,8 @@ The admin role has no EC2 start permission, so it can never start an instance. N
 
 ## API Gateway
 
-1. Create an HTTP API with two Lambda integrations (payload format 2.0), one for each function, and a `$default` stage.
-2. Add a JWT authorizer. Issuer `https://cognito-idp.us-east-1.amazonaws.com/<user pool id>`. Audience: the control panel app client ID from `control_panel_config`.
+1. (Built 2026-10-04: API `65j334bc19`, all ten routes, authorizer `pnlj78`.) Create an HTTP API with two Lambda integrations (payload format 2.0), one for each function, and a `$default` stage.
+2. Add a JWT authorizer. Until a provider exists it trusts the empty holding pool `us-east-1_xcTOLNQJM` with the audience `holding-unused`, so every route answers 401. Terraform points it at the lab's pool on apply and back at the holding pool on destroy (`control_panel_api.tf`). For another provider, update it by hand with `aws apigatewayv2 update-authorizer`. Issuer `https://cognito-idp.us-east-1.amazonaws.com/<user pool id>`. Audience: the control panel app client ID from `control_panel_config`.
 3. Create the ten routes in the table above, each using the authorizer: the five `/admin/*` routes go to the admin function, the other five to the customer function. The page sends the **ID token**, which carries the name and verified email.
 4. CORS: allow origin `https://cp.aiwebdemo.click`, methods `GET, POST, PUT, OPTIONS`, header `authorization, content-type`.
 5. Put the API's address in `control_panel_api_url` in `terraform.tfvars`, apply, and run `.\scripts\make-panel-config.ps1`.

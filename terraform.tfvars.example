@@ -68,7 +68,13 @@ cognito_extra_users           = []
 # to dashboards/config.js. The panel's hosting, DNS and API are built by hand (see
 # dashboards/SETUP.md).
 control_panel_url = "https://cp.aiwebdemo.click"
-# control_panel_api_url = "https://<api-id>.execute-api.us-east-1.amazonaws.com"
+# The control panel API is built by hand ahead of Terraform (dashboards/SETUP.md). Its
+# address goes into dashboards/config.js. The three ids let apply point the API's
+# sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
+control_panel_api_url         = "https://65j334bc19.execute-api.us-east-1.amazonaws.com"
+control_panel_api_id          = "65j334bc19"
+control_panel_authorizer_id   = "pnlj78"
+control_panel_holding_pool_id = "us-east-1_xcTOLNQJM"
 
 # Optional: seed the demo users' roles into the control panel's users table.
 # control_panel_users_table = "panel_users"

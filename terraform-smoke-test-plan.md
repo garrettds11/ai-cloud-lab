@@ -222,55 +222,6 @@ Invoke-TerraformWithCloudflareToken -Arguments @("apply", "ai-lab.tfplan")
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
 
-### Auto-stop test
-
-Auto-stop has two independent settings in `terraform.tfvars`, each off when set to `0`:
-`auto_stop_idle_minutes` stops the instance after that many minutes with no active
-Open WebUI user and no reply being generated, so test it with and without activity.
-`auto_stop_max_uptime_minutes` is a hard time limit that stops the instance that many
-minutes after it boots even when people are active (the example uses 90 for a demo,
-with the idle timeout at `0`). Changing these settings updates in place; it does not
-replace the instance.
-
-1. After first-boot setup finishes and Open WebUI is ready, confirm the monitor
-   sees the lab. In the SSM shell:
-
-```bash
-sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check
-```
-
-It prints `active_users`, `busy_connections` and `idle_minutes`. Signed in and
-chatting must show `active_users` of 1 or more; with nobody active it must show
-`active_users=0`.
-
-2. Set `auto_stop_idle_minutes = 5` in `terraform.tfvars`, then plan and apply
-   (only the SSM parameter and the watchdog change).
-3. Keep a signed-in browser tab sending messages for more than 5 minutes. The
-   instance must stay running.
-4. Stop using Open WebUI and close the tab. After about 5 to 8 minutes, confirm
-   the instance stopped:
-
-```powershell
-aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[0].Instances[0].State.Name" --output text
-```
-
-It must return `stopping` or `stopped`. To bring it back, run
-`aws ec2 start-instances --instance-ids $env:instance_id`; it gets a full idle
-window before it stops again. Set the demo value (90) again when you finish
-testing. Click the SNS confirmation link in the `auto_stop_alert_email` inbox so
-alerts are delivered.
-
-5. To test the hard time limit, set `auto_stop_idle_minutes = 0` and
-   `auto_stop_max_uptime_minutes = 20`, apply, and start the instance fresh (stop and
-   start it, since the limit counts from boot). Keep a signed-in tab sending messages.
-   About 10 minutes after boot you must receive the "will stop in about 10 minutes"
-   email, and at 20 minutes the instance must stop even though you are active. For the
-   demo value, use `auto_stop_max_uptime_minutes = 90` (the warning comes 30 minutes
-   before it).
-6. To test the off switch, set both `auto_stop_idle_minutes = 0` and
-   `auto_stop_max_uptime_minutes = 0` and apply. The watchdog, SNS topic and
-   EventBridge rule are removed, and nothing stops the instance.
-
 The plan file can contain sensitive values. Do not commit it. After the apply
 completes, remove the local plan file:
 
@@ -435,7 +386,10 @@ Then, in a private window:
    must sign you in without asking for a password. The demo user has no local
    account, so Open WebUI creates it now with the `open_webui_default_user_role`
    role (default `user`, so there is no activation wait).
-4. Sign out, then repeat with `admin@example.local` and the administrator
+4. Sign out of Open WebUI. You must land on the Cognito sign-in page (or the
+   site's sign-in), never on a Cognito "Client does not exist" error, and
+   opening https://aiwebdemo.click again must ask for credentials. Then repeat
+   with `admin@example.local` and the administrator
    password. Open WebUI must open the existing local admin account, and **Admin
    Panel** must be available.
 5. Sign in as a user who is not in the Cognito pool. Access must deny it.

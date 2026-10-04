@@ -269,6 +269,7 @@ resource "aws_instance" "ai_lab" {
     open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
     cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
     cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
+    cognito_domain_prefix                = var.enable_cognito && var.cognito_domain_prefix != null ? var.cognito_domain_prefix : ""
     open_webui_container_image           = var.open_webui_container_image
     open_webui_container_name            = var.open_webui_container_name
     open_webui_host_port                 = var.open_webui_host_port

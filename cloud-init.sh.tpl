@@ -303,6 +303,7 @@ if [[ "${open_webui_oidc_enabled}" == "true" ]]; then
         -e OAUTH_PROVIDER_NAME='Cognito'
         -e OAUTH_SCOPES='openid email profile'
         -e OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true
+        -e OPENID_END_SESSION_ENDPOINT='https://${cognito_domain_prefix}.auth.${aws_region}.amazoncognito.com/logout?client_id=${cognito_client_id}&logout_uri=${open_webui_url}'
     )
 fi
 

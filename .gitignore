@@ -26,3 +26,7 @@ Thumbs.db
 
 # Written by scripts/make-panel-config.ps1
 dashboards/config.js
+# Control API build and test output
+dashboards/api/control-api.zip
+__pycache__/
+.pytest_cache/

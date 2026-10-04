@@ -48,15 +48,15 @@ Fill in the "Created" column as each piece is built.
 | S3 bucket for the static files | Private. Block all public access. Only CloudFront reads it. | |
 | CloudFront distribution | Origin access control to the bucket. Alias `cp.aiwebdemo.click`. Certificate in us-east-1 that covers that name. Response headers policy (CSP, HSTS). WAF if wanted. | |
 | DNS record `cp.aiwebdemo.click` | CNAME to the CloudFront domain, in the Cloudflare zone for aiwebdemo.click. | |
-| DynamoDB table `instance_entitlements` | Schema in the PRD, FR-4. | |
-| Control API (API Gateway and Lambda) | Checks the sign-in token's groups and the entitlement before every Start. | |
-| Roles for the API | Start only the listed instances; read and write the table; add and remove users in the two groups; read logs. | |
+| DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | |
+| Control API (Lambda and API Gateway HTTP API) | Source in `api/handler.py`. Steps, settings and routes in `api/README.md`. | |
+| Role for the API | Least-privilege policy in `api/README.md`. It can start one instance and cannot stop any. | |
 
 ## Deploy the pages
 
 ```powershell
 $bucket = '<bucket name>'
-aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://$bucket" --exclude "*.md" --exclude "config.example.js" --delete
+aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://$bucket" --exclude "*.md" --exclude "config.example.js" --exclude "api/*" --delete
 aws cloudfront create-invalidation --distribution-id <distribution id> --paths "/*"
 ```
 

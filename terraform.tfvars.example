@@ -37,7 +37,7 @@ enable_domain_access     = true
 enable_cloudflare_access = true
 domain_name              = "aiwebdemo.click"
 route53_zone_name        = "aiwebdemo.click"
-acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
+acm_certificate_arn      = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 
 # Cloudflare deployment values. Replace this block when cloning the repo; do
 # not store the API token itself here.
@@ -61,7 +61,7 @@ cloudflare_access_allowed_emails = []
 enable_cognito                = true
 cognito_domain_prefix         = "aiwebdemo"
 cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
-cognito_extra_users = []
+cognito_extra_users           = []
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
@@ -105,6 +105,6 @@ auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a co
 # token lives only in a Secrets Manager secret; see grafana-telemetry.md for how to
 # create it. Changing these replaces the instance.
 enable_grafana_telemetry       = true
-grafana_otlp_instance_id       = "1234567"                                              # Replace with your OTLP instance ID
-grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp" # Replace with your stack's endpoint
-grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:aiwebdemo/grafana-otlp-AbCdEf"  # Replace
+grafana_otlp_instance_id       = "1846719"
+grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
+grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:grafana-api-token-aiwebdemo-MakqN8"

@@ -229,7 +229,7 @@ completes, remove the local plan file:
 Remove-Item ai-lab.tfplan
 ```
 
-## 4. Status Check the Open WebUI Server
+## 4. Status check the Open WebUI server
 
 After apply, capture the instance ID in an environment variable to set the SSM target and open a shell:
 
@@ -258,7 +258,7 @@ Wait for `READY` before opening Open WebUI. If the result is `FAILED`, inspect t
 
 The SSM shell is a Linux shell. Run Linux commands there; run PowerShell commands such as `curl.exe` from a separate Windows PowerShell window.
 
-## 5. Open Open WebUI
+## 5. Access Open WebUI
 
 Choose exactly one access path based on `TF_VAR_enable_domain_access`.
 
@@ -461,7 +461,7 @@ To turn local password sign-in off, set `open_webui_enable_local_login = false`
 
 ==*Change the temporary password immediately*== after confirming access.
 
-## 6. Stop or Destroy the Test System
+## 6. Stop or destroy the test system
 
 If you may test again later, stop the instance to avoid ongoing compute charges:
 

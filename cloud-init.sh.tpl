@@ -371,7 +371,7 @@ fi
 # credentials are read from Secrets Manager through the instance role, so they are
 # never in user-data or Terraform state.
 setup_grafana_telemetry() {
-    local credentials instance_id token
+    local token
 
     install -d -m 0755 /etc/apt/keyrings
     apt-get install -y gpg || return 1
@@ -382,20 +382,20 @@ setup_grafana_telemetry() {
     apt-get update || return 1
     apt-get install -y alloy || return 1
 
-    credentials="$(aws secretsmanager get-secret-value \
+    # The secret holds only the token, as plain text or a one-key key/value secret.
+    token="$(read_secret_value "$(aws secretsmanager get-secret-value \
         --secret-id '${grafana_credentials_secret_arn}' \
         --query SecretString \
         --output text \
-        --region '${aws_region}')" || return 1
-    instance_id="$(printf '%s' "$credentials" | jq -er '.instance_id')" || return 1
-    token="$(printf '%s' "$credentials" | jq -er '.token')" || return 1
+        --region '${aws_region}')")" || return 1
+    [[ -n "$token" && "$token" != "None" ]] || return 1
 
     install -d -m 0755 /etc/alloy
     printf '%s' '${alloy_config_b64}' | base64 --decode > /etc/alloy/config.alloy || return 1
 
     # Root-only: systemd reads this file and hands the values to Alloy.
     (umask 077 && printf 'GRAFANA_OTLP_ENDPOINT=%s\nGRAFANA_OTLP_INSTANCE_ID=%s\nGRAFANA_OTLP_TOKEN=%s\n' \
-        '${grafana_otlp_endpoint}' "$instance_id" "$token" > /etc/alloy/grafana.env) || return 1
+        '${grafana_otlp_endpoint}' '${grafana_otlp_instance_id}' "$token" > /etc/alloy/grafana.env) || return 1
 
     cat > /etc/default/alloy <<'EOF'
 CONFIG_FILE="/etc/alloy/config.alloy"

@@ -114,6 +114,7 @@ variables {
   extra_egress_cidrs              = []
   enable_grafana_telemetry        = false
   grafana_otlp_endpoint           = null
+  grafana_otlp_instance_id        = null
   grafana_credentials_secret_arn  = null
   origin_lockdown_extra_cidrs     = []
   cloudflare_account_id           = null
@@ -366,6 +367,7 @@ run "grafana_telemetry_plan_succeeds_when_configured" {
   variables {
     enable_grafana_telemetry       = true
     grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
+    grafana_otlp_instance_id       = "1234567"
     grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana-AbCdEf"
   }
 }
@@ -398,4 +400,14 @@ run "grafana_secret_arn_must_be_valid" {
   }
 
   expect_failures = [var.grafana_credentials_secret_arn]
+}
+
+run "grafana_instance_id_must_be_numeric" {
+  command = plan
+
+  variables {
+    grafana_otlp_instance_id = "stack-1234567"
+  }
+
+  expect_failures = [var.grafana_otlp_instance_id]
 }

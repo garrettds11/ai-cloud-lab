@@ -303,6 +303,7 @@ resource "aws_instance" "ai_lab" {
     auto_stop_parameter_name             = local.auto_stop_parameter_name
     auto_stop_script_b64                 = base64encode(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
     grafana_enabled                      = var.enable_grafana_telemetry ? "true" : "false"
+    grafana_otlp_instance_id             = var.grafana_otlp_instance_id == null ? "" : var.grafana_otlp_instance_id
     grafana_otlp_endpoint                = var.grafana_otlp_endpoint == null ? "" : var.grafana_otlp_endpoint
     grafana_credentials_secret_arn       = var.grafana_credentials_secret_arn == null ? "" : var.grafana_credentials_secret_arn
     alloy_config_b64                     = var.enable_grafana_telemetry ? base64encode(replace(file("${path.module}/scripts/alloy-config.alloy"), "\r\n", "\n")) : ""
@@ -342,8 +343,8 @@ resource "aws_instance" "ai_lab" {
     }
 
     precondition {
-      condition     = !var.enable_grafana_telemetry || (var.grafana_otlp_endpoint != null && var.grafana_credentials_secret_arn != null)
-      error_message = "enable_grafana_telemetry requires grafana_otlp_endpoint and grafana_credentials_secret_arn."
+      condition     = !var.enable_grafana_telemetry || (var.grafana_otlp_endpoint != null && var.grafana_otlp_instance_id != null && var.grafana_credentials_secret_arn != null)
+      error_message = "enable_grafana_telemetry requires grafana_otlp_endpoint, grafana_otlp_instance_id and grafana_credentials_secret_arn."
     }
 
   }

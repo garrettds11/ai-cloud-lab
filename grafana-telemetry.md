@@ -17,21 +17,23 @@ Everything leaves the instance over HTTPS (outbound TCP 443, already allowed). N
 2. The **OTLP instance ID** (a number).
 3. An **access policy token** for your stack. The "Create an API token" dialog on the OTLP Endpoint page creates one from a predefined policy (`stack-<id>-otlp-write`). That policy carries more scopes than the lab uses (`metrics:write`, `logs:write` and `traces:write` are the ones it needs). Keep two things in mind: the token is a write credential for your Grafana stack, and the instance can read it, so treat it like the other secrets. Choose an expiry and note the date, because telemetry stops when the token expires.
 
-## Store the credentials in Secrets Manager
+## Store the token in Secrets Manager
 
-The instance reads one secret at boot, so the token never appears in Terraform state, user-data, or the repository. Run this in PowerShell (use your own instance ID, region and secret name). It prompts for the token without echoing it:
+The instance reads the token from a secret at boot, so it never appears in Terraform state, user-data, or the repository. The secret holds **only the token**, as plain text or as a one-key key/value secret. If you already created one (for example `grafana-api-token-aiwebdemo`), use its ARN.
+
+To create one in PowerShell, which prompts for the token without echoing it (use your own region and secret name):
 
 ```powershell
 $sec   = Read-Host "Grafana token" -AsSecureString
 $token = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 $file  = New-TemporaryFile
-[IO.File]::WriteAllText($file.FullName, (@{ instance_id = "<instance-id>"; token = $token } | ConvertTo-Json -Compress))
+[IO.File]::WriteAllText($file.FullName, $token)
 aws secretsmanager create-secret --name aiwebdemo/grafana-otlp --secret-string "file://$($file.FullName)" --region us-east-1 --query ARN --output text
 Remove-Item $file.FullName
 Remove-Variable token, sec
 ```
 
-The secret is JSON with two keys: `instance_id` and `token`. The command prints the secret's ARN.
+The OTLP **instance ID** is not secret, so it goes in `terraform.tfvars` instead.
 
 ## Configure it
 
@@ -40,12 +42,11 @@ In `terraform.tfvars`:
 ```hcl
 enable_grafana_telemetry       = true
 grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
-grafana_credentials_secret_arn = "<the ARN printed above>"
+grafana_otlp_instance_id       = "<your OTLP instance ID>"
+grafana_credentials_secret_arn = "<the secret's ARN>"
 ```
 
-Because telemetry is on by default, `terraform plan` fails with a clear message until `grafana_otlp_endpoint` and `grafana_credentials_secret_arn` are set. Then run `plan` and `apply` as usual. The instance is replaced (about 3 minutes). The instance role gets read access to that one secret and nothing else is widened. To run without telemetry, set `enable_grafana_telemetry = false` instead.
-
-If telemetry setup fails during boot, bootstrap still finishes and the lab works. The bootstrap log says `WARNING: Grafana telemetry setup failed`.
+Because telemetry is on by default, `terraform plan` fails with a clear message until those three values are set. Then run `plan` and `apply` as usual. The instance is replaced (about 3 minutes). The instance role gets read access to that one secret and nothing else is widened. To run without telemetry, set `enable_grafana_telemetry = false` instead.
 
 ## Check that it works
 
@@ -73,4 +74,4 @@ Retention is set by your Grafana Cloud plan, not by this repository. Check it un
 
 ## Rotating the token
 
-Create a new token, update the secret's `token` value, then replace the instance (for example `terraform apply -replace=aws_instance.ai_lab`). The instance reads the secret only at boot.
+Create a new token, update the secret's value, then replace the instance (for example `terraform apply -replace=aws_instance.ai_lab`). The instance reads the secret only at boot.

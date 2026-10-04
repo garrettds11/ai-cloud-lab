@@ -454,7 +454,7 @@ variable "auto_stop_alert_email" {
 }
 
 variable "enable_grafana_telemetry" {
-  description = "Send host metrics, logs and Open WebUI traces to Grafana Cloud over OTLP/HTTP using Grafana Alloy on the instance. On by default, so grafana_otlp_endpoint and grafana_credentials_secret_arn must be set; set this to false to run without telemetry. Needs outbound TCP 443 (already allowed). Changing it replaces the instance. Telemetry adds to Grafana Cloud data usage; see grafana-telemetry.md."
+  description = "Send host metrics, logs and Open WebUI traces to Grafana Cloud over OTLP/HTTP using Grafana Alloy on the instance. On by default, so grafana_otlp_endpoint, grafana_otlp_instance_id and grafana_credentials_secret_arn must be set; set this to false to run without telemetry. Needs outbound TCP 443 (already allowed). Changing it replaces the instance. Telemetry adds to Grafana Cloud data usage; see grafana-telemetry.md."
   type        = bool
   default     = true
 }
@@ -470,8 +470,19 @@ variable "grafana_otlp_endpoint" {
   }
 }
 
+variable "grafana_otlp_instance_id" {
+  description = "Grafana Cloud OTLP instance ID (a number, shown next to the OTLP endpoint). It is the sign-in name, not a secret, so it is set here; the token is in grafana_credentials_secret_arn. Required when enable_grafana_telemetry is true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_otlp_instance_id == null || can(regex("^[0-9]+$", var.grafana_otlp_instance_id))
+    error_message = "grafana_otlp_instance_id must be the numeric Grafana Cloud instance ID."
+  }
+}
+
 variable "grafana_credentials_secret_arn" {
-  description = "ARN of a pre-created Secrets Manager secret holding the Grafana Cloud OTLP credentials as JSON: {\"instance_id\": \"<OTLP instance ID>\", \"token\": \"<access policy token>\"}. The token needs only the metrics:write and logs:write scopes. Required when enable_grafana_telemetry is true. The instance reads it at boot, so the token is never in Terraform state or user-data."
+  description = "ARN of a pre-created Secrets Manager secret that holds only the Grafana Cloud access policy token, either as plain text or as a one-key key/value secret. Required when enable_grafana_telemetry is true. The instance reads it at boot, so the token is never in Terraform state or user-data."
   type        = string
   default     = null
 

@@ -230,6 +230,8 @@
     listInstances: () => request('GET', '/instances'),
     startInstance: (instanceId) => request('POST', '/instances/' + enc(instanceId) + '/start'),
     listLogins: () => request('GET', '/logins'),
+    listAllLogins: () => request('GET', '/admin/logins'),
+    listAllLogs: (filter) => request('GET', '/admin/logs?' + new URLSearchParams(filter || {}).toString()),
     listLogs: (filter) => request('GET', '/logs?' + new URLSearchParams(filter || {}).toString()),
 
     // User management (user managers and administrators; the API checks again)

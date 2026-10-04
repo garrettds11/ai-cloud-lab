@@ -516,3 +516,19 @@ def test_unreadable_lab_parameters_fail_closed(aws, monkeypatch):
     use_lab(monkeypatch, {"instance-ids": "i-aaa"}, fail=True)
     grant(aws, OP, "i-aaa")
     assert call("GET /instances", OP)[0] == 503
+
+
+def test_only_admin_sees_everyones_logins_and_logs(aws):
+    for who in (OP, NONE, BOTH):
+        call("POST /session", who)
+    call("POST /session", ADM)
+    for route in ("GET /admin/logins", "GET /admin/logs"):
+        assert call(route, OP)[0] == 403
+        assert call(route, BOTH)[0] == 403  # a user manager is not an administrator
+    status, rows = call("GET /admin/logins", ADM)
+    assert status == 200
+    assert {r["userId"] for r in rows} >= {OP, NONE, BOTH, ADM}
+    assert all(r["userName"] for r in rows)
+    status, logs = call("GET /admin/logs", ADM)
+    assert status == 200
+    assert {OP, ADM} <= {r["userId"] for r in logs if r["source"] == "Control panel"}

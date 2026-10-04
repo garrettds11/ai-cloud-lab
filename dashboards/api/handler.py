@@ -532,6 +532,82 @@ def _instance_trail(instance_ids, names, since_ms):
     return out
 
 
+def _require_admin(caller):
+    if ROLE_ADMIN not in caller["roles"]:
+        raise ApiError(403, "Only an administrator can see everyone's activity.")
+
+
+def _scan_events(prefix, since=None):
+    """Every person's events whose sort key starts with prefix. The table is small and its
+    rows expire, so a scan is fine."""
+    rows, kwargs = [], {}
+    while True:
+        out = events.scan(**kwargs)
+        rows += [i for i in out.get("Items", []) if str(i.get("sk", "")).startswith(prefix)
+                 and (since is None or int(i["t"]) >= since)]
+        if not out.get("LastEvaluatedKey"):
+            return rows
+        kwargs["ExclusiveStartKey"] = out["LastEvaluatedKey"]
+
+
+def _owner(item):
+    return str(item.get("pk", "")).removeprefix("user#")
+
+
+def list_all_logins(caller):
+    _require_admin(caller)
+    names = {u["email"]: u.get("name", u["email"]) for u in _all_users()}
+    rows = sorted(_scan_events("login#"), key=lambda r: int(r["t"]), reverse=True)[:200]
+    return [
+        {
+            "id": f"{_owner(r)}|{r['sk']}",
+            "t": _num(r["t"]),
+            "userId": _owner(r),
+            "userName": names.get(_owner(r), _owner(r)),
+            "result": r.get("result", "success"),
+            "detail": r.get("detail", ""),
+            "ip": r.get("ip", ""),
+            "browser": r.get("browser", ""),
+            "current": _owner(r) == caller["id"] and _num(r["t"]) == caller["auth_time"],
+        }
+        for r in rows
+    ]
+
+
+def list_all_logs(caller, params):
+    _require_admin(caller)
+    source = params.get("source", "all")
+    severity = params.get("severity", "all")
+    try:
+        window = max(1, min(int(params.get("windowMinutes", 60)), 1440))
+    except ValueError:
+        window = 60
+    since = now_ms() - window * 60000
+    names = {u["email"]: u.get("name", u["email"]) for u in _all_users()}
+    rows = [
+        {
+            "id": f"{_owner(r)}|{r['sk']}",
+            "t": _num(r["t"]),
+            "source": r.get("source", "Control panel"),
+            "severity": r.get("severity", "info"),
+            "event": r.get("event", ""),
+            "userId": _owner(r),
+            "userName": names.get(_owner(r), _owner(r)),
+            "instanceId": r.get("instanceId"),
+        }
+        for r in _scan_events("log#", since)
+    ]
+    if source in ("all", "EC2"):
+        ids = _usable_ids(caller)
+        if ids:
+            raws = _describe(ids)
+            tag_names = {i: (_tag(r["instance"], "Name") or i) for i, r in raws.items()}
+            rows += _instance_trail(ids, tag_names, since)
+    rows = [r for r in rows if source in ("all", r["source"]) and severity in ("all", r["severity"])]
+    rows.sort(key=lambda r: r["t"], reverse=True)
+    return rows[:200]
+
+
 def list_logs(caller, params):
     source = params.get("source", "all")
     severity = params.get("severity", "all")
@@ -768,6 +844,10 @@ def _admin_routes(event, caller):
         return get_grants(caller, path["userId"])
     if key == "GET /admin/changes":
         return list_changes(caller)
+    if key == "GET /admin/logins":
+        return list_all_logins(caller)
+    if key == "GET /admin/logs":
+        return list_all_logs(caller, event.get("queryStringParameters") or {})
     if key == "PUT /admin/users/{userId}":
         return save_user(caller, path["userId"], _body(event))
     return None

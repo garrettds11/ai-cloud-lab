@@ -527,7 +527,7 @@
       return;
     }
     const q = state.search.trim().toLowerCase();
-    const list = state.logins.filter((l) => !q || (l.ip + ' ' + l.browser + ' ' + l.result + ' ' + l.detail).toLowerCase().includes(q));
+    const list = state.logins.filter((l) => !q || ((l.userName || '') + ' ' + (l.userId || '') + ' ' + l.ip + ' ' + l.browser + ' ' + l.result + ' ' + l.detail).toLowerCase().includes(q));
     if (!list.length) {
       wrap.append(h('p', { class: 'empty-small', text: 'No logins match your search.' }));
       return;
@@ -535,9 +535,10 @@
     wrap.append(h('table', { class: 'grid' },
       h('caption', { class: 'sr-only', text: 'Your recent logins, newest first' }),
       h('thead', null, h('tr', null,
-        ['Time', 'Result', 'Source IP', 'Browser or device', 'Session'].map((c) => h('th', { scope: 'col', text: c })))),
+        (everyone() ? ['Time', 'User'] : ['Time']).concat(['Result', 'Source IP', 'Browser or device', 'Session']).map((c) => h('th', { scope: 'col', text: c })))),
       h('tbody', null, list.map((l) => h('tr', null,
         h('td', { text: fmt.dateTime(l.t) }),
+        everyone() ? h('td', null, l.userName, h('div', { class: 'sub', text: l.userId })) : null,
         h('td', null, l.result === 'success'
           ? h('span', { class: 'chip tone-green' }, icon('check'), 'Success')
           : h('span', { class: 'chip tone-red' }, icon('error'), 'Failed'), l.detail ? h('div', { class: 'sub', text: l.detail }) : null),
@@ -550,7 +551,7 @@
   async function loadLogins() {
     const session = state.session;
     try {
-      const list = await API.listLogins();
+      const list = everyone() ? await API.listAllLogins() : await API.listLogins();
       if (session !== state.session) return;
       state.logins = list;
       state.loginsError = null;
@@ -566,8 +567,8 @@
   function viewLogins() {
     $('#main').replaceChildren(
       h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Logins' }),
-      h('p', { class: 'page-lead', text: 'Your own recent sign-ins to the control panel, newest first.' }),
-      h('div', { class: 'toolbar' }, searchBox(), h('span', { class: 'spacer' }),
+      h('p', { class: 'page-lead', text: everyone() ? 'Recent sign-ins to the control panel by everyone, newest first.' : 'Your own recent sign-ins to the control panel, newest first.' }),
+      h('div', { class: 'toolbar' }, whoseSelect(), searchBox(), h('span', { class: 'spacer' }),
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: loadLogins }, icon('refresh'), 'Refresh')),
       h('div', { id: 'table-wrap', class: 'table-wrap' }),
       h('div', { id: 'table-foot', class: 'table-foot' }));
@@ -598,18 +599,19 @@
       return;
     }
     const q = state.search.trim().toLowerCase();
-    const list = state.logs.filter((l) => !q || l.event.toLowerCase().includes(q));
+    const list = state.logs.filter((l) => !q || (l.event + ' ' + (l.userName || '') + ' ' + (l.userId || '')).toLowerCase().includes(q));
     if (!list.length) {
       wrap.append(h('p', { class: 'empty-small', text: 'No log events match these filters.' }));
       return;
     }
     wrap.append(h('table', { class: 'grid' },
       h('caption', { class: 'sr-only', text: 'Log events, newest first' }),
-      h('thead', null, h('tr', null, ['Time', 'Source', 'Severity', 'Event'].map((c) => h('th', { scope: 'col', text: c })))),
+      h('thead', null, h('tr', null, (everyone() ? ['Time', 'User', 'Source', 'Severity', 'Event'] : ['Time', 'Source', 'Severity', 'Event']).map((c) => h('th', { scope: 'col', text: c })))),
       h('tbody', null, list.map((l) => {
         const sev = SEVERITY[l.severity];
         return h('tr', null,
           h('td', { text: fmt.dateTime(l.t) }),
+          everyone() ? h('td', null, l.userName || h('span', { class: 'sub', text: 'Instance' })) : null,
           h('td', { text: l.source }),
           h('td', null, h('span', { class: 'chip tone-' + sev.tone }, icon(sev.ic), sev.label)),
           h('td', null, h('code', { text: l.event })));
@@ -620,7 +622,7 @@
   async function loadLogs() {
     const session = state.session;
     try {
-      const list = await API.listLogs(state.logFilters);
+      const list = everyone() ? await API.listAllLogs(state.logFilters) : await API.listLogs(state.logFilters);
       if (session !== state.session) return;
       state.logs = list;
       state.logsError = null;
@@ -631,6 +633,22 @@
     }
     paintLogs();
     paintStatusBar();
+  }
+
+  // Administrators may switch Logins and Logs from their own activity to everyone's.
+  const everyone = () => !!state.everyone && isAdmin();
+
+  function whoseSelect() {
+    if (!isAdmin()) return null;
+    return h('label', { class: 'field' }, h('span', { text: 'Show' }),
+      h('select', {
+        onChange: (e) => {
+          state.everyone = e.target.value === 'everyone';
+          state.logins = null;
+          state.logs = null;
+          if (state.route === 'logins') viewLogins(); else viewLogs();
+        },
+      }, [['mine', 'My activity'], ['everyone', 'Everyone']].map(([value, text]) => h('option', { value, text, selected: (value === 'everyone') === !!state.everyone }))));
   }
 
   function select(label, key, options) {
@@ -648,8 +666,9 @@
   function viewLogs() {
     $('#main').replaceChildren(
       h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Logs' }),
-      h('p', { class: 'page-lead', text: 'Events for the instances you can use, and your own connections to the control panel.' }),
+      h('p', { class: 'page-lead', text: everyone() ? 'Events for every managed instance, and everyone\'s connections to the control panel.' : 'Events for the instances you can use, and your own connections to the control panel.' }),
       h('div', { class: 'toolbar' },
+        whoseSelect(),
         select('Source', 'source', [['all', 'All sources'], ['Control panel', 'Control panel'], ['EC2', 'EC2']]),
         select('Severity', 'severity', [['all', 'All'], ['info', 'Info'], ['warning', 'Warning'], ['error', 'Error']]),
         select('Time window', 'windowMinutes', [[60, 'Last hour'], [1440, 'Last 24 hours'], [10080, 'Last 7 days']]),

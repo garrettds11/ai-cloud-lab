@@ -25,7 +25,7 @@ All routes need `Authorization: Bearer <ID token>`. Times are milliseconds since
 | Route | Who | Returns |
 |---|---|---|
 | `POST /session` | anyone signed in | Records this sign-in once, returns `{userId, name, email, roles, signedInAt}` |
-| `GET /instances` | anyone | The caller's granted instances (empty unless an operator) |
+| `GET /instances` | anyone | The caller's granted instances (empty unless an operator). An administrator gets every managed instance without grants |
 | `POST /instances/{instanceId}/start` | operator with a grant | `{ok: true}`. 403 without a grant, 404 unknown, 409 not stopped, 503 no capacity |
 | `GET /logins` | anyone | The caller's last 10 panel sign-ins |
 | `GET /logs?source=&severity=&windowMinutes=` | anyone | The caller's own log lines, plus EC2 start/stop activity for instances they hold |
@@ -33,6 +33,8 @@ All routes need `Authorization: Bearer <ID token>`. Times are milliseconds since
 | `GET /admin/instances` | `user_mgrs` or `admin` | The managed instances |
 | `GET /admin/users/{userId}/grants` | `user_mgrs` or `admin` | Instance IDs the user holds |
 | `GET /admin/changes` | `user_mgrs` or `admin` | The last 12 access changes |
+| `GET /admin/logins` | `admin` only | Everyone's last 200 panel sign-ins, with user name |
+| `GET /admin/logs?source=&severity=&windowMinutes=` | `admin` only | Everyone's log lines, plus EC2 start/stop activity for every managed instance |
 | `PUT /admin/users/{userId}` | `user_mgrs` or `admin` (role changes: `admin` only) | Body `{roles:[{role,member}], grants:[{instanceId,grant}]}`; returns `{applied}` |
 
 An instance in `GET /instances` has `phase` (`stopped`, `pending`, `initializing`, `ready`, `stopping`), `checks` (`ec2`, `http`), `launchedAt`, the shared auto-stop `rule`, and `autoStop` while running. The Access button turns on at `ready`, which needs both EC2 status checks `ok` and the ALB target `healthy`.
@@ -126,14 +128,14 @@ The attribute condition means this role can never write `roles` in `panel_users`
 {
   "Version": "2012-10-17",
   "Statement": [
-    { "Effect": "Allow", "Action": ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus", "cloudtrail:LookupEvents"], "Resource": "*" },
     { "Effect": "Allow", "Action": "ssm:GetParametersByPath",
       "Resource": "arn:aws:ssm:us-east-1:394566733278:parameter/<project_name>/control-panel" },
     { "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:UpdateItem"],
       "Resource": "arn:aws:dynamodb:us-east-1:394566733278:table/panel_users" },
     { "Effect": "Allow", "Action": ["dynamodb:Query", "dynamodb:PutItem", "dynamodb:UpdateItem"],
       "Resource": "arn:aws:dynamodb:us-east-1:394566733278:table/instance_entitlements" },
-    { "Effect": "Allow", "Action": ["dynamodb:Query", "dynamodb:PutItem"],
+    { "Effect": "Allow", "Action": ["dynamodb:Query", "dynamodb:PutItem", "dynamodb:Scan"],
       "Resource": "arn:aws:dynamodb:us-east-1:394566733278:table/control_panel_events" }
   ]
 }

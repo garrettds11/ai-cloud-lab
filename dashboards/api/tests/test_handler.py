@@ -145,6 +145,7 @@ def aws(monkeypatch):
     monkeypatch.setattr(handler, "ssm", type("S", (), {"get_parameter": lambda self, Name: {"Parameter": {"Value": json.dumps({"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 90})}}})())
     monkeypatch.setattr(handler, "cloudtrail", type("C", (), {"lookup_events": lambda self, **k: {"Events": []}})())
     handler._rule_cache.update(at=0, value=None)
+    handler._lab_cache.update(at=0.0, value=None)
     return type("AWS", (), fakes)
 
 
@@ -407,3 +408,63 @@ def test_customer_lambda_has_no_admin_routes(aws):
 def test_admin_lambda_cannot_start_or_sign_in(aws):
     for route in ("POST /instances/{instanceId}/start", "POST /session", "GET /instances"):
         assert _raw(handler.admin_handler, route, BOTH, {"instanceId": "i-aaa"}) == 404
+
+
+class FakeLabSSM:
+    """Stands in for SSM: the parameters Terraform publishes with the lab, and the auto-stop rule."""
+
+    def __init__(self, params, fail=False):
+        self.params, self.fail, self.reads = params, fail, 0
+
+    def get_parameter(self, Name):
+        return {"Parameter": {"Value": json.dumps({"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 90})}}
+
+    def get_parameters_by_path(self, Path, Recursive, NextToken=None):
+        self.reads += 1
+        if self.fail:
+            raise client_error("AccessDenied")
+        return {"Parameters": [{"Name": Path + "/" + k, "Value": v} for k, v in self.params.items()]}
+
+
+def use_lab(monkeypatch, params, fail=False):
+    ssm = FakeLabSSM(params, fail)
+    monkeypatch.setattr(handler, "LAB_PARAMETER_PREFIX", "/lab/control-panel")
+    monkeypatch.setattr(handler, "ssm", ssm)
+    handler._lab_cache.update(at=0.0, value=None)
+    return ssm
+
+
+def test_no_lab_parameters_means_no_instances(aws, monkeypatch):
+    use_lab(monkeypatch, {})
+    grant(aws, OP, "i-aaa")
+    assert call("GET /instances", OP) == (200, [])
+    assert call("POST /instances/{instanceId}/start", OP, path={"instanceId": "i-aaa"})[0] == 404
+    assert call("GET /admin/instances", ADM) == (200, [])
+    assert aws.ec2.started == []
+
+
+def test_lab_parameters_decide_the_instance_and_address(aws, monkeypatch):
+    use_lab(monkeypatch, {"instance-ids": "i-aaa", "service-url": "https://lab.test", "target-group-arn": "arn:tg2"})
+    grant(aws, OP, "i-aaa")
+    grant(aws, OP, "i-bbb")
+    status, body = call("GET /instances", OP)
+    assert [i["id"] for i in body] == ["i-aaa"] and body[0]["url"] == "https://lab.test"
+    assert call("POST /instances/{instanceId}/start", OP, path={"instanceId": "i-aaa"})[0] == 200
+    assert call("POST /instances/{instanceId}/start", OP, path={"instanceId": "i-bbb"})[0] == 404
+
+
+def test_lab_parameters_are_cached_then_follow_the_lab(aws, monkeypatch):
+    ssm = use_lab(monkeypatch, {"instance-ids": "i-aaa"})
+    grant(aws, OP, "i-aaa")
+    call("GET /instances", OP)
+    call("GET /instances", OP)
+    assert ssm.reads == 1
+    ssm.params.clear()
+    handler._lab_cache.update(at=0.0, value=None)
+    assert call("GET /instances", OP) == (200, [])
+
+
+def test_unreadable_lab_parameters_fail_closed(aws, monkeypatch):
+    use_lab(monkeypatch, {"instance-ids": "i-aaa"}, fail=True)
+    grant(aws, OP, "i-aaa")
+    assert call("GET /instances", OP)[0] == 503

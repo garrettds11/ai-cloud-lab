@@ -13,7 +13,7 @@ The panel depends on these Terraform-owned things when you use the lab's Cognito
 | Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform output `control_panel_config`, written to `dashboards/config.js` by `scripts/make-panel-config.ps1`. For another provider: written by hand from `config.example.js` |
 | Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set. Until then the authorizer trusts the empty holding pool and every route answers 401 |
 | Demo users and their roles in `panel_users` | `cognito.tf`, when `control_panel_users_table` is set |
-| Instance ID and ALB target group | Terraform outputs `instance_id` and `open_webui_target_group_arn`. Set by hand in the customer Lambda's `INSTANCE_IDS` and `TARGET_GROUP_ARN` after a lab exists. Automatic wiring is not built yet |
+| Instance ID, ALB target group and service address | SSM parameters under `/<project_name>/control-panel/` that Terraform writes when `control_panel_url` is set (`control_panel_lab.tf`). The Lambdas read them live, so the panel follows the lab with nothing to copy. Terraform also tags the instance `control-panel=managed`, the only instances the customer role may start |
 | Auto-stop setting `/<project_name>/auto-stop` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init |
 
 Terraform needs `control_panel_url` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. After an apply, write the config file, then upload it with the pages:
@@ -60,7 +60,6 @@ Fill in the "Created" column as each piece is built.
 
 - DNS record `cp.aiwebdemo.click`: a CNAME in Cloudflare to `d11guvgb5r6hlh.cloudfront.net`, DNS only (not proxied).
 - Upload the pages, after `config.js` exists.
-- Instance IDs and the target group in the customer Lambda's settings, once a lab is deployed (`INSTANCE_IDS`, `TARGET_GROUP_ARN`).
 
 ## Deploy the pages
 

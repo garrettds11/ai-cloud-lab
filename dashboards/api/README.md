@@ -43,7 +43,7 @@ An instance in `GET /instances` has `phase` (`stopped`, `pending`, `initializing
 |---|---|
 | State, type, name, launch time | EC2 `DescribeInstances` (the `Name` tag) |
 | EC2 status checks | EC2 `DescribeInstanceStatus` |
-| HTTP health | ALB target health of `TARGET_GROUP_ARN` (Terraform output `open_webui_target_group_arn`). Without it, ready means the status checks passed |
+| HTTP health | ALB target health of the published `target-group-arn`. Without it, ready means the status checks passed |
 | Auto-stop rule | SSM parameter `AUTO_STOP_PARAMETER` (`/<project_name>/auto-stop`) |
 | Idle time, active users, heartbeat | CloudWatch namespace `AILab`, dimension `InstanceId` |
 | EC2 start/stop activity | CloudTrail `LookupEvents`, no user names shown |
@@ -66,12 +66,22 @@ Create all three in DynamoDB (on-demand billing).
 | Variable | Value | Function |
 |---|---|---|
 | `BOOTSTRAP_ADMINS` | Comma-separated emails that always have `user_mgrs`, for example `garrettds11@gmail.com` | both |
-| `USERS_TABLE`, `ENTITLEMENTS_TABLE`, `EVENTS_TABLE` | Table names (defaults `panel_users`, `instance_entitlements`, `control_panel_events`) | both |
-| `INSTANCE_IDS` | Comma-separated instance IDs the panel manages | both |
-| `TARGET_GROUP_ARN` | ALB target group (Terraform output `open_webui_target_group_arn`) | customer |
+| `LAB_PARAMETER_PREFIX` | `/<project_name>/control-panel`. The lab's instance, target group and service address are read live from the SSM parameters under it, which Terraform publishes (see below) | both |
 | `AUTO_STOP_PARAMETER` | `/<project_name>/auto-stop` | customer |
-| `SERVICE_URL` | Where the Access button goes, for example `https://aiwebdemo.click` | customer |
+| `USERS_TABLE`, `ENTITLEMENTS_TABLE`, `EVENTS_TABLE` | Table names (defaults `panel_users`, `instance_entitlements`, `control_panel_events`) | both |
 | `EVENT_TTL_DAYS` | Optional, default 90 | both |
+
+### What the lab publishes
+
+When `control_panel_url` is set, Terraform writes these parameters (`control_panel_lab.tf`). The functions read them at run time and cache them for a minute, so nothing is copied by hand after a deployment. With no lab deployed they do not exist and the panel shows no instances. If they cannot be read the call fails closed (503).
+
+| Parameter under the prefix | Value |
+|---|---|
+| `instance-ids` | The lab instance's ID (comma separated if there are several) |
+| `target-group-arn` | The ALB target group whose health is the HTTP check. Only with domain access |
+| `service-url` | Where the Access button goes, `https://<domain_name>`. Only with domain access |
+
+Terraform also tags the instance `control-panel=managed`. The customer role may start only instances with that tag.
 
 ## Permissions for the two roles
 
@@ -84,13 +94,16 @@ Replace the placeholders. Add the usual `AWSLambdaBasicExecutionRole` to each fo
   "Version": "2012-10-17",
   "Statement": [
     { "Effect": "Allow", "Action": "ec2:StartInstances",
-      "Resource": "arn:aws:ec2:us-east-1:394566733278:instance/<instance id>" },
+      "Resource": "arn:aws:ec2:us-east-1:394566733278:instance/*",
+      "Condition": { "StringEquals": { "aws:ResourceTag/control-panel": "managed" } } },
     { "Effect": "Allow",
       "Action": ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus", "elasticloadbalancing:DescribeTargetHealth",
                  "cloudwatch:GetMetricStatistics", "cloudtrail:LookupEvents"],
       "Resource": "*" },
     { "Effect": "Allow", "Action": "ssm:GetParameter",
       "Resource": "arn:aws:ssm:us-east-1:394566733278:parameter/<project_name>/auto-stop" },
+    { "Effect": "Allow", "Action": "ssm:GetParametersByPath",
+      "Resource": "arn:aws:ssm:us-east-1:394566733278:parameter/<project_name>/control-panel" },
     { "Effect": "Allow", "Action": "dynamodb:GetItem",
       "Resource": "arn:aws:dynamodb:us-east-1:394566733278:table/panel_users" },
     { "Effect": "Allow", "Action": ["dynamodb:PutItem", "dynamodb:UpdateItem"],
@@ -113,7 +126,9 @@ The attribute condition means this role can never write `roles` in `panel_users`
 {
   "Version": "2012-10-17",
   "Statement": [
-    { "Effect": "Allow", "Action": ["ec2:DescribeInstances"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus"], "Resource": "*" },
+    { "Effect": "Allow", "Action": "ssm:GetParametersByPath",
+      "Resource": "arn:aws:ssm:us-east-1:394566733278:parameter/<project_name>/control-panel" },
     { "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:UpdateItem"],
       "Resource": "arn:aws:dynamodb:us-east-1:394566733278:table/panel_users" },
     { "Effect": "Allow", "Action": ["dynamodb:Query", "dynamodb:PutItem", "dynamodb:UpdateItem"],
@@ -144,11 +159,11 @@ Compress-Archive -Path handler.py, customer.py, admin.py -DestinationPath contro
 aws lambda create-function --function-name ai-lab-control-customer --runtime python3.12 `
   --handler customer.lambda_handler --timeout 15 --memory-size 256 `
   --role <customer role arn> --zip-file fileb://control-api.zip `
-  --environment "Variables={BOOTSTRAP_ADMINS=<email>,INSTANCE_IDS=<instance id>,TARGET_GROUP_ARN=<target group arn>,AUTO_STOP_PARAMETER=/<project_name>/auto-stop,SERVICE_URL=https://aiwebdemo.click}"
+  --environment "Variables={BOOTSTRAP_ADMINS=<email>,LAB_PARAMETER_PREFIX=/<project_name>/control-panel,AUTO_STOP_PARAMETER=/<project_name>/auto-stop}"
 aws lambda create-function --function-name ai-lab-control-admin --runtime python3.12 `
   --handler admin.lambda_handler --timeout 15 --memory-size 256 `
   --role <admin role arn> --zip-file fileb://control-api.zip `
-  --environment "Variables={BOOTSTRAP_ADMINS=<email>,INSTANCE_IDS=<instance id>}"
+  --environment "Variables={BOOTSTRAP_ADMINS=<email>,LAB_PARAMETER_PREFIX=/<project_name>/control-panel}"
 ```
 
 To update after a change, rebuild the zip and run `aws lambda update-function-code --zip-file fileb://control-api.zip` for each function name.

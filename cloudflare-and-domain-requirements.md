@@ -366,6 +366,7 @@ The control panel (`dashboards/`) is a separate web app where customers start th
 | Hosting, DNS record, API, Lambdas, tables, IAM roles, the authorizer and its routes | Built by hand, kept when the lab is destroyed |
 | The panel's app client in the lab's Cognito pool | Terraform (`control_panel.tf`) |
 | The demo users' rows in `panel_users` (odd demo users as `operators`, `admin@example.local` as `user_mgrs`), when `control_panel_users_table` is set | Terraform |
+| The lab's instance, target group and service address, as SSM parameters, and the `control-panel=managed` tag on the instance | Terraform (`control_panel_lab.tf`) |
 | The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
 | Real users, their roles and instance grants | The control panel. Terraform never touches them |
 
@@ -373,7 +374,7 @@ Until a provider is wired, the authorizer trusts an empty holding Cognito pool t
 
 ### Instance wiring
 
-The Control API learns which instance and ALB target group to manage from its `INSTANCE_IDS` and `TARGET_GROUP_ARN` settings. These are set by hand today, after a lab exists. The goal is for them to follow the lab automatically; this section will change when that is built.
+The panel learns which instance and ALB target group to manage from SSM parameters that Terraform writes under `/<project_name>/control-panel/` (`instance-ids`, `target-group-arn`, `service-url`) when `control_panel_url` is set. The Lambdas read them live, so a new lab is picked up with nothing to copy, and a destroyed lab leaves the panel with no instances. Terraform also tags the instance `control-panel=managed`; the customer role can start only instances with that tag. The Lambdas' roles need read access to that parameter path.
 
 ## Can the providers be swapped?
 

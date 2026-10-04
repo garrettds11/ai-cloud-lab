@@ -356,9 +356,10 @@ resource "aws_instance" "ai_lab" {
 
   }
 
-  tags = {
-    Name = var.project_name
-  }
+  tags = merge(
+    { Name = var.project_name },
+    var.control_panel_url != null ? { "control-panel" = "managed" } : {}
+  )
 
   depends_on = [
     aws_iam_role_policy_attachment.ssm,

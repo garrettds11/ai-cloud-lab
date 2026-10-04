@@ -38,10 +38,15 @@ USERS_TABLE = os.environ.get("USERS_TABLE", "panel_users")
 BOOTSTRAP_ADMINS = {e.strip().lower() for e in os.environ.get("BOOTSTRAP_ADMINS", "").split(",") if e.strip()}
 ENTITLEMENTS_TABLE = os.environ.get("ENTITLEMENTS_TABLE", "instance_entitlements")
 EVENTS_TABLE = os.environ.get("EVENTS_TABLE", "control_panel_events")
+# The lab publishes what the panel manages as SSM parameters under LAB_PARAMETER_PREFIX
+# (Terraform writes them, so they follow the lab: gone when the lab is gone). The three
+# settings below are only a fallback for when no prefix is set, such as in tests.
+LAB_PARAMETER_PREFIX = os.environ.get("LAB_PARAMETER_PREFIX", "").rstrip("/")
+LAB_CACHE_SECONDS = 60
 INSTANCE_IDS = [i.strip() for i in os.environ.get("INSTANCE_IDS", "").split(",") if i.strip()]
 TARGET_GROUP_ARN = os.environ.get("TARGET_GROUP_ARN", "")  # the ALB health check is the "HTTP" check
-AUTO_STOP_PARAMETER = os.environ.get("AUTO_STOP_PARAMETER", "")
 SERVICE_URL = os.environ.get("SERVICE_URL", "")  # where the Access button goes
+AUTO_STOP_PARAMETER = os.environ.get("AUTO_STOP_PARAMETER", "")
 EVENT_TTL_DAYS = int(os.environ.get("EVENT_TTL_DAYS", "90"))
 
 SETUP_GRACE_MINUTES = 30  # same as the watchdog: idle rules wait this long after a start
@@ -188,6 +193,47 @@ def _granted_ids(user_id):
     return [i["instanceId"] for i in _grant_items(user_id) if i.get("status") == "applied"]
 
 
+# ---- the lab the panel manages ----------------------------------------------------------
+
+_lab_cache = {"at": 0.0, "value": None}
+
+
+def _lab():
+    """The instances, ALB target group and service address of the lab, read live.
+
+    Parameters under LAB_PARAMETER_PREFIX: instance-ids (comma separated), target-group-arn,
+    service-url. With no lab deployed they do not exist, so the panel manages nothing.
+    Cached for a minute. If they cannot be read the call fails closed."""
+    if not LAB_PARAMETER_PREFIX:
+        return {"instance_ids": INSTANCE_IDS, "target_group_arn": TARGET_GROUP_ARN, "service_url": SERVICE_URL}
+    now = time.time()
+    if _lab_cache["value"] is not None and now - _lab_cache["at"] < LAB_CACHE_SECONDS:
+        return _lab_cache["value"]
+    found, kwargs = {}, {"Path": LAB_PARAMETER_PREFIX, "Recursive": False}
+    try:
+        while True:
+            out = ssm.get_parameters_by_path(**kwargs)
+            for p in out.get("Parameters", []):
+                found[p["Name"].rsplit("/", 1)[-1]] = p["Value"]
+            if not out.get("NextToken"):
+                break
+            kwargs["NextToken"] = out["NextToken"]
+    except ClientError as err:
+        print(json.dumps({"error": "read lab parameters", "detail": str(err)}))
+        raise ApiError(503, "Could not read which instances the lab provides. Try again shortly.")
+    value = {
+        "instance_ids": [i.strip() for i in found.get("instance-ids", "").split(",") if i.strip()],
+        "target_group_arn": found.get("target-group-arn", ""),
+        "service_url": found.get("service-url", ""),
+    }
+    _lab_cache.update(at=now, value=value)
+    return value
+
+
+def _instance_ids():
+    return _lab()["instance_ids"]
+
+
 # ---- instances ------------------------------------------------------------------------
 
 _rule_cache = {"at": 0, "value": None}
@@ -226,9 +272,10 @@ def _describe(instance_ids):
     found = {i["InstanceId"]: i for r in reservations for i in r.get("Instances", [])}
     statuses = {s["InstanceId"]: s for s in statuses_raw}
     target_health = {}
-    if TARGET_GROUP_ARN:
+    target_group = _lab()["target_group_arn"]
+    if target_group:
         try:
-            for d in elbv2.describe_target_health(TargetGroupArn=TARGET_GROUP_ARN).get("TargetHealthDescriptions", []):
+            for d in elbv2.describe_target_health(TargetGroupArn=target_group).get("TargetHealthDescriptions", []):
                 target_health[d["Target"]["Id"]] = d["TargetHealth"]["State"]
         except ClientError as err:
             print(json.dumps({"warning": "target health unreadable", "detail": str(err)}))
@@ -294,7 +341,7 @@ def _view(instance_id, raw, rule):
     state = inst["State"]["Name"]
     status = raw["status"] or {}
     ec2_ok = (status.get("InstanceStatus", {}).get("Status") == "ok") and (status.get("SystemStatus", {}).get("Status") == "ok")
-    http_ok = (raw["target"] == "healthy") if TARGET_GROUP_ARN else ec2_ok
+    http_ok = (raw["target"] == "healthy") if _lab()["target_group_arn"] else ec2_ok
     if state == "pending":
         phase = "pending"
     elif state == "running":
@@ -309,7 +356,7 @@ def _view(instance_id, raw, rule):
         "name": _tag(inst, "Name") or instance_id,
         "type": inst.get("InstanceType", ""),
         "region": os.environ.get("AWS_REGION", ""),
-        "url": SERVICE_URL,
+        "url": _lab()["service_url"],
         "phase": phase,
         "message": None,
         "launchedAt": launched,
@@ -323,7 +370,7 @@ def list_instances(caller):
     if ROLE_OPERATORS not in caller["roles"]:
         return []
     granted = set(_granted_ids(caller["id"]))
-    wanted = [i for i in INSTANCE_IDS if i in granted]
+    wanted = [i for i in _instance_ids() if i in granted]
     raws = _describe(wanted)
     rule = _rule()
     return [_view(i, raws[i], rule) for i in wanted if i in raws]
@@ -331,7 +378,7 @@ def list_instances(caller):
 
 def start_instance(caller, instance_id):
     _require_role(caller, ROLE_OPERATORS)
-    if instance_id not in INSTANCE_IDS:
+    if instance_id not in _instance_ids():
         raise ApiError(404, "Instance not found.")
     if instance_id not in _granted_ids(caller["id"]):
         _log(caller["id"], "warning", f"Start refused for {instance_id}: no active grant", instance_id)
@@ -481,7 +528,7 @@ def list_logs(caller, params):
     ]
     if ROLE_OPERATORS in caller["roles"] and (source in ("all", "EC2")):
         granted = set(_granted_ids(caller["id"]))
-        ids = [i for i in INSTANCE_IDS if i in granted]
+        ids = [i for i in _instance_ids() if i in granted]
         if ids:
             raws = _describe(ids)
             names = {i: (_tag(r["instance"], "Name") or i) for i, r in raws.items()}
@@ -527,17 +574,17 @@ def list_users(caller):
 
 def list_all_instances(caller):
     _require_role(caller, ROLE_USER_MGRS)
-    raws = _describe(INSTANCE_IDS)
+    raws = _describe(_instance_ids())
     return [
         {"id": i, "name": _tag(raws[i]["instance"], "Name") or i, "type": raws[i]["instance"].get("InstanceType", "")}
-        for i in INSTANCE_IDS
+        for i in _instance_ids()
         if i in raws
     ]
 
 
 def get_grants(caller, user_id):
     _require_role(caller, ROLE_USER_MGRS)
-    return [i for i in _granted_ids(user_id.lower()) if i in INSTANCE_IDS]
+    return [i for i in _granted_ids(user_id.lower()) if i in _instance_ids()]
 
 
 def list_changes(caller):
@@ -593,13 +640,13 @@ def save_user(caller, user_id, payload):
         if not member and role in final:
             final.remove(role)
     for change in grant_changes:
-        if change.get("instanceId") not in INSTANCE_IDS:
+        if change.get("instanceId") not in _instance_ids():
             raise ApiError(404, "Instance not found.")
         if change.get("grant") and ROLE_OPERATORS not in final:
             raise ApiError(409, f"{target_name} does not have the operator role, so cannot be granted instances.")
 
     losing_operator = ROLE_OPERATORS in stored and ROLE_OPERATORS not in final
-    raws = _describe(INSTANCE_IDS) if (grant_changes or losing_operator) else {}
+    raws = _describe(_instance_ids()) if (grant_changes or losing_operator) else {}
     names = {i: (_tag(r["instance"], "Name") or i) for i, r in raws.items()}
     applied = 0
 

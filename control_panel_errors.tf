@@ -25,25 +25,27 @@ locals {
       return Response.redirect(CONTROL_PANEL_URL, 302);
     }
 
-    export default {
-      async fetch(request) {
-        try {
-          const response = await fetch(request);
+    async function handleRequest(request) {
+      try {
+        const response = await fetch(request);
 
-          if (isBrowserDocument(request) && (response.status === 400 || response.status >= 500)) {
-            return redirectToControlPanel();
-          }
-
-          return response;
-        } catch (error) {
-          if (isBrowserDocument(request)) {
-            return redirectToControlPanel();
-          }
-
-          return new Response("The lab origin is unavailable.", { status: 503 });
+        if (isBrowserDocument(request) && (response.status === 400 || response.status >= 500)) {
+          return redirectToControlPanel();
         }
-      },
-    };
+
+        return response;
+      } catch (error) {
+        if (isBrowserDocument(request)) {
+          return redirectToControlPanel();
+        }
+
+        return new Response("The lab origin is unavailable.", { status: 503 });
+      }
+    }
+
+    addEventListener("fetch", event => {
+      event.respondWith(handleRequest(event.request));
+    });
   JS
 }
 

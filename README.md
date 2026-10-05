@@ -16,6 +16,11 @@ The active lab provisions:
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
+!(.\branding\OpenWebUI_login.png)[.\branding\OpenWebUI_login.png]
+!(.\branding\OpenWebUI_chat.png)[.\branding\OpenWebUI_login.png]
+!(.\dashboards\Control_Panel-starting.png)[.\branding\Control_Panel-starting.png]
+!(.\dashboards\Control_Panel-running.png)[.\branding\Control_Panel-running.png]
+
 ## Architecture
 
 ```text

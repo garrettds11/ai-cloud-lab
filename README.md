@@ -16,10 +16,10 @@ The active lab provisions:
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
-[!(branding/OpenWebUI_login.png)[branding/OpenWebUI_login.png]](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_chat.png?raw=true)
-[!(branding/OpenWebUI_chat.png)[branding/OpenWebUI_chat.png]](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_login.png?raw=true)
-[!(dashboards/Control_Panel-starting.png)[dashboards/Control_Panel-starting.png]](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-starting.png?raw=true)
-[!(dashboards/Control_Panel-running.png)[dashboards/Control_Panel-running.png]](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-running.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_login.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_chat.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-starting.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-running.png?raw=true)
 
 ## Architecture
 

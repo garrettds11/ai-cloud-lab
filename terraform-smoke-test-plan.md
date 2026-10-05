@@ -182,7 +182,7 @@ When `control_panel_url` is set, the plan also shows the control panel changes: 
 new `aws_ssm_parameter` resources under `/<project_name>/control-panel/`, the
 `control-panel=managed` tag on the lab instance, and, if the three authorizer
 variables are set, the `terraform_data` resource that points the API's authorizer at
-the lab's pool. With `control_panel_bucket` set it also shows the `config.js` object, and with
+the lab's pool. It also shows a Cloudflare Worker script and route for the lab-hostname fallback. With `control_panel_bucket` set it also shows the `config.js` object, and with
 `control_panel_distribution_id` set the cache-clearing step. Section 5, "Control panel
 config test", has the checks after `apply`.
 
@@ -638,14 +638,13 @@ aws ec2 describe-instance-status `
 
 ### Lab unavailable page test
 
-Needs `control_panel_url` set and the Cloudflare token to have **Zone: Custom Errors Edit**
-(a 403 on `cloudflare_ruleset.lab_unavailable_page` during apply means it does not).
+Needs `control_panel_url` set and the Cloudflare token to have **Account: Workers Scripts Edit**
+and **Zone: Workers Routes Edit** (a 403 on the Worker resources during apply means it does not).
 
 1. With the instance stopped (the commands above), open the lab address in a browser, for
-   example `https://<domain_name>`, after signing in through Access. Expected: the dark
-   "The lab is not available right now" page with an **Open the control panel** button, not
-   a Cloudflare or load balancer error.
-2. Choose the button. Expected: the control panel opens. Start the lab from there.
+   example `https://<domain_name>`, after signing in through Access. Expected: a redirect
+   to `https://<control_panel_url>/`, not a Cloudflare or load balancer error.
+2. The control panel opens. Start the lab from there.
 3. When the lab is healthy again, the same address loads Open WebUI normally.
 4. Calls that are not page loads are untouched: in a shell,
    `curl.exe -s -o NUL -w "%{http_code}" https://<domain_name>/health` while the lab is

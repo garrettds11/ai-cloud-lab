@@ -1,65 +1,64 @@
-# Sends people to the control panel when the lab will not load.
+# Sends browser visitors to the control panel when the lab origin is stopped or
+# unhealthy. This uses a Cloudflare Worker instead of the Custom Error Rules
+# feature, which is not available on Cloudflare's Free plan.
 #
-# When the lab instance is stopped (or unhealthy), opening the lab's address in a browser
-# ends in a 5xx from the load balancer or Cloudflare, or occasionally a 400. This rule
-# swaps that error for a short page with a button to the control panel, where they can
-# start the lab. The page keeps the original status code.
-#
-# Only browser page loads are changed (requests that accept HTML). The lab's own background
-# calls, and ordinary 401, 403 and 404 responses, are left alone so the app keeps working.
-# The rule applies only to the lab's host name, not to the rest of the zone.
-#
-# A zone has one custom error ruleset. If you already have rules in the zone's custom error
-# phase, move them into this resource or leave control_panel_url unset.
+# The Worker is attached only to the lab hostname. It forwards the request to
+# the ALB normally. If the origin returns a 4xx/5xx response, or the fetch fails
+# because the origin is unreachable, browser document requests are redirected to
+# the control panel. Non-browser requests (API calls, assets, and websockets)
+# keep the origin response/error so the application is not masked by a redirect.
 
 locals {
   lab_unavailable_enabled = var.control_panel_url != null ? local.cloudflare_resources : {}
 
-  lab_unavailable_html = <<-HTML
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>The lab is not available</title>
-      <style>
-        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1a1d21; color: #e8ebee; font: 16px/1.5 "Segoe UI", system-ui, sans-serif; }
-        main { max-width: 440px; padding: 32px 24px; text-align: center; }
-        h1 { margin: 0 0 12px; font-size: 24px; }
-        p { margin: 0 0 24px; color: #a3adb7; }
-        a { display: inline-block; padding: 10px 20px; border-radius: 6px; background: #2f6df0; color: #fff; font-weight: 600; text-decoration: none; }
-        a:hover { background: #4a82f5; }
-      </style>
-    </head>
-    <body>
-      <main>
-        <h1>The lab is not available right now</h1>
-        <p>It may be stopped. Open the control panel to check it and start it, then come back in a few minutes.</p>
-        <a href="${var.control_panel_url}/">Open the control panel</a>
-      </main>
-    </body>
-    </html>
-  HTML
+  lab_unavailable_worker_name = lower("${var.project_name}-lab-fallback")
+
+  lab_unavailable_worker_script = <<-JS
+    const CONTROL_PANEL_URL = ${jsonencode("${var.control_panel_url}/")};
+
+    function isBrowserDocument(request) {
+      const accept = request.headers.get("Accept") || "";
+      return request.method === "GET" && accept.includes("text/html");
+    }
+
+    function redirectToControlPanel() {
+      return Response.redirect(CONTROL_PANEL_URL, 302);
+    }
+
+    export default {
+      async fetch(request) {
+        try {
+          const response = await fetch(request);
+
+          if (isBrowserDocument(request) && (response.status === 400 || response.status >= 500)) {
+            return redirectToControlPanel();
+          }
+
+          return response;
+        } catch (error) {
+          if (isBrowserDocument(request)) {
+            return redirectToControlPanel();
+          }
+
+          return new Response("The lab origin is unavailable.", { status: 503 });
+        }
+      },
+    };
+  JS
 }
 
-resource "cloudflare_ruleset" "lab_unavailable_page" {
+resource "cloudflare_workers_script" "lab_unavailable_page" {
   for_each = local.lab_unavailable_enabled
 
-  zone_id     = data.cloudflare_zones.domain[0].result[0].id
-  name        = "${var.project_name} lab unavailable page"
-  description = "Sends people to the control panel when the lab does not load. Managed by Terraform."
-  kind        = "zone"
-  phase       = "http_custom_errors"
+  account_id  = var.cloudflare_account_id
+  script_name = local.lab_unavailable_worker_name
+  content     = local.lab_unavailable_worker_script
+}
 
-  rules = [{
-    ref         = "lab_unavailable_to_control_panel"
-    description = "Lab page loads that fail with 400 or 5xx"
-    action      = "serve_error"
-    enabled     = true
-    expression  = "(http.host eq \"${var.domain_name}\" and (http.response.code eq 400 or (http.response.code ge 500 and http.response.code lt 600)) and any(http.request.headers[\"accept\"][*] contains \"text/html\"))"
-    action_parameters = {
-      content      = local.lab_unavailable_html
-      content_type = "text/html"
-    }
-  }]
+resource "cloudflare_workers_route" "lab_unavailable_page" {
+  for_each = local.lab_unavailable_enabled
+
+  zone_id = data.cloudflare_zones.domain[0].result[0].id
+  pattern = "${var.domain_name}/*"
+  script  = cloudflare_workers_script.lab_unavailable_page[each.key].script_name
 }

@@ -53,6 +53,7 @@ resource "cloudflare_workers_script" "lab_unavailable_page" {
   account_id  = var.cloudflare_account_id
   script_name = local.lab_unavailable_worker_name
   content     = local.lab_unavailable_worker_script
+  main_module = "worker.js"
 }
 
 resource "cloudflare_workers_route" "lab_unavailable_page" {

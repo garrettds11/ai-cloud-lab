@@ -63,9 +63,9 @@ resource "aws_iam_role_policy" "vuln_mcp" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "ReadFindingsTable"
-        Effect   = "Allow"
-        Action   = ["dynamodb:Query", "dynamodb:Scan"]
+        Sid    = "ReadFindingsTable"
+        Effect = "Allow"
+        Action = ["dynamodb:Query", "dynamodb:Scan"]
         Resource = [
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/${var.vuln_mcp_table_name}",
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/${var.vuln_mcp_table_name}/index/*"

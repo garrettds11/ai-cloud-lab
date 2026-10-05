@@ -52,11 +52,6 @@ Fill in the "Created" column as each piece is built.
 | Table `panel_users` | Key `email`. Roles live here. | 2026-10-04 |
 | Holding pool and authorizer | Empty Cognito pool `us-east-1_xcTOLNQJM` (no users, no app clients) and JWT authorizer `pnlj78` on the API. Every route answers 401 until the authorizer is pointed at a real provider. Terraform does that on apply (`control_panel_api.tf`); for Okta or Entra, update the authorizer's issuer and audience by hand. | 2026-10-04 |
 
-## Still to build
-
-- DNS record `cp.aiwebdemo.click`: a CNAME in Cloudflare to `d11guvgb5r6hlh.cloudfront.net`, DNS only (not proxied).
-- Upload the pages. `config.js` comes from Terraform on apply.
-
 ## Deploy the pages
 
 ```powershell

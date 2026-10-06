@@ -13,9 +13,9 @@ output "public_ip" {
   value       = aws_instance.ai_lab.public_ip
 }
 
-output "ollama_model" {
+output "llm_model" {
   description = "Model automatically installed in Ollama."
-  value       = var.ollama_model
+  value       = var.llm_model
 }
 
 output "open_webui_local_url" {

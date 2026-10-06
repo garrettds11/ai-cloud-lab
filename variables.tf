@@ -43,8 +43,19 @@ variable "root_volume_size" {
   }
 }
 
+variable "llm_provider" {
+  description = "LLM runtime/provider used to load the configured model."
+  type        = string
+  default     = "ollama"
+
+  validation {
+    condition     = contains(["ollama"], var.llm_provider)
+    error_message = "llm_provider must currently be ollama."
+  }
+}
+
 variable "llm_model" {
-  description = "Ollama model that will automatically be downloaded during bootstrap."
+  description = "SLM/LLM model that will automatically be downloaded during bootstrap."
   type        = string
   default     = "llama3.2:3b"
 }

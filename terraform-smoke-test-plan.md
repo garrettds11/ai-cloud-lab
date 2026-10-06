@@ -258,6 +258,34 @@ Wait for `READY` before opening Open WebUI. If the result is `FAILED`, inspect t
 
 The SSM shell is a Linux shell. Run Linux commands there; run PowerShell commands such as `curl.exe` from a separate Windows PowerShell window.
 
+**The project’s EC2 host runs `Ubuntu Server 24.04 LTS` (amd64)** and [main.tf](https://github.com/garrettds11/ai-cloud-lab/blob/dev/main.tf) selects its AMI through AWS’s Canonical SSM parameter:
+
+```text
+/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+```
+
+`Open WebUI` runs **inside a Docker container on that Ubuntu host**. The container has its own userspace, which can differ from Ubuntu, while sharing the host’s Linux kernel.
+
+From your SSM shell, check the host OS with:
+
+```bash
+cat /etc/os-release
+```
+
+To check the Open WebUI container’s OS:
+
+```bash
+docker ps --format '{{.Names}}'
+docker exec <container-name> cat /etc/os-release
+```
+
+Ollama runs directly on the Ubuntu host as a systemd service. The model weights are stored on the host’s disk and loaded by Ollama for inference.
+
+```bash
+systemctl status ollama
+ollama list
+```
+
 ### Origin lockdown test
 
 Skip this section unless `enable_origin_lockdown = true`. Before enabling it,
@@ -269,7 +297,7 @@ After applying with lockdown on, from a network that is not in
 
 ```powershell
 $env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
-curl.exe -k -I --max-time 10 -H "Host: aiwebdemo.click" "https://$env:alb_dns_name"
+curl.exe -k -I --max-time 6 -H "Host: aiwebdemo.click" "https://$env:alb_dns_name"
 ```
 
 The request must time out or fail to connect. It must not return a response from

@@ -30,3 +30,4 @@ dashboards/config.js
 dashboards/api/control-api.zip
 __pycache__/
 .pytest_cache/
+OLD-terraform-smoke-test-plan.md

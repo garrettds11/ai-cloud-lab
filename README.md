@@ -16,6 +16,11 @@ The active lab provisions:
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
 
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_login.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_chat.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-starting.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-running.png?raw=true)
+
 ## Architecture
 
 ```text
@@ -281,14 +286,14 @@ terraform plan `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 
 terraform apply `
   -var="aws_profile=<your-profile>" `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 ```
 
 Terraform uses `user_data_replace_on_change = true`, so bootstrap template changes replace the EC2 instance on the next apply.
@@ -451,7 +456,7 @@ terraform destroy `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 ```
 
 Do not commit `.terraform/`, `terraform.tfstate`, `terraform.tfvars`, or generated private keys.

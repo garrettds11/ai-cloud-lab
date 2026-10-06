@@ -286,7 +286,7 @@ resource "aws_instance" "ai_lab" {
   }
 
   user_data_base64 = base64gzip(replace(templatefile("${path.module}/cloud-init.sh.tpl", {
-    ollama_model                         = var.ollama_model
+    llm_model                         = var.llm_model
     open_webui_admin_email               = var.open_webui_admin_email
     open_webui_admin_name                = var.open_webui_admin_name
     open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn

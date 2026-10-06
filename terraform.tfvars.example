@@ -15,9 +15,52 @@ project_name = "aiwebdemo"
 #   Application = "Open-WebUI"
 # }
 
-instance_type    = "c7i.4xlarge"
+instance_type      = "c7i.4xlarge"
 root_volume_size = 80
-ollama_model     = "llama3.2:3b"
+
+# https://aws.amazon.com/ec2/pricing/on-demand/
+
+# GPU EC2 INSTANCES — Linux On-Demand, us-east-1
+# https\://aws.amazon.com/ec2/pricing/on-demand/
+# instance_type    = "INSTANCE"       // $COST/HR | CPU | RAM | STORAGE | NETWORK | GPU
+# instance_type      = "g6.2xlarge"
+# instance_type    = "g6.xlarge"      // $0.8048 | 4  | 16 GiB  | 1 x 250 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA L4 24 GB
+# instance_type    = "g6.2xlarge"     // $0.9776 | 8  | 32 GiB  | 1 x 450 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA L4 24 GB
+# instance_type    = "g5.xlarge"      // $1.0060 | 4  | 16 GiB  | 1 x 250 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA A10G 24 GB
+# instance_type    = "g5.2xlarge"     // $1.2120 | 8  | 32 GiB  | 1 x 450 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA A10G 24 GB
+# instance_type    = "g6.4xlarge"     // $1.3232 | 16 | 64 GiB  | 1 x 600 GB NVMe SSD | Up to 25 Gigabit | 1 x NVIDIA L4 24 GB
+# instance_type    = "g6e.xlarge"     // $1.8610 | 4  | 32 GiB  | 1 x 250 GB NVMe SSD | Up to 20 Gigabit | 1 x NVIDIA L40S 48 GB
+# instance_type    = "g7.2xlarge"     // $2.5200 | 8  | 32 GiB  | 1 x 440 GB NVMe SSD | Up to 60 Gigabit | 1 x RTX PRO 4500 32 GB
+# instance_type    = "g7.4xlarge"     // $3.0421 | 16 | 64 GiB  | 1 x 875 GB NVMe SSD | Up to 100 Gigabit | 1 x RTX PRO 4500 32 GB
+# instance_type    = "g7e.2xlarge"    // $3.3631 | 8  | 64 GiB  | 1 x 1.9 TB NVMe SSD | 50 Gigabit | 1 x RTX PRO 6000 96 GB
+# instance_type    = "p5.4xlarge"     // $6.8800 | 16 | 256 GiB | 1 x 3.84 TB NVMe SSD | 100 Gigabit EFA | 1 x NVIDIA H100 80 GB
+
+# CPU EC2 INSTANCES — Linux On-Demand, us-east-1
+# instance_type    = "INSTANCE"       // $COST/HR | CPU | RAM | STORAGE | NETWORK | ARCH
+# instance_type    = "c7i.4xlarge"    // $0.7140  | 16 | 32 GiB  | EBS Only | Up to 12.5 Gigabit | x86_64
+# instance_type    = "c9g.4xlarge"    // $0.69552 | 16 | 32 GiB  | EBS Only | Up to 17 Gigabit   | ARM64 / Graviton5
+# instance_type    = "c8g.4xlarge"    // $0.6381  | 16 | 32 GiB  | EBS Only | Up to 15 Gigabit   | ARM64 / Graviton4
+# instance_type    = "c8i.4xlarge"    // $0.7497  | 16 | 32 GiB  | EBS Only | Up to 15 Gigabit   | x86_64 / Intel
+# instance_type    = "c8a.4xlarge"    // $0.8622  | 16 | 32 GiB  | EBS Only | Up to 15 Gigabit   | x86_64 / AMD
+# instance_type    = "m9g.4xlarge"    // $0.7827  | 16 | 64 GiB  | EBS Only | Up to 17 Gigabit   | ARM64 / Graviton5
+# instance_type    = "m8i.4xlarge"    // $0.8467  | 16 | 64 GiB  | EBS Only | Up to 15 Gigabit   | x86_64 / Intel
+# instance_type    = "r9g.4xlarge"    // $1.0274  | 16 | 128 GiB | EBS Only | Up to 17 Gigabit   | ARM64 / Graviton5
+# instance_type    = "r8i.4xlarge"    // $1.1114  | 16 | 128 GiB | EBS Only | Up to 15 Gigabit   | x86_64 / Intel
+# instance_type    = "r8a.4xlarge"    // $1.2781  | 16 | 128 GiB | EBS Only | Up to 15 Gigabit   | x86_64 / AMD
+
+# SHORTLIST FOR LOAD TESTING
+# instance_type = "c8g.4xlarge"     // $0.6381/hr  | CPU — cheapest / modern ARM
+# instance_type = "c9g.4xlarge"     // $0.69552/hr | CPU — newest Graviton generation
+# instance_type = "c7i.4xlarge"     // $0.7140/hr  | CPU — x86 baseline
+# instance_type = "m9g.4xlarge"     // $0.7827/hr  | CPU — more RAM for Open WebUI + Ollama + RAG
+# instance_type = "g6.xlarge"       // $0.8048/hr  | GPU — lowest-cost modern L4 option
+# instance_type   = "g6.2xlarge"    // $0.9776/hr  | GPU — your current-style sweet spot
+# instance_type = "g6.4xlarge"      // $1.3232/hr  | GPU — more system CPU/RAM, same L4 GPU
+# instance_type = "g6e.xlarge"      // $1.8610/hr  | GPU — 48 GB VRAM step-up
+
+llm_model     = "llama3.2:3b"
+# llm_model     = "llama3.2:3b"
+# llm_model     = "llama3.2:3b"
 
 open_webui_admin_email = "admin@example.local"
 open_webui_admin_name  = "Lab Admin"

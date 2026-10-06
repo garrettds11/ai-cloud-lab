@@ -41,7 +41,7 @@ Notepad. At minimum, review:
 - `cloudflare_account_id`
 - `cloudflare_api_token_secret_arn`
 - `cloudflare_access_allowed_emails`
-- `instance_type`, `root_volume_size`, and `ollama_model` for the intended test
+- `instance_type`, `root_volume_size`, and `llm_model` for the intended test
 
 For the current demo, the shipped values are already populated. A user cloning
 the repository should replace them in this one file rather than edit Terraform

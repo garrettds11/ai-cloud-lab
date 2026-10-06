@@ -43,7 +43,7 @@ variable "root_volume_size" {
   }
 }
 
-variable "ollama_model" {
+variable "llm_model" {
   description = "Ollama model that will automatically be downloaded during bootstrap."
   type        = string
   default     = "llama3.2:3b"

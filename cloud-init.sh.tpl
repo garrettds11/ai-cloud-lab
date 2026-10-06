@@ -277,7 +277,7 @@ systemctl restart ollama
 wait_for_ollama
 
 # Pull requested model.
-HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
+HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${llm_model}"
 
 # Optional Cognito single sign-on for Open WebUI. The app client secret is read
 # from Cognito through the instance role, so it is never in user-data.
@@ -518,7 +518,7 @@ optional SSH tunnel, then open:
     http://localhost:${open_webui_host_port}
 
 Installed model:
-    ${ollama_model}
+    ${llm_model}
 
 Local demo accounts:
     demo1@example.local
@@ -537,7 +537,7 @@ To inspect Ollama models:
     ollama list
 
 To manually test the model:
-    ollama run ${ollama_model}
+    ollama run ${llm_model}
 
 Ollama and Open WebUI are intentionally reachable only through private paths.
 EOF

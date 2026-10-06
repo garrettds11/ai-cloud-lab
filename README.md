@@ -286,14 +286,14 @@ terraform plan `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 
 terraform apply `
   -var="aws_profile=<your-profile>" `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 ```
 
 Terraform uses `user_data_replace_on_change = true`, so bootstrap template changes replace the EC2 instance on the next apply.
@@ -456,7 +456,7 @@ terraform destroy `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 ```
 
 Do not commit `.terraform/`, `terraform.tfstate`, `terraform.tfvars`, or generated private keys.

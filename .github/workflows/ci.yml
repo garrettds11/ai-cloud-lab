@@ -66,12 +66,14 @@ jobs:
           PY
 
       - name: Shellcheck
-        run: shellcheck --severity=warning --exclude=SC2157,SC2050 cloud-init.rendered.sh scripts/ai-lab-idle-check.sh
+        run: shellcheck --severity=warning --exclude=SC2157,SC2050 cloud-init.rendered.sh scripts/ai-lab-idle-check.sh scripts/ai-lab-register-vuln-mcp.sh
 
-      - name: Watchdog unit tests
+      # mcp is pinned to the version bundled in the pinned Open WebUI image, so the
+      # registration tests exercise the same client library Open WebUI uses.
+      - name: Python unit tests (watchdog, MCP server, Open WebUI registration)
         run: |
-          pip install boto3
-          python -m unittest discover -s tests
+          pip install boto3 mcp==1.27.2
+          python -m unittest discover -s tests -v
 
   # Advisory for now: findings show in the log but do not fail the build.
   # Review the first clean run, fix or suppress what is real, then remove continue-on-error.

@@ -103,7 +103,7 @@ mock_provider "cloudflare" {}
 override_data {
   target = data.cloudflare_zones.domain[0]
   values = {
-    result = [{ id = "0123456789abcdef0123456789abcdef" }]
+    result = { id = "0123456789abcdef0123456789abcdef" }
   }
 }
 

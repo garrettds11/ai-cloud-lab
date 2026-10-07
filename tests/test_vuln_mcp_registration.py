@@ -461,6 +461,13 @@ class TerraformWiringTest(unittest.TestCase):
         cls.cloud_init = (ROOT / "cloud-init.sh.tpl").read_text()
         cls.script = SCRIPT.read_text()
 
+    def test_sign_in_password_goes_to_curl_on_stdin_never_into_a_file(self):
+        self.assertIn("umask 077", self.script)
+        for line in self.script.splitlines():
+            if "PW=" in line or "env.PW" in line:
+                self.assertNotRegex(line, r">\s*\"?\$tmp", "the password must not be written to a file")
+        self.assertIn("api POST /api/v1/auths/signin -", self.script)
+
     def env_file_block(self):
         return re.search(r"cat > /etc/ai-lab/vuln-mcp.env <<'EOF'\n(.*?)\nEOF", self.cloud_init, re.S).group(1)
 

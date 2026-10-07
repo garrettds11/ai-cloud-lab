@@ -1,0 +1,26 @@
+# Example remote state backend: S3 with encryption, versioning and locking.
+#
+# Terraform state for this lab holds sensitive values (for example the admin
+# password), so a remote, encrypted, versioned backend is safer than the default
+# local terraform.tfstate. See "Terraform state" in README.md for the one-time
+# bucket setup and the migration steps.
+#
+# To use it:
+#   1. Create the bucket (README has PowerShell commands).
+#   2. Copy this file to backend.tf (backend.tf is not git-ignored by default;
+#      commit it only if the bucket name is not sensitive to you).
+#   3. Replace the placeholders, then run: terraform init -migrate-state
+#
+# Do not keep this file named backend.tf.example AND a backend.tf with different
+# settings; Terraform only reads *.tf files.
+
+terraform {
+  backend "s3" {
+    bucket       = "<your-unique-state-bucket-name>"
+    key          = "ai-cloud-lab/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true # S3-native locking; needs Terraform 1.10 or newer, no DynamoDB table
+    profile      = "<your-profile>"
+  }
+}

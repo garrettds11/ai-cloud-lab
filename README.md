@@ -440,6 +440,44 @@ ollama list
 
 This lab runs Open WebUI with host networking so the Docker container can reach the localhost-bound Ollama service at `http://127.0.0.1:11434`. Do not change Ollama to `0.0.0.0` unless you also understand the exposure risk and add compensating controls.
 
+## Terraform State
+
+By default Terraform keeps state in a local `terraform.tfstate` file. That file holds sensitive values (for example the admin password), is not encrypted or locked, and is easy to lose. It is git-ignored, but for anything beyond a throwaway lab, use an encrypted, versioned S3 backend. This is optional and changes nothing about the lab itself.
+
+`backend.tf.example` has the backend block. S3-native locking (`use_lockfile`) needs Terraform 1.10 or newer; on older versions use a DynamoDB lock table instead.
+
+One-time bucket setup, in Local Windows PowerShell. The bucket name must be globally unique. Do this once, outside Terraform, so the state bucket is not destroyed with the lab:
+
+```powershell
+$Bucket  = "<your-unique-state-bucket-name>"
+$Region  = "us-east-1"
+$Profile = "<your-profile>"
+
+# In us-east-1 do not pass a location constraint; in other regions add:
+#   --create-bucket-configuration LocationConstraint=$Region
+aws s3api create-bucket --bucket $Bucket --region $Region --profile $Profile
+
+aws s3api put-public-access-block --bucket $Bucket --profile $Profile `
+  --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+aws s3api put-bucket-versioning --bucket $Bucket --profile $Profile `
+  --versioning-configuration Status=Enabled
+```
+
+S3 encrypts every new object with SSE-S3 by default, and `encrypt = true` in the backend block requests it explicitly. To use your own KMS key instead, add `kms_key_id` to the backend block.
+
+Then switch to the backend:
+
+```powershell
+Copy-Item backend.tf.example backend.tf
+# Edit backend.tf: bucket, region and profile.
+terraform init -migrate-state
+```
+
+Terraform asks to copy the existing local state to S3; answer `yes`. Afterwards, keep the old local `terraform.tfstate` somewhere safe until you have run `terraform plan` once and seen no unexpected changes, then delete it (it contains secrets). Your IAM user or role needs `s3:ListBucket` on the bucket and `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on the state key (the lock file is `<key>.tflock`).
+
+Versioning lets you recover an earlier state file if one is damaged or overwritten.
+
 ## Stop Or Destroy
 
 Stop the instance when not in use:

@@ -275,8 +275,11 @@ cat /etc/os-release
 To check the Open WebUI container’s OS:
 
 ```bash
-docker ps --format '{{.Names}}'
-docker exec <container-name> cat /etc/os-release
+sudo docker ps --format '{{.Names}}' |
+while read -r container_name; do
+    printf '\nContainer: %s\n' "$container_name"
+    sudo docker exec "$container_name" cat /etc/os-release
+done
 ```
 
 Ollama runs directly on the Ubuntu host as a systemd service. The model weights are stored on the host’s disk and loaded by Ollama for inference.
@@ -354,6 +357,8 @@ curl.exe -I https://aiwebdemo.click
 ```
 
 ### Control panel config test
+
+*Verify that the control panel is connected to the Cognito pool and API for the deployment.*
 
 Skip this section unless `enable_cognito` is `true` and `control_panel_url` is set
 in `terraform.tfvars`. Terraform creates the control panel's Cognito app client

@@ -29,3 +29,25 @@
 .inputField-customizable:focus {
   border-color: #2f6df0;
 }
+
+.label-customizable {
+  color: #f3f4f6;
+}
+
+.textDescription-customizable {
+  color: #f3f4f6;
+}
+
+.idpDescription-customizable {
+  color: #f3f4f6;
+}
+
+.legalText-customizable {
+  color: #b8c0cc;
+}
+
+.inputField-customizable {
+  color: #f3f4f6;
+  background-color: #252a31;
+  border-color: #667080;
+}

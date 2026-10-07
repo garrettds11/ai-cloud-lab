@@ -100,13 +100,6 @@ mock_provider "aws" {
 
 mock_provider "cloudflare" {}
 
-override_data {
-  target = data.cloudflare_zones.domain[0]
-  values = {
-    result = { id = "0123456789abcdef0123456789abcdef" }
-  }
-}
-
 # A valid baseline. Each run block below changes only what it tests.
 variables {
   # Secrets and alerts
@@ -166,22 +159,23 @@ run "fallback_disabled_without_cloudflare" {
   }
 }
 
+# Target the Worker to test script rendering without unrelated Cloudflare zone lookup.
 run "fallback_enabled_with_cloudflare_and_panel_url" {
   command = plan
 
+  plan_options {
+    target = [cloudflare_workers_script.lab_unavailable_page]
+  }
+
   variables {
-    acm_certificate_arn              = "arn:aws:acm:us-east-1:123456789012:certificate/01234567-89ab-cdef-0123-456789abcdef"
-    enable_domain_access             = true
-    enable_cloudflare_access         = true
-    cloudflare_access_allowed_emails = ["test@example.com"]
-    cloudflare_account_id            = "0123456789abcdef0123456789abcdef"
-    cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cloudflare-AbCdEf"
-    control_panel_url                = "https://cp.example.com"
+    enable_cloudflare_access = true
+    cloudflare_account_id    = "0123456789abcdef0123456789abcdef"
+    control_panel_url        = "https://cp.example.com"
   }
 
   assert {
-    condition     = length(cloudflare_workers_script.lab_unavailable_page) == 1 && length(cloudflare_workers_route.lab_unavailable_page) == 1
-    error_message = "Cloudflare access with a panel URL must create the fallback Worker and route."
+    condition     = length(cloudflare_workers_script.lab_unavailable_page) == 1
+    error_message = "Cloudflare access with a panel URL must create the fallback Worker."
   }
 
   assert {

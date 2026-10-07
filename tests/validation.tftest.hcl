@@ -182,6 +182,11 @@ run "fallback_enabled_with_cloudflare_and_panel_url" {
     condition     = strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "const CONTROL_PANEL_URL = \"https://cp.example.com/\";")
     error_message = "The fallback must redirect to the configured panel URL with a trailing slash."
   }
+
+  assert {
+    condition     = strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "export default {") && strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "fetch(request)")
+    error_message = "The module Worker must export a fetch handler."
+  }
 }
 
 # ---- Default network exposure ----

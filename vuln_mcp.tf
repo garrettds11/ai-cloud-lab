@@ -138,6 +138,9 @@ resource "aws_lambda_permission" "vuln_mcp_url" {
   function_name          = aws_lambda_function.vuln_mcp[each.key].function_name
   principal              = "*"
   function_url_auth_type = "NONE"
+
+  # URL creation also adds permissions; finish it before changing the policy.
+  depends_on = [aws_lambda_function_url.vuln_mcp]
 }
 
 resource "aws_lambda_permission" "vuln_mcp_invoke" {
@@ -148,4 +151,7 @@ resource "aws_lambda_permission" "vuln_mcp_invoke" {
   function_name            = aws_lambda_function.vuln_mcp[each.key].function_name
   principal                = "*"
   invoked_via_function_url = true
+
+  # Lambda rejects simultaneous resource-policy updates on the same function.
+  depends_on = [aws_lambda_permission.vuln_mcp_url]
 }

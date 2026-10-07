@@ -28,15 +28,23 @@ if [[ "$ENABLED" == true && ( -z "$URL" || -z "$TOKEN_ARN" ) ]]; then
     exit 2
 fi
 
+umask 077
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 token=""
 status=""
 
-# api METHOD PATH [BODY_FILE]: body in $tmp/out, HTTP status in $status (000 = no answer).
-# The session token reaches curl on stdin, so it is not in the process list.
+# api METHOD PATH [BODY_FILE | -]: body in $tmp/out, HTTP status in $status (000 = no answer).
+# The session token reaches curl on stdin, so it is not in the process list. "-" sends $stdin_body
+# (the sign-in request, which has no session token yet) on stdin, so the password is never in a file.
+stdin_body=""
 api() {
     local args=(-sS --max-time 60 -o "$tmp/out" -w '%{http_code}' -X "$1" -H 'Content-Type: application/json')
+    if [[ "${3:-}" == - ]]; then
+        args+=(--data-binary @-)
+        status="$(printf '%s' "$stdin_body" | curl "${args[@]}" "http://127.0.0.1:$PORT$2" 2>/dev/null)" || status=000
+        return
+    fi
     [[ -n "${3:-}" ]] && args+=(--data-binary "@$3")
     if [[ -n "$token" ]]; then
         status="$(printf 'header = "Authorization: Bearer %s"\n' "$token" | curl "${args[@]}" -K - "http://127.0.0.1:$PORT$2" 2>/dev/null)" || status=000
@@ -75,8 +83,9 @@ attempt() {
         return 3
     fi
     pw="$(secret "$ADMIN_ARN")" || { log "Could not read the admin password secret"; return 1; }
-    PW="$pw" jq -nc --arg e "$ADMIN_EMAIL" '{email: $e, password: env.PW}' >"$tmp/body"
-    api POST /api/v1/auths/signin "$tmp/body"
+    stdin_body="$(PW="$pw" jq -nc --arg e "$ADMIN_EMAIL" '{email: $e, password: env.PW}')" || return 2
+    api POST /api/v1/auths/signin -
+    stdin_body=""
     case "$status" in
         200) ;;
         403) log "Open WebUI refused password sign-in (local login is disabled). Use Admin Settings > External Tools."; return 3 ;;

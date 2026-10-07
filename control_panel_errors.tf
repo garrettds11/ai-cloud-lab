@@ -13,7 +13,8 @@ locals {
 
   lab_unavailable_worker_name = lower("${var.project_name}-lab-fallback")
 
-  lab_unavailable_worker_script = <<-JS
+  # Render only when a Worker will be created; disabled deployments may omit the URL.
+  lab_unavailable_worker_script = (length(local.lab_unavailable_enabled) > 0 ? <<-JS
     const CONTROL_PANEL_URL = ${jsonencode("${var.control_panel_url}/")};
 
     function isBrowserDocument(request) {
@@ -47,6 +48,7 @@ locals {
       event.respondWith(handleRequest(event.request));
     });
   JS
+  : null)
 }
 
 resource "cloudflare_workers_script" "lab_unavailable_page" {

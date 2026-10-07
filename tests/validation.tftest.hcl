@@ -98,7 +98,13 @@ mock_provider "aws" {
   }
 }
 
-mock_provider "cloudflare" {}
+mock_provider "cloudflare" {
+  mock_data "cloudflare_zones" {
+    defaults = {
+      result = [{ id = "0123456789abcdef0123456789abcdef" }]
+    }
+  }
+}
 
 # A valid baseline. Each run block below changes only what it tests.
 variables {
@@ -126,6 +132,7 @@ variables {
   cloudflare_account_id           = null
   cloudflare_api_token_secret_arn = null
   cloudflare_access_team_domain   = null
+  control_panel_url               = null
   cognito_domain_prefix           = null
   cognito_extra_users             = []
   root_volume_size                = 80
@@ -138,6 +145,47 @@ variables {
 
 run "baseline_plan_succeeds" {
   command = plan
+
+  assert {
+    condition     = local.lab_unavailable_worker_script == null && length(cloudflare_workers_script.lab_unavailable_page) == 0 && length(cloudflare_workers_route.lab_unavailable_page) == 0
+    error_message = "Without a control panel URL, no fallback script or route may be created."
+  }
+}
+
+run "fallback_disabled_without_cloudflare" {
+  command = plan
+
+  variables {
+    control_panel_url = "https://cp.example.com"
+  }
+
+  assert {
+    condition     = local.lab_unavailable_worker_script == null && length(cloudflare_workers_script.lab_unavailable_page) == 0
+    error_message = "A control panel URL alone must not enable the Cloudflare fallback."
+  }
+}
+
+run "fallback_enabled_with_cloudflare_and_panel_url" {
+  command = plan
+
+  variables {
+    acm_certificate_arn             = "arn:aws:acm:us-east-1:123456789012:certificate/01234567-89ab-cdef-0123-456789abcdef"
+    enable_domain_access            = true
+    enable_cloudflare_access        = true
+    cloudflare_account_id           = "0123456789abcdef0123456789abcdef"
+    cloudflare_api_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cloudflare-AbCdEf"
+    control_panel_url               = "https://cp.example.com"
+  }
+
+  assert {
+    condition     = length(cloudflare_workers_script.lab_unavailable_page) == 1 && length(cloudflare_workers_route.lab_unavailable_page) == 1
+    error_message = "Cloudflare access with a panel URL must create the fallback Worker and route."
+  }
+
+  assert {
+    condition     = strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "const CONTROL_PANEL_URL = \"https://cp.example.com/\";")
+    error_message = "The fallback must redirect to the configured panel URL with a trailing slash."
+  }
 }
 
 # ---- Default network exposure ----

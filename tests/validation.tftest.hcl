@@ -497,6 +497,34 @@ run "vuln_mcp_on_creates_function_and_url" {
   }
 }
 
+run "vuln_mcp_off_grants_no_token_secret_to_the_instance" {
+  command = plan
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.open_webui_admin_password.policy, "vuln-mcp-token")
+    error_message = "With the vulnerability MCP off, the instance role must not be able to read its token secret."
+  }
+}
+
+run "vuln_mcp_on_lets_the_instance_read_only_the_token_secret" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdEf"
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.open_webui_admin_password.policy, "secret:vuln-mcp-token-AbCdEf")
+    error_message = "With the vulnerability MCP on, the instance role must be able to read the token secret so the registration script can connect Open WebUI."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.open_webui_admin_password.policy, "dynamodb")
+    error_message = "The instance role must not gain any DynamoDB access; only the Lambda reads the table."
+  }
+}
+
 run "vuln_mcp_table_needs_a_token_secret" {
   command = plan
 

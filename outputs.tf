@@ -103,6 +103,16 @@ output "control_panel_config" {
 }
 
 output "vuln_mcp_url" {
-  description = "Function URL of the vulnerability findings MCP server when vuln_mcp_table_name is set. Add it to Open WebUI as an MCP tool server, with the token as the bearer token."
-  value       = length(local.vuln_mcp_resources) > 0 ? "${aws_lambda_function_url.vuln_mcp["vuln_mcp"].function_url}mcp" : null
+  description = "Function URL of the vulnerability findings MCP server when vuln_mcp_table_name is set. The lab instance registers it in Open WebUI at boot (with the bearer token read from Secrets Manager on the instance), so it needs no manual copying."
+  value       = local.vuln_mcp_url
+}
+
+output "vuln_mcp_function_name" {
+  description = "Name of the vulnerability findings MCP Lambda function when vuln_mcp_table_name is set. Used by the smoke test to find its CloudWatch logs."
+  value       = length(local.vuln_mcp_resources) > 0 ? aws_lambda_function.vuln_mcp["vuln_mcp"].function_name : null
+}
+
+output "vuln_mcp_log_group" {
+  description = "CloudWatch log group of the vulnerability findings MCP Lambda (one JSON tool_call line per call) when vuln_mcp_table_name is set."
+  value       = length(local.vuln_mcp_resources) > 0 ? aws_cloudwatch_log_group.vuln_mcp["vuln_mcp"].name : null
 }

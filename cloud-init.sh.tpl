@@ -277,7 +277,7 @@ systemctl restart ollama
 wait_for_ollama
 
 # Pull requested model.
-HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${ollama_model}"
+HOME=/root OLLAMA_HOST=http://127.0.0.1:11434 ollama pull "${llm_model}"
 
 # Optional Cognito single sign-on for Open WebUI. The app client secret is read
 # from Cognito through the instance role, so it is never in user-data.
@@ -303,6 +303,7 @@ if [[ "${open_webui_oidc_enabled}" == "true" ]]; then
         -e OAUTH_PROVIDER_NAME='Cognito'
         -e OAUTH_SCOPES='openid email profile'
         -e OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true
+        -e OPENID_END_SESSION_ENDPOINT='https://${cognito_domain_prefix}.auth.${aws_region}.amazoncognito.com/logout?client_id=${cognito_client_id}&logout_uri=${open_webui_url}'
     )
 fi
 
@@ -313,6 +314,23 @@ webui_banners="$(echo '${open_webui_banners_b64}' | base64 -d)"
 docker volume create "${open_webui_docker_volume}"
 docker pull "${open_webui_container_image}"
 docker rm -f "${open_webui_container_name}" 2>/dev/null || true
+
+# With Grafana telemetry on, Open WebUI exports traces and metrics over OTLP/gRPC to
+# the Alloy receiver on loopback (the container shares the host network). Container
+# logs are collected by Alloy from Docker, so OTLP log export stays off.
+otel_args=()
+if [[ "${grafana_enabled}" == "true" ]]; then
+    otel_args=(
+        -e ENABLE_OTEL=true
+        -e ENABLE_OTEL_TRACES=true
+        -e ENABLE_OTEL_METRICS=true
+        -e ENABLE_OTEL_LOGS=false
+        -e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+        -e OTEL_METRICS_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+        -e OTEL_EXPORTER_OTLP_INSECURE=true
+        -e OTEL_SERVICE_NAME=open-webui
+    )
+fi
 
 docker run -d \
     --name "${open_webui_container_name}" \
@@ -333,6 +351,7 @@ docker run -d \
     -e WEBUI_ADMIN_NAME="${open_webui_admin_name}" \
     -e WEBUI_ADMIN_PASSWORD="$open_webui_admin_password" \
     "$${oauth_args[@]}" \
+    "$${otel_args[@]}" \
     "${open_webui_container_image}"
 
 wait_for_open_webui
@@ -347,6 +366,95 @@ else
     echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
 fi
 
+# Vulnerability MCP connection in Open WebUI. The script is always installed. It adds the
+# connection when the vulnerability MCP is deployed and removes it when it is not. It reads the
+# bearer token from Secrets Manager itself, so the token is never in user-data, Terraform state or
+# logs; the settings file holds names, URLs and ARNs only. A failure is logged but never fails
+# bootstrap; run `sudo ai-lab-register-vuln-mcp` to retry.
+mkdir -p /etc/ai-lab
+cat > /etc/ai-lab/vuln-mcp.env <<'EOF'
+ENABLED='${vuln_mcp_enabled}'
+URL='${vuln_mcp_url}'
+TOKEN_ARN='${vuln_mcp_token_secret_arn}'
+ADMIN_ARN='${open_webui_admin_password_secret_arn}'
+ADMIN_EMAIL='${open_webui_admin_email}'
+LOCAL_LOGIN='${open_webui_local_login_enabled}'
+PORT='${open_webui_host_port}'
+REGION='${aws_region}'
+EOF
+cat > /usr/local/sbin/ai-lab-register-vuln-mcp <<'VULN_MCP_REGISTER_EOF'
+${vuln_mcp_register_script}
+VULN_MCP_REGISTER_EOF
+chmod 0755 /usr/local/sbin/ai-lab-register-vuln-mcp
+
+register_status=0
+/usr/local/sbin/ai-lab-register-vuln-mcp || register_status=$?
+if [[ "$register_status" -ne 0 ]]; then
+    echo "WARNING: Open WebUI vulnerability MCP registration did not finish (exit $register_status); continuing. Run 'sudo ai-lab-register-vuln-mcp' to retry. See $LOG_FILE."
+fi
+
+# Optional Grafana Cloud telemetry through Grafana Alloy. A failure here is logged but
+# never fails bootstrap, because the lab must come up even if telemetry cannot. The
+# credentials are read from Secrets Manager through the instance role, so they are
+# never in user-data or Terraform state.
+setup_grafana_telemetry() {
+    local token
+
+    install -d -m 0755 /etc/apt/keyrings
+    apt-get install -y gpg || return 1
+    curl --fail --silent --show-error --location https://apt.grafana.com/gpg.key |
+        gpg --dearmor --yes -o /etc/apt/keyrings/grafana.gpg || return 1
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
+        > /etc/apt/sources.list.d/grafana.list
+    apt-get update || return 1
+    apt-get install -y alloy || return 1
+
+    # The secret holds only the token, as plain text or a one-key key/value secret.
+    token="$(read_secret_value "$(aws secretsmanager get-secret-value \
+        --secret-id '${grafana_credentials_secret_arn}' \
+        --query SecretString \
+        --output text \
+        --region '${aws_region}')")" || return 1
+    [[ -n "$token" && "$token" != "None" ]] || return 1
+
+    install -d -m 0755 /etc/alloy
+    printf '%s' '${alloy_config_b64}' | base64 --decode | gunzip > /etc/alloy/config.alloy || return 1
+
+    # Root-only: systemd reads this file and hands the values to Alloy.
+    (umask 077 && printf 'GRAFANA_OTLP_ENDPOINT=%s\nGRAFANA_OTLP_INSTANCE_ID=%s\nGRAFANA_OTLP_TOKEN=%s\n' \
+        '${grafana_otlp_endpoint}' '${grafana_otlp_instance_id}' "$token" > /etc/alloy/grafana.env) || return 1
+
+    cat > /etc/default/alloy <<'EOF'
+CONFIG_FILE="/etc/alloy/config.alloy"
+CUSTOM_ARGS="--disable-reporting"
+RESTART_ON_UPGRADE=true
+EOF
+
+    mkdir -p /etc/systemd/system/alloy.service.d
+    cat > /etc/systemd/system/alloy.service.d/grafana.conf <<'EOF'
+[Service]
+EnvironmentFile=/etc/alloy/grafana.env
+EOF
+
+    # Docker and journal access for the log sources.
+    usermod -aG docker,systemd-journal alloy || return 1
+    systemctl daemon-reload
+    systemctl enable alloy
+    systemctl restart alloy
+    sleep 5
+    systemctl is-active --quiet alloy
+}
+
+if [[ "${grafana_enabled}" == "true" ]]; then
+    if setup_grafana_telemetry; then
+        echo "Grafana telemetry is running."
+    else
+        echo "WARNING: Grafana telemetry setup failed; continuing without it. See $LOG_FILE and journalctl -u alloy."
+    fi
+else
+    echo "Skipping Grafana telemetry (disabled)."
+fi
+
 # Idle-aware auto-stop: a systemd timer runs the idle monitor every minute. It does
 # nothing until the ready file exists, so it cannot stop the instance mid-bootstrap,
 # and it reads its on/off switch and timeout from an SSM parameter at run time.
@@ -357,7 +465,7 @@ OLLAMA_PORT=11434
 AUTO_STOP_PARAMETER=${auto_stop_parameter_name}
 EOF
 
-printf '%s' '${auto_stop_script_b64}' | base64 --decode > /usr/local/sbin/ai-lab-idle-check
+printf '%s' '${auto_stop_script_b64}' | base64 --decode | gunzip > /usr/local/sbin/ai-lab-idle-check
 chmod 0755 /usr/local/sbin/ai-lab-idle-check
 
 cat > /etc/systemd/system/ai-lab-idle-check.service <<'EOF'
@@ -413,6 +521,10 @@ echo "--- Open WebUI HTTP ---"
 curl -I http://127.0.0.1:${open_webui_host_port} || true
 
 echo
+echo "--- Vulnerability MCP connection in Open WebUI (read-only check) ---"
+sudo AI_LAB_RETRIES=1 AI_LAB_READY_ATTEMPTS=1 /usr/local/sbin/ai-lab-register-vuln-mcp --check || true
+
+echo
 echo "--- SSM Agent ---"
 systemctl is-active amazon-ssm-agent.service 2>/dev/null || \
 systemctl is-active snap.amazon-ssm-agent.amazon-ssm-agent.service 2>/dev/null || true
@@ -437,7 +549,7 @@ optional SSH tunnel, then open:
     http://localhost:${open_webui_host_port}
 
 Installed model:
-    ${ollama_model}
+    ${llm_model}
 
 Local demo accounts:
     demo1@example.local
@@ -456,7 +568,7 @@ To inspect Ollama models:
     ollama list
 
 To manually test the model:
-    ollama run ${ollama_model}
+    ollama run ${llm_model}
 
 Ollama and Open WebUI are intentionally reachable only through private paths.
 EOF

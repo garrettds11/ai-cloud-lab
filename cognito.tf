@@ -113,6 +113,31 @@ resource "aws_cognito_user" "lab" {
   }
 }
 
+# Roles for the control panel dashboard live in the panel's own DynamoDB table
+# (panel_users), not in Cognito. Cognito here only proves who a person is.
+#
+# When control_panel_users_table is set, Terraform adds one row per demo user to
+# that table so the demo works straight away: the odd demo users (the 1st, 3rd, 5th ...
+# entry of open_webui_demo_users, so demo1, demo3 ... demo9) get operators and user_mgrs,
+# the even ones (demo2, demo4 ... demo10) get operators, and the administrator account gets
+# operators and admin, so every demo account can launch an instance. The rows
+# are removed again on destroy. Terraform never touches any other row, so real users
+# are managed in the control panel. After a demo user signs in the panel adds a few
+# fields (name, last seen) to their row, and the next apply puts the row back as seeded.
+resource "aws_dynamodb_table_item" "panel_demo_user" {
+  for_each = var.control_panel_users_table == null ? {} : local.panel_demo_roles
+
+  table_name = var.control_panel_users_table
+  hash_key   = "email"
+
+  item = jsonencode({
+    email  = { S = each.key }
+    name   = { S = each.value.name }
+    roles  = { L = [for role in each.value.roles : { S = role }] }
+    source = { S = "lab" }
+  })
+}
+
 # Cloudflare Access login method backed by the Cognito user pool.
 resource "cloudflare_zero_trust_access_identity_provider" "cognito" {
   for_each = local.cognito_cloudflare_idp

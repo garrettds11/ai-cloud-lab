@@ -6,6 +6,7 @@ Files here control how the sign-in experience looks. Edit them and run
 | File | What it controls |
 |---|---|
 | `logo.png` | Logo on the Cognito sign-in page. This is the Open WebUI mark (`static/favicon.png` from https://github.com/open-webui/open-webui). Keep it under 100 KB. |
+| `logo-panel.png`, `cognito-panel.css` | The same two things for the control panel's sign-in page (`https://cp.…`). Cognito styles each app client separately, so the panel has its own pair: a neutral AI Cloud Lab logo and the panel's colors, not the Open WebUI mark. |
 | `cognito.css` | Colors and spacing on the Cognito sign-in page. Cognito accepts only a fixed set of classes and properties, and the file must stay under 3 KB. |
 
 The security and acceptable use banner is **not** in this folder. It is the

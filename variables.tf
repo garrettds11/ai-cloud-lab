@@ -43,8 +43,19 @@ variable "root_volume_size" {
   }
 }
 
-variable "ollama_model" {
-  description = "Ollama model that will automatically be downloaded during bootstrap."
+variable "llm_provider" {
+  description = "LLM runtime/provider used to load the configured model."
+  type        = string
+  default     = "ollama"
+
+  validation {
+    condition     = contains(["ollama"], var.llm_provider)
+    error_message = "llm_provider must currently be ollama."
+  }
+}
+
+variable "llm_model" {
+  description = "SLM/LLM model that will automatically be downloaded during bootstrap."
   type        = string
   default     = "llama3.2:3b"
 }
@@ -300,6 +311,17 @@ variable "cloudflare_access_team_domain" {
   }
 }
 
+variable "extra_egress_cidrs" {
+  description = "Additional destination CIDRs the instance may reach on any port, on top of the default outbound HTTPS (443) and HTTP (80). Leave empty unless the lab must reach a private service."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.extra_egress_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "extra_egress_cidrs must contain valid CIDR ranges."
+  }
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool
@@ -439,5 +461,125 @@ variable "auto_stop_alert_email" {
   validation {
     condition     = var.auto_stop_alert_email == null || can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.auto_stop_alert_email))
     error_message = "auto_stop_alert_email must be a valid email address."
+  }
+}
+
+variable "enable_grafana_telemetry" {
+  description = "Send host metrics, logs and Open WebUI traces to Grafana Cloud over OTLP/HTTP using Grafana Alloy on the instance. On by default, so grafana_otlp_endpoint, grafana_otlp_instance_id and grafana_credentials_secret_arn must be set; set this to false to run without telemetry. Needs outbound TCP 443 (already allowed). Changing it replaces the instance. Telemetry adds to Grafana Cloud data usage; see grafana-telemetry.md."
+  type        = bool
+  default     = true
+}
+
+variable "grafana_otlp_endpoint" {
+  description = "Grafana Cloud OTLP endpoint, for example https://otlp-gateway-prod-us-east-3.grafana.net/otlp (no trailing slash). Not a secret. Required when enable_grafana_telemetry is true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_otlp_endpoint == null || can(regex("^https://[^\\s/]+(/[^\\s]*[^\\s/])?$", var.grafana_otlp_endpoint))
+    error_message = "grafana_otlp_endpoint must be an https:// URL without a trailing slash."
+  }
+}
+
+variable "grafana_otlp_instance_id" {
+  description = "Grafana Cloud OTLP instance ID (a number, shown next to the OTLP endpoint). It is the sign-in name, not a secret, so it is set here; the token is in grafana_credentials_secret_arn. Required when enable_grafana_telemetry is true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_otlp_instance_id == null || can(regex("^[0-9]+$", var.grafana_otlp_instance_id))
+    error_message = "grafana_otlp_instance_id must be the numeric Grafana Cloud instance ID."
+  }
+}
+
+variable "grafana_credentials_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret that holds only the Grafana Cloud access policy token, either as plain text or as a one-key key/value secret. Required when enable_grafana_telemetry is true. The instance reads it at boot, so the token is never in Terraform state or user-data."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_credentials_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.grafana_credentials_secret_arn))
+    error_message = "grafana_credentials_secret_arn must be a valid Secrets Manager ARN."
+  }
+}
+
+variable "control_panel_url" {
+  description = "Public address of the control panel dashboard, for example https://cp.aiwebdemo.click. Terraform uses it only as the sign-in and sign-out address of the panel's Cognito app client. It does not create or change the panel's hosting or DNS, which are built by hand. Leave null to skip the panel's app client and config.js. Requires enable_cognito = true."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.control_panel_url == null || can(regex("^https://[a-z0-9.-]+$", var.control_panel_url))
+    error_message = "control_panel_url must start with https:// and contain only a host name, with no trailing slash or path."
+  }
+}
+
+variable "control_panel_api_url" {
+  description = "Address of the control panel's Control API, built by hand ahead of Terraform. Terraform copies it into the config.js it publishes to the panel's bucket. Leave null until the API exists."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_users_table" {
+  description = "Name of the control panel's DynamoDB users table (built by hand, key attribute email). When set, Terraform adds the demo users and their roles to it so the demo works straight away: every demo user as operators (may launch), plus user_mgrs (may change grants) for the odd demo users, and admin (may also change roles) for the administrator account. Leave null to add nothing. Terraform never changes any other row."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_entitlements_table" {
+  description = "Name of the control panel's DynamoDB grants table (built by hand, keys userId and instanceId). When set, Terraform grants the lab instance to every demo user who has the operators role, so the demo works straight away. Leave null to grant nothing; grants are then made in the panel. Terraform adds only these rows and removes them on destroy, and a later apply puts them back as seeded."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_api_id" {
+  description = "ID of the control panel's HTTP API in API Gateway (built by hand). Together with control_panel_authorizer_id and control_panel_holding_pool_id, it lets apply point the API's sign-in authorizer at this lab's Cognito pool, and point it back at the holding pool on destroy. Leave null to leave the authorizer alone."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_authorizer_id" {
+  description = "ID of the JWT authorizer on the control panel's API (built by hand). Terraform only updates its issuer and audience, never creates or deletes it."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_holding_pool_id" {
+  description = "ID of the empty Cognito user pool that holds the authorizer's place when no lab is deployed (no users, no app clients, so it can never issue a usable token). Terraform points the authorizer back at it on destroy."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_bucket" {
+  description = "Name of the S3 bucket that serves the control panel pages (built by hand). When set, apply writes config.js, the panel's sign-in settings, into it, and destroy removes that one object. Terraform never writes any other page. Leave null to skip publishing config.js."
+  type        = string
+  default     = null
+}
+
+variable "control_panel_distribution_id" {
+  description = "ID of the CloudFront distribution in front of the control panel's bucket (built by hand). When set together with control_panel_bucket, apply clears /config.js from its cache after each change. Leave null to skip."
+  type        = string
+  default     = null
+}
+
+variable "vuln_mcp_table_name" {
+  description = "Name of the DynamoDB table of vulnerability findings (built by hand, for example aiwebdemo-vuln-findings). When set, Terraform deploys the read-only MCP server in lambda/vuln_mcp with a Function URL, so Open WebUI can query the table. Terraform only reads the table and never creates or changes it. Leave null to deploy nothing. Requires vuln_mcp_token_secret_arn."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.vuln_mcp_table_name == null || can(regex("^[A-Za-z0-9_.-]{3,255}$", var.vuln_mcp_table_name))
+    error_message = "vuln_mcp_table_name must be a valid DynamoDB table name (3 to 255 letters, digits, underscores, hyphens or dots)."
+  }
+}
+
+variable "vuln_mcp_token_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret that holds only the bearer token callers must send to the MCP server, either as plain text or as a one-key key/value secret. Required when vuln_mcp_table_name is set. The function reads it at run time, so the token is never in Terraform state."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.vuln_mcp_token_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.vuln_mcp_token_secret_arn))
+    error_message = "vuln_mcp_token_secret_arn must be a valid Secrets Manager ARN."
   }
 }

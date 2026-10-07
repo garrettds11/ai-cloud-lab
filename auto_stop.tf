@@ -29,8 +29,8 @@ check "auto_stop_alert_email" {
 # user-data, means changing the toggle or the timeout updates in place and never
 # replaces the instance.
 resource "aws_ssm_parameter" "auto_stop" {
-  name  = local.auto_stop_parameter_name
-  type  = "String"
+  name = local.auto_stop_parameter_name
+  type = "String"
   value = jsonencode({
     enabled            = local.auto_stop_enabled
     idle_minutes       = var.auto_stop_idle_minutes

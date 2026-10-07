@@ -1,0 +1,62 @@
+# Control panel setup (built by hand, outside Terraform)
+
+The control panel at `https://cp.aiwebdemo.click` is built and kept by hand, so it does not depend on the lab being deployed. Terraform supplies only three things when the variables are set: the panel's Cognito app client, the demo users' rows in `panel_users`, and the authorizer's issuer and audience on apply and destroy. This page is the record of what exists, so nothing is a surprise later.
+
+Run every command in PowerShell, in the same window where `AWS_PROFILE` and `AWS_DEFAULT_REGION` are set. Account 394566733278, region us-east-1.
+
+## What Terraform provides (the contract)
+
+The panel depends on these Terraform-owned things when you use the lab's Cognito pool. Do not rename or replace them without updating the panel. With another sign-in provider (Okta, Entra ID, any OpenID Connect provider) the panel needs none of them.
+
+| Needed by the panel | Where it comes from |
+|---|---|
+| Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform writes `config.js` into the panel's bucket on apply and clears it from CloudFront's cache (`control_panel_site.tf`, needs `control_panel_bucket`; `control_panel_distribution_id` for the cache). For another provider: written by hand from `config.example.js` and uploaded |
+| Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set. Until then the authorizer trusts the empty holding pool and every route answers 401 |
+| Demo users and their roles in `panel_users` | `cognito.tf`, when `control_panel_users_table` is set |
+| Instance ID, ALB target group and service address | SSM parameters under `/<project_name>/control-panel/` that Terraform writes when `control_panel_url` is set (`control_panel_lab.tf`). The Lambdas read them live, so the panel follows the lab with nothing to copy. Terraform also tags the instance `control-panel=managed`, the only instances the customer role may start |
+| Auto-stop setting `/<project_name>/auto-stop` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init |
+
+Terraform needs `control_panel_url`, `control_panel_bucket` and `control_panel_distribution_id` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. Apply publishes `config.js`; there is nothing to write or upload by hand for the lab's own pool.
+
+Read other outputs through the repo's wrapper, not bare terraform:
+
+```powershell
+Invoke-TerraformWithCloudflareToken -Arguments @('output', '-raw', 'instance_id')
+```
+
+Terraform changes that break the panel: replacing the user pool (users must sign in again), replacing the instance (new instance ID), renaming the roles. Check the plan for these before every apply.
+
+## Who owns what
+
+| | Owner |
+|---|---|
+| Demo users, and their roles: `operators` for all of them, plus `user_mgrs` for the odd demo users and `admin` for `admin@example.local` | Terraform. Every apply puts them back. |
+| Real users and their roles | The control panel. Terraform never touches them. |
+| Who may start which instance (`instance_entitlements`) | The control panel, through the Control API. |
+
+## What is built by hand
+
+The panel's Cognito app client is not on this list: Terraform creates it (`control_panel.tf`).
+
+Fill in the "Created" column as each piece is built.
+
+| Piece | Notes | Created |
+|---|---|---|
+| S3 bucket for the static files | Private. Block all public access. Only CloudFront reads it. | 2026-10-04: `aiwebdemo-control-panel-394566733278` |
+| Certificate for `cp.aiwebdemo.click` | Uses the existing ACM certificate `1163bb42-f265-4702-aad2-868c677ee07a` (us-east-1), which already covers `aiwebdemo.click` and `*.aiwebdemo.click`. No new certificate or validation record is needed. | 2026-10-04 |
+| CloudFront distribution | Origin access control `E155I4E0R9TNMQ` to the bucket, alias `cp.aiwebdemo.click`, TLS 1.2 minimum, HTTPS only, headers policy `aiwebdemo-control-panel-headers` (CSP, HSTS, no framing). The bucket policy lets only this distribution read it. WAF not added. | 2026-10-04: `E2799OUDXX2ED3`, `d11guvgb5r6hlh.cloudfront.net` |
+| DNS record `cp.aiwebdemo.click` | CNAME to the CloudFront domain, in the Cloudflare zone for aiwebdemo.click. | |
+| DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | 2026-10-04 (TTL on `expiresAt` set) |
+| Control API (two Lambdas and an HTTP API) | Source in `api/`. Steps, settings and routes in `api/README.md`. Lambdas `ai-lab-control-customer` and `ai-lab-control-admin`, API `65j334bc19` (`https://65j334bc19.execute-api.us-east-1.amazonaws.com`) with all ten routes. | 2026-10-04 |
+| Roles for the API | `ai-lab-control-customer` (can start tagged instances, cannot write roles) and `ai-lab-control-admin` (cannot start). Policies in `api/README.md`. | 2026-10-04 |
+| Table `panel_users` | Key `email`. Roles live here. | 2026-10-04 |
+| Holding pool and authorizer | Empty Cognito pool `us-east-1_xcTOLNQJM` (no users, no app clients) and JWT authorizer `pnlj78` on the API. Every route answers 401 until the authorizer is pointed at a real provider. Terraform does that on apply (`control_panel_api.tf`); for Okta or Entra, update the authorizer's issuer and audience by hand. | 2026-10-04 |
+
+## Deploy the pages
+
+```powershell
+$bucket = '<bucket name>'
+aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://$bucket" --exclude "*.md" --exclude "config.example.js" --exclude "config.js" --exclude "api/*" --exclude "_deploy/*" --delete
+aws cloudfront create-invalidation --distribution-id <distribution id> --paths "/*"
+```
+

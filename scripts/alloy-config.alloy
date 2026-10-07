@@ -1,0 +1,153 @@
+// Grafana Alloy configuration for the AI lab. Installed by cloud-init at
+// /etc/alloy/config.alloy when enable_grafana_telemetry = true.
+//
+// Everything that varies, including the credentials, comes from environment
+// variables that cloud-init writes to /etc/alloy/grafana.env (root-only) after reading
+// the Grafana credentials from Secrets Manager. Nothing secret is in this file.
+
+// ---- Metrics: host health plus the state of the lab's services ----
+
+prometheus.exporter.unix "host" {
+	enable_collectors = ["systemd"]
+
+	systemd {
+		unit_include = "(ollama|docker|alloy|amazon-ssm-agent|snap.amazon-ssm-agent.amazon-ssm-agent|ai-lab-.*)\\.(service|timer)"
+	}
+}
+
+prometheus.scrape "host" {
+	targets         = prometheus.exporter.unix.host.targets
+	forward_to      = [otelcol.receiver.prometheus.default.receiver]
+	scrape_interval = "60s"
+}
+
+otelcol.receiver.prometheus "default" {
+	output {
+		metrics = [otelcol.processor.batch.default.input]
+	}
+}
+
+// ---- Traces and application metrics from Open WebUI ----
+//
+// Open WebUI exports OTLP/gRPC to this receiver. It listens on loopback only, so no
+// telemetry port is exposed to the network.
+
+otelcol.receiver.otlp "local" {
+	grpc {
+		endpoint = "127.0.0.1:4317"
+	}
+
+	output {
+		metrics = [otelcol.processor.batch.default.input]
+		traces  = [otelcol.processor.batch.default.input]
+	}
+}
+
+// ---- Logs: bootstrap, Ollama, Docker and the Open WebUI container ----
+
+local.file_match "bootstrap" {
+	path_targets = [{
+		"__path__" = "/var/log/ai-lab-bootstrap.log",
+		"job"      = "ai-lab-bootstrap",
+	}]
+}
+
+loki.source.file "bootstrap" {
+	targets    = local.file_match.bootstrap.targets
+	forward_to = [loki.process.redact.receiver]
+}
+
+loki.relabel "journal" {
+	forward_to = []
+
+	rule {
+		source_labels = ["__journal__systemd_unit"]
+		target_label  = "unit"
+	}
+}
+
+loki.source.journal "services" {
+	relabel_rules = loki.relabel.journal.rules
+	labels        = {job = "ai-lab-journal"}
+	forward_to    = [loki.process.journal_units.receiver]
+}
+
+// Keep only the lab's own services, not every unit on the host.
+loki.process "journal_units" {
+	stage.match {
+		selector = "{unit!~\"ollama.service|docker.service|alloy.service\"}"
+		action   = "drop"
+	}
+
+	forward_to = [loki.process.redact.receiver]
+}
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+}
+
+loki.source.docker "containers" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.containers.output
+	labels     = {job = "ai-lab-containers"}
+	forward_to = [loki.process.redact.receiver]
+}
+
+// Mask anything that looks like a password, token, key or JWT before it leaves the
+// instance. This is a safety net, not a guarantee; see grafana-telemetry.md.
+loki.process "redact" {
+	stage.replace {
+		expression = "(?i)(password|passwd|secret|token|authorization|api[_-]?key)([\"']?\\s*[:=]\\s*)([^\\s\"',}]+)"
+		replace    = "${1}${2}***"
+	}
+
+	stage.replace {
+		expression = "(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+"
+		replace    = "${1}***"
+	}
+
+	stage.replace {
+		expression = "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+		replace    = "***"
+	}
+
+	forward_to = [otelcol.receiver.loki.default.receiver]
+}
+
+otelcol.receiver.loki "default" {
+	output {
+		logs = [otelcol.processor.batch.default.input]
+	}
+}
+
+// ---- Export to Grafana Cloud over OTLP/HTTP (outbound TCP 443 only) ----
+
+otelcol.processor.batch "default" {
+	output {
+		metrics = [otelcol.exporter.otlphttp.grafana.input]
+		logs    = [otelcol.exporter.otlphttp.grafana.input]
+		traces  = [otelcol.exporter.otlphttp.grafana.input]
+	}
+}
+
+otelcol.auth.basic "grafana" {
+	username = sys.env("GRAFANA_OTLP_INSTANCE_ID")
+	password = sys.env("GRAFANA_OTLP_TOKEN")
+}
+
+otelcol.exporter.otlphttp "grafana" {
+	client {
+		endpoint = sys.env("GRAFANA_OTLP_ENDPOINT")
+		auth     = otelcol.auth.basic.grafana.handler
+	}
+}

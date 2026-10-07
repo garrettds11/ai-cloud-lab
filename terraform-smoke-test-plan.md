@@ -2,11 +2,12 @@
 
 This plan deploys the AI Cloud Lab, verifies bootstrap and the selected access path, then safely dismantles the test system.
 
-## 0. Open the repository directory
+## 1. Prepare for infrastructure deployment
 
 Run Terraform from the directory containing `main.tf`, `variables.tf`, and the other configuration files:
 
 ```powershell
+Set-Location C:\code\GitHub\ai-cloud-lab
 Set-Location C:\GitHub\ai-cloud-lab
 Get-ChildItem *.tf
 ```
@@ -40,7 +41,7 @@ Notepad. At minimum, review:
 - `cloudflare_account_id`
 - `cloudflare_api_token_secret_arn`
 - `cloudflare_access_allowed_emails`
-- `instance_type`, `root_volume_size`, and `ollama_model` for the intended test
+- `instance_type`, `root_volume_size`, and `llm_model` for the intended test
 
 For the current demo, the shipped values are already populated. A user cloning
 the repository should replace them in this one file rather than edit Terraform
@@ -58,7 +59,7 @@ Replace the deployment-specific values in that file when cloning the project.
 The example contains identifiers and ARNs, not secret values. Do not add the
 Cloudflare token or Open WebUI passwords to the file.
 
-## 1. Set the test variables
+### Set the test variables
 
 Set only the runtime and credential-selection values in the environment. Change
 the `AWS_PROFILE` value below to the profile you intend to use, then leave it
@@ -80,42 +81,6 @@ After setting the profile and region above, copy this block unchanged:
 $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 ```
-
-The Secrets Manager secret must already exist and contain the desired admin
-password. The value may be plain text or a one-key key/value secret; bootstrap
-extracts the single string value from either format. Terraform only grants the
-instance role read access and retrieves the password during bootstrap. Terraform
-does not create, update, or destroy this secret. To rotate an existing lab,
-change the password in Open WebUI first, then update the matching value in the
-AWS console.
-
-Retrieve the two initial passwords from Secrets Manager when you need them for
-login verification. These commands print the values to the current terminal;
-do not paste the output into tickets, source files, or logs:
-
-```powershell
-$adminPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
-$demoPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
-
-aws secretsmanager get-secret-value `
-  --secret-id $adminPasswordSecretArn `
-  --query SecretString `
-  --output text `
-  --region $env:AWS_DEFAULT_REGION `
-  --profile $env:AWS_PROFILE
-
-aws secretsmanager get-secret-value `
-  --secret-id $demoPasswordSecretArn `
-  --query SecretString `
-  --output text `
-  --region $env:AWS_DEFAULT_REGION `
-  --profile $env:AWS_PROFILE
-```
-
-The first value is used for `admin@example.local`, both its local Open WebUI
-account and its Cognito user; the second is the password shared by the demo
-users. With `enable_cognito = false`, each demo user should change it from
-Profile after first login.
 
 ### Set Cloudflare tokens if provider is in use.
 
@@ -192,16 +157,16 @@ sends no Cloudflare credentials and fails with
 into the same PowerShell window that runs the later steps; it does not persist
 into a new window.
 
-The complete command sequence is in **2. Validate and preview** and **3.
-Deploy** below. Do not run a separate unsaved `plan` or `apply` here.
+The complete command sequence is in **Section 2** below. Do not run a separate unsaved `plan` or `apply` here.
 
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
 The current demo values are in `terraform.tfvars`; replace them there when
 using another account, domain, zone, certificate, or Cloudflare account.
 
-## 2. Validate and preview
+## 2. Terraform
 
+### Validate and preview
 ```powershell
 Invoke-TerraformWithCloudflareToken -Arguments @("init")
 Invoke-TerraformWithCloudflareToken -Arguments @("fmt", "-recursive")
@@ -214,62 +179,21 @@ local `terraform.tfvars`, so the later steps do not fail on formatting. It
 changes no values. Use `fmt -check -recursive` only in CI, where the files must
 not be modified.
 
-## 3. Deploy
+When `control_panel_url` is set, the plan also shows the control panel changes: three
+new `aws_ssm_parameter` resources under `/<project_name>/control-panel/`, the
+`control-panel=managed` tag on the lab instance, and, if the three authorizer
+variables are set, the `terraform_data` resource that points the API's authorizer at
+the lab's pool. It also shows a Cloudflare Worker script and route for the lab-hostname fallback. With `control_panel_bucket` set it also shows the `config.js` object, and with
+`control_panel_distribution_id` set the cache-clearing step. Section "Control panel
+config test", has the checks after `apply`.
+
+### Deploy
 
 ```powershell
 Invoke-TerraformWithCloudflareToken -Arguments @("apply", "ai-lab.tfplan")
 ```
 
 Apply completes when EC2 is running, not necessarily when Ollama, the model, and Open WebUI are ready.
-
-### Auto-stop test
-
-Auto-stop has two independent settings in `terraform.tfvars`, each off when set to `0`:
-`auto_stop_idle_minutes` stops the instance after that many minutes with no active
-Open WebUI user and no reply being generated, so test it with and without activity.
-`auto_stop_max_uptime_minutes` is a hard time limit that stops the instance that many
-minutes after it boots even when people are active (the example uses 90 for a demo,
-with the idle timeout at `0`). Changing these settings updates in place; it does not
-replace the instance.
-
-1. After first-boot setup finishes and Open WebUI is ready, confirm the monitor
-   sees the lab. In the SSM shell:
-
-```bash
-sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check
-```
-
-It prints `active_users`, `busy_connections` and `idle_minutes`. Signed in and
-chatting must show `active_users` of 1 or more; with nobody active it must show
-`active_users=0`.
-
-2. Set `auto_stop_idle_minutes = 5` in `terraform.tfvars`, then plan and apply
-   (only the SSM parameter and the watchdog change).
-3. Keep a signed-in browser tab sending messages for more than 5 minutes. The
-   instance must stay running.
-4. Stop using Open WebUI and close the tab. After about 5 to 8 minutes, confirm
-   the instance stopped:
-
-```powershell
-aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[0].Instances[0].State.Name" --output text
-```
-
-It must return `stopping` or `stopped`. To bring it back, run
-`aws ec2 start-instances --instance-ids $env:instance_id`; it gets a full idle
-window before it stops again. Set the demo value (90) again when you finish
-testing. Click the SNS confirmation link in the `auto_stop_alert_email` inbox so
-alerts are delivered.
-
-5. To test the hard time limit, set `auto_stop_idle_minutes = 0` and
-   `auto_stop_max_uptime_minutes = 20`, apply, and start the instance fresh (stop and
-   start it, since the limit counts from boot). Keep a signed-in tab sending messages.
-   About 10 minutes after boot you must receive the "will stop in about 10 minutes"
-   email, and at 20 minutes the instance must stop even though you are active. For the
-   demo value, use `auto_stop_max_uptime_minutes = 90` (the warning comes 30 minutes
-   before it).
-6. To test the off switch, set both `auto_stop_idle_minutes = 0` and
-   `auto_stop_max_uptime_minutes = 0` and apply. The watchdog, SNS topic and
-   EventBridge rule are removed, and nothing stops the instance.
 
 The plan file can contain sensitive values. Do not commit it. After the apply
 completes, remove the local plan file:
@@ -278,7 +202,34 @@ completes, remove the local plan file:
 Remove-Item ai-lab.tfplan
 ```
 
-## 4. Status Check the Open WebUI Server
+## 3. Access and testing system
+
+### Status check path to server
+
+Check ALB target health from PowerShell:
+
+```powershell
+$env:alb_target_group_arn = terraform output -raw open_webui_target_group_arn
+aws elbv2 describe-target-health `
+  --target-group-arn $env:alb_target_group_arn
+```
+
+The EC2 target should report `healthy`. 
+
+### Verify reachability
+
+Choose exactly one access path based on `TF_VAR_enable_domain_access`.
+
+### Domain-access test
+
+When `TF_VAR_enable_domain_access` is `true`, do not start an *SSM port-forwarding*
+session. The SSM shell in this section is still used for readiness and troubleshooting;
+the ALB is the public entry point for browser access.
+
+- URL loads Open WebUI: https://aiwebdemo.click
+
+> If `enable_cloudflare_access = false` this check returns a `500` internal error,
+> otherwise it should show a branded Cognito login page.
 
 After apply, capture the instance ID in an environment variable to set the SSM target and open a shell:
 
@@ -307,45 +258,36 @@ Wait for `READY` before opening Open WebUI. If the result is `FAILED`, inspect t
 
 The SSM shell is a Linux shell. Run Linux commands there; run PowerShell commands such as `curl.exe` from a separate Windows PowerShell window.
 
-## 5. Open Open WebUI
+**The project’s EC2 host runs `Ubuntu Server 24.04 LTS` (amd64)** and [main.tf](https://github.com/garrettds11/ai-cloud-lab/blob/dev/main.tf) selects its AMI through AWS’s Canonical SSM parameter:
 
-Choose exactly one access path based on `TF_VAR_enable_domain_access`.
-
-### Domain-access test
-
-When `TF_VAR_enable_domain_access` is `true`, do not start an SSM port-forwarding
-session. The SSM shell in section 4 is still used for readiness and troubleshooting;
-the ALB is the public entry point for browser access.
-
-Check ALB target health from PowerShell:
-
-```powershell
-$env:alb_target_group_arn = terraform output -raw open_webui_target_group_arn
-aws elbv2 describe-target-health `
-  --target-group-arn $env:alb_target_group_arn
+```text
+/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
 ```
 
-The EC2 target should report `healthy`. 
+`Open WebUI` runs **inside a Docker container on that Ubuntu host**. The container has its own userspace, which can differ from Ubuntu, while sharing the host’s Linux kernel.
 
-### Verify
+From your SSM shell, check the host OS with:
 
-- URL loads Open WebUI: https://aiwebdemo.click
-
-> If `enable_cloudflare_access = false` this check returns a `500` internal error,
-> otherwise it should show a branded Cognito login page.
-
-- The ALB has no public port 80 (the default). Plain *http://* is not a supported
-  application URL; with Cloudflare, **Always Use HTTPS** sends visitors who type
-  *http://* to HTTPS at the edge before they reach AWS.
-
-To confirm the ALB itself no longer listens on port 80, run:
-
-```powershell
-$env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
-curl.exe -I --max-time 5 "http://$env:alb_dns_name"
+```bash
+cat /etc/os-release
 ```
 
-The request ==must time out or fail== to connect, not return a redirect.
+To check the Open WebUI container’s OS:
+
+```bash
+sudo docker ps --format '{{.Names}}' |
+while read -r container_name; do
+    printf '\nContainer: %s\n' "$container_name"
+    sudo docker exec "$container_name" cat /etc/os-release
+done
+```
+
+Ollama runs directly on the Ubuntu host as a systemd service. The model weights are stored on the host’s disk and loaded by Ollama for inference.
+
+```bash
+systemctl status ollama
+ollama list
+```
 
 ### Origin lockdown test
 
@@ -358,7 +300,7 @@ After applying with lockdown on, from a network that is not in
 
 ```powershell
 $env:alb_dns_name = terraform output -raw open_webui_alb_dns_name
-curl.exe -k -I --max-time 10 -H "Host: aiwebdemo.click" "https://$env:alb_dns_name"
+curl.exe -k -I --max-time 6 -H "Host: aiwebdemo.click" "https://$env:alb_dns_name"
 ```
 
 The request must time out or fail to connect. It must not return a response from
@@ -414,16 +356,200 @@ Open WebUI page.
 curl.exe -I https://aiwebdemo.click
 ```
 
+### Control panel config test
+
+*Verify that the control panel is connected to the Cognito pool and API for the deployment.*
+
+Skip this section unless `enable_cognito` is `true` and `control_panel_url` is set
+in `terraform.tfvars`. Terraform creates the control panel's Cognito app client
+and publishes the panel's `config.js` into its bucket during `apply`, then clears
+that file from CloudFront's cache. This needs `control_panel_bucket`, and
+`control_panel_distribution_id` for the cache. There is nothing to write or upload
+by hand.
+
+The checks below need values that live in `terraform.tfvars`. Read them into
+variables first, from the repository directory, in the same PowerShell window as
+`AWS_PROFILE`:
+
+```powershell
+function Get-TfVar([string]$Name) {
+  $m = Select-String -Path .\terraform.tfvars -Pattern ('^\s*' + $Name + '\s*=\s*"([^"]+)"') | Select-Object -First 1
+  if (-not $m) { throw "$Name is not set in terraform.tfvars" }
+  $m.Matches.Groups[1].Value
+}
+$projectName       = Get-TfVar project_name
+$domainName        = Get-TfVar domain_name
+$panelApiId        = Get-TfVar control_panel_api_id
+$panelAuthorizerId = Get-TfVar control_panel_authorizer_id
+$panelBucket       = Get-TfVar control_panel_bucket
+```
+
+Check:
+
+1. `aws s3 cp "s3://$panelBucket/config.js" -` prints a
+   file that starts with `// Written by Terraform` and holds the region, the user
+   pool ID, an app client ID, the API address and the `redirectUri`
+   `https://cp.aiwebdemo.click/`. A `null` for `apiUrl` means `control_panel_api_url`
+   is not set in `terraform.tfvars`.
+2. Open `https://cp.aiwebdemo.click`. The page must show a sign-in button, not a
+   message about a missing `clientId` or a missing settings file. If it shows an old
+   message, the cache clearing did not run: check the `apply` output for the
+   `terraform_data.control_panel_config_cache` step.
+3. In the Cognito console, the user pool has a second app client named
+   `<project_name>-control-panel` with no client secret.
+4. If `control_panel_users_table` is set, the DynamoDB table it names has a row for
+   each of the 11 demo accounts: `demo1@example.local`, `demo3@example.local` and the
+   other odd demo users with `operators` and `user_mgrs` in `roles`;
+   `demo2@example.local` and the other even demo users with `operators`;
+   `admin@example.local` with `operators` and `admin`. Only an administrator can change
+   roles, and any administrator can make another.
+   If `control_panel_entitlements_table` is also set, the table it names has one row per
+   demo user (all 11, because all have `operators`) for the lab instance, with
+   `status` `applied` and `grantedBy` `terraform`. Signed in as `demo1@example.local`
+   (or any demo user), the Instances page lists the lab instance. Signed in as an
+   administrator, it lists every managed instance with or without a grant.
+
+5. If `control_panel_api_id`, `control_panel_authorizer_id` and
+   `control_panel_holding_pool_id` are set, `apply` pointed the control panel API's authorizer at
+   this lab's pool. Check:
+
+   ```powershell
+   aws apigatewayv2 get-authorizer --api-id $panelApiId --authorizer-id $panelAuthorizerId --query JwtConfiguration
+   ```
+
+   The issuer must end with the lab's `cognito_user_pool_id` and the audience must be the
+   control panel app client ID. After `destroy`, the same command must show the holding
+   pool's issuer and the audience `holding-unused`.
+
+6. The lab publishes its wiring for the panel. With `control_panel_url` set, `apply`
+   creates three SSM parameters and tags the lab instance `control-panel=managed`.
+   Check:
+
+   ```powershell
+   aws ssm get-parameters-by-path --path "/$projectName/control-panel" --query "Parameters[].[Name,Value]" --output table
+   aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[].Instances[].Tags[?Key=='control-panel']"
+   ```
+
+   The parameters are `instance-ids` (the lab instance ID), `target-group-arn` and
+   `service-url` (`https://$domainName`). `target-group-arn` and `service-url` exist
+   only when `enable_domain_access` is also `true`. The tag value is `managed`.
+
+7. Sign in at https://cp.aiwebdemo.click as a user in the lab's Cognito pool. The
+   panel must list the lab instance with no setting copied into the Lambda functions.
+   Only a sign-in whose email is in `BOOTSTRAP_ADMINS` (`garrettds11@gmail.com`) can
+   open the admin screens; other users get only the customer view.
+
+   After `destroy`, the parameters are gone and the panel lists no instances. The
+   `config.js` object is deleted too, so the page reports that it has no settings file.
+
+8. If the instance is shutdown and you need to restart it or check its status, use these commands:
+
+```powershell
+aws ec2 stop-instances `
+  --instance-ids $env:instance_id
+```
+
+```powershell
+aws ec2 describe-instance-status `
+  --instance-ids $env:instance_id
+```
+
+### Lab unavailable page test
+
+Needs `control_panel_url` set and the Cloudflare token to have **Account: Workers Scripts Edit**
+and **Zone: Workers Routes Edit** (a 403 on the Worker resources during apply means it does not).
+
+1. With the instance stopped (the commands above), open the lab address in a browser, for
+   example `https://<domain_name>`, after signing in through Access. Expected: a redirect
+   to `https://<control_panel_url>/`, not a Cloudflare or load balancer error.
+2. The control panel opens. Start the lab from there.
+3. When the lab is healthy again, the same address loads Open WebUI normally.
+4. Calls that are not page loads are untouched: in a shell,
+   `curl.exe -s -o NUL -w "%{http_code}" https://<domain_name>/health` while the lab is
+   stopped should still return a plain error code (no HTML), because curl does not ask for
+   HTML.
+
+### Login with the admin and demo accounts
+
+Initial login credentials are as follows unless you changed `open_webui_admin_email`:
+
+```
+admin@example.local
+``` 
+
+- Password is set in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
+- Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
+
+The demo users are numbered 1 through 10, like:
+
+```
+demo1@example.local
+``` 
+
+They all use the value stored in the Secrets Manager secret identified by
+`open_webui_demo_user_password_secret_arn`.
+
+The Secrets Manager secret must already exist and contain the desired admin
+password. The value may be plain text or a one-key key/value secret; bootstrap
+extracts the single string value from either format. Terraform only grants the
+instance role read access and retrieves the password during bootstrap. Terraform
+does not create, update, or destroy this secret. To rotate an existing lab,
+change the password in Open WebUI first, then update the matching value in the
+AWS console.
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File ".\scripts\set-cognito-passwords.ps1"
+```
+
+Retrieve the two initial passwords from Secrets Manager when you need them for
+login verification. These commands print the values to the current terminal;
+do not paste the output into tickets, source files, or logs:
+
+```powershell
+$adminPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:openwebui-admin-pass-DuXz9K"
+$demoPasswordSecretArn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:open_webui_demo_user_password-2eFYcl"
+
+aws secretsmanager get-secret-value `
+  --secret-id $adminPasswordSecretArn `
+  --query SecretString `
+  --output text `
+  --region $env:AWS_DEFAULT_REGION `
+  --profile $env:AWS_PROFILE
+
+aws secretsmanager get-secret-value `
+  --secret-id $demoPasswordSecretArn `
+  --query SecretString `
+  --output text `
+  --region $env:AWS_DEFAULT_REGION `
+  --profile $env:AWS_PROFILE
+```
+
+The first value is used for `admin@example.local`, both its local Open WebUI
+account and its Cognito user; the second is the password shared by the demo
+users. With `enable_cognito = false`, each demo user should change it from
+Profile after first login.
+
+Where they sign in depends on `enable_cognito`:
+
+- **`true` (default):** the admin is a local Open WebUI account and a Cognito
+  user. The demo users are Cognito users only, with no local account. Sign in
+  with **Continue with Cognito**; run `.\scripts\set-cognito-passwords.ps1` after
+  `apply` first (see "Cognito sign-in test").
+- **`false`:** the demo users are local Open WebUI accounts that sign in with
+  the password form. Have each user open Profile and change that temporary
+  password before using the account.
+
+To turn local password sign-in off, set `open_webui_enable_local_login = false`
+(see "Where each account lives" in the README).
+
+==*Change the temporary password immediately*== after confirming access.
+
 ### Cognito sign-in test
 
 Skip this section unless `enable_cognito` is `true` in `terraform.tfvars`.
 Terraform creates the Cognito users without passwords. After `apply` completes,
 set them from the same PowerShell window, with `AWS_PROFILE` and
 `AWS_DEFAULT_REGION` already set:
-
-```powershell
-.\scripts\set-cognito-passwords.ps1
-```
 
 Then, in a private window:
 
@@ -435,7 +561,10 @@ Then, in a private window:
    must sign you in without asking for a password. The demo user has no local
    account, so Open WebUI creates it now with the `open_webui_default_user_role`
    role (default `user`, so there is no activation wait).
-4. Sign out, then repeat with `admin@example.local` and the administrator
+4. Sign out of Open WebUI. You must land on the Cognito sign-in page (or the
+   site's sign-in), never on a Cognito "Client does not exist" error, and
+   opening https://aiwebdemo.click again must ask for credentials. Then repeat
+   with `admin@example.local` and the administrator
    password. Open WebUI must open the existing local admin account, and **Admin
    Panel** must be available.
 5. Sign in as a user who is not in the Cognito pool. Access must deny it.
@@ -472,42 +601,128 @@ aws ssm start-session `
 
 Then open http://localhost:8081.
 
-### Login with the admin and demo accounts
+### Outbound restriction test
 
-Initial login credentials are as follows unless you changed `open_webui_admin_email`:
+The instance may make outbound connections only on TCP 443 and 80. In an SSM shell
+on the instance (`aws ssm start-session --target $env:instance_id`):
 
+```powershell
+$env:instance_id = terraform output -raw instance_id
+aws ssm start-session --target $env:instance_id
 ```
-admin@example.local
-``` 
 
-- Password is set in the pre-created Secrets Manager secret identified by the `open_webui_admin_password_secret_arn` output.
-- Display name: `Lab Admin` unless you changed `open_webui_admin_name`.
-
-The demo users are numbered 1 through 10, like:
-
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 https://ollama.com
+curl -sS --max-time 8 http://portquiz.net:8080 || echo "blocked"
 ```
-demo1@example.local
-``` 
 
-They all use the value stored in the Secrets Manager secret identified by
-`open_webui_demo_user_password_secret_arn`.
+The first command must print an HTTP status. The second must time out and print
+`blocked`. If bootstrap itself failed on a download, check the bootstrap log for the
+host it could not reach and add that destination to `extra_egress_cidrs`.
 
-Where they sign in depends on `enable_cognito`:
+### Edge protections test
 
-- **`true` (default):** the admin is a local Open WebUI account and a Cognito
-  user. The demo users are Cognito users only, with no local account. Sign in
-  with **Continue with Cognito**; run `.\scripts\set-cognito-passwords.ps1` after
-  `apply` first (see "Cognito sign-in test").
-- **`false`:** the demo users are local Open WebUI accounts that sign in with
-  the password form. Have each user open Profile and change that temporary
-  password before using the account.
+1. **Bot Fight Mode:** with it on, sign in through Cloudflare Access, send a chat message, and confirm the reply streams in. If any step fails, turn Bot Fight Mode off and re-test.
+2. **DNSSEC:** run these in PowerShell. Google's resolver validates DNSSEC, so a bad key shows up as a failure.
 
-To turn local password sign-in off, set `open_webui_enable_local_login = false`
-(see "Where each account lives" in the README).
+```powershell
+Clear-DnsClientCache
+Resolve-DnsName <domain> -Type DS -Server 8.8.8.8
+Resolve-DnsName <domain> -Type A -Server 8.8.8.8
+```
 
-==*Change the temporary password immediately*== after confirming access.
+The DS record's key tag must equal the one in the Route 53 DNSSEC keys table, and the A lookup must not return `DNS server failure`. In a browser, `https://dns.google/resolve?name=<domain>&type=A` should show `"AD": true`.
 
-## 6. Stop or Destroy the Test System
+### Grafana telemetry test
+
+Telemetry is on by default; skip this if `enable_grafana_telemetry = false`. In an SSM shell on the instance:
+
+```bash
+sudo systemctl status alloy --no-pager
+sudo journalctl -u alloy -n 50 --no-pager
+```
+
+Alloy must be `active (running)` and the log must not repeat authentication or connection errors (a `401` means the instance ID or token in the secret is wrong). If the bootstrap log printed `WARNING: Grafana telemetry setup failed`, run `grep -i -B5 WARNING /var/log/ai-lab-bootstrap.log`.
+
+Then in Grafana Cloud, open **Explore** and check, after a few minutes:
+
+- Metrics: query `node_load1` and `node_systemd_unit_state{name="ollama.service"}`. Both should return recent values.
+- Traces: after you have used Open WebUI for a minute (sign in, send a chat message), open Explore with the Tempo traces data source and search for service `open-webui`. If nothing appears, check `sudo docker logs open-webui 2>&1 | grep -i otel`.
+- Logs: pick the Loki logs data source and look for recent entries from the lab, such as the bootstrap log lines or Open WebUI container output. Label names in Grafana can differ from the ones in the Alloy config, so browse the available labels.
+
+Confirm no secret appears in a log line, and that the instance still needs no inbound rule for this (`aws ec2 describe-security-groups` shows only the inbound rules you chose).
+
+### Vulnerability MCP server test
+
+Skip this if `vuln_mcp_table_name` is not set. The findings table (`aiwebdemo-vuln-findings`, created by `create_vuln_table.py` in the `sec-data` repository) and the token secret are built by hand, so do the first step before this section.
+
+Before section 2, create the token secret and put its ARN in `vuln_mcp_token_secret_arn` (in `terraform.tfvars.example` first, then `terraform.tfvars`):
+
+```powershell
+$bytes = New-Object byte[] 32
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
+$token = [Convert]::ToBase64String($bytes)
+aws secretsmanager create-secret --name vuln-mcp-token-aiwebdemo --secret-string $token --region us-east-1 --query ARN --output text
+```
+
+After apply, call the function with the token (the `$token` variable above, if it is still set in this window) and without it:
+
+```powershell
+$url = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")   # local Windows PowerShell
+$body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $body | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $body
+```
+
+The first call must list six tools. The second must fail with `401`. Then check that a tool reads the table:
+
+```powershell
+$call = '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"summarize_findings","arguments":{"group_by":"severity","status":"open"}}}'
+Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $call | ConvertTo-Json -Depth 10
+```
+
+With the standard test data this shows 9 open Critical findings. If a call returns an error, read the function's CloudWatch log group, whose name the `vuln_mcp_log_group` output gives:
+
+```powershell
+$logGroup = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_log_group")
+aws logs tail $logGroup --since 15m
+```
+
+Each tool call is one JSON `tool_call` line (tool, arguments, `ok`, size, time). No token or finding data is logged.
+
+#### Automatic Open WebUI registration
+
+The lab instance connects Open WebUI to the server by itself at the end of bootstrap; there is no endpoint or token to copy. The connection is added when `vuln_mcp_table_name` is set and removed when it is not. It needs `open_webui_enable_local_login = true` (Terraform warns otherwise). Because this changes the instance's cloud-init, the apply that introduces it, and later turning the feature on or off, replaces the instance.
+
+Linux (SSM shell on the lab instance; open it with `aws ssm start-session --target $env:instance_id` from PowerShell, as in section 2):
+
+```bash
+grep -F '[register-vuln-mcp]' /var/log/ai-lab-bootstrap.log
+sudo ai-lab-register-vuln-mcp --check
+sudo ai-lab-register-vuln-mcp
+sudo ai-lab-register-vuln-mcp
+```
+
+Expected, with the feature on:
+
+- The bootstrap log shows `Open WebUI connected to the MCP server and listed 6 tools: find_hosts_by_vulnerability, get_data_dictionary, get_finding, get_host_findings, list_findings, summarize_findings` and `Connection registered.`
+- `--check` ends with `Check only. Connection is already correct (feature true).`
+- Each of the two plain runs ends with `Connection already correct; nothing to change.` (repeating adds no second connection).
+- The log and the output contain no token or password.
+
+Open WebUI (browser, signed in as the admin): **Admin Settings > External Tools** shows exactly one **Vulnerability Findings** connection (MCP, enabled), and its verify button succeeds.
+
+With the feature off (`vuln_mcp_table_name = null`): `--check` ends with `Connection is already correct (feature false)` and **External Tools** has no Vulnerability Findings entry.
+
+If the bootstrap log has `WARNING: Open WebUI vulnerability MCP registration did not finish`, read the lines above it and use the troubleshooting table in `lambda/vuln_mcp/README.md`, then run `sudo ai-lab-register-vuln-mcp` again. Exit code 3 means local login is off and the connection must be added by hand (also in that README).
+
+#### Model-driven acceptance tests
+
+Whether a model actually calls the tools is tested by hand in [docs/vuln-mcp-acceptance-tests.md](docs/vuln-mcp-acceptance-tests.md). They use a separate table loaded from the repository's test fixture so the answers are exact, and they require proof that the tool ran (chat tool-call entry plus a CloudWatch `tool_call` line), not just a plausible answer. All of them are pending manual execution.
+
+## 4. Stop or destroy the test system
 
 If you may test again later, stop the instance to avoid ongoing compute charges:
 

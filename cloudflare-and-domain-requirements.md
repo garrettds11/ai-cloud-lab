@@ -56,6 +56,9 @@ The Cloudflare encryption mode is a Cloudflare dashboard setting. Terraform does
 | EC2 | Runs Open WebUI and Ollama | Yes | `aws_instance.ai_lab` |
 | AWS Secrets Manager | Stores the Open WebUI administrator and demo-user passwords and the Cloudflare API token | Yes for the current secure bootstrap flow | Secret ARNs in variables; secrets are pre-created outside Terraform |
 | Amazon Cognito (optional) | User directory and hosted sign-in page for Cloudflare Access and Open WebUI | Only when `enable_cognito = true` | `cognito.tf`, `cloudflare_zero_trust_access_identity_provider` |
+| Control panel hosting (optional) | S3 bucket, CloudFront distribution and the `cp` DNS record that serve the panel's pages | Only for the control panel | Built by hand; see `dashboards/SETUP.md` |
+| Control panel API (optional) | API Gateway, two Lambdas, DynamoDB tables and IAM roles behind the panel | Only for the control panel | Built by hand; Terraform adds only the demo rows and the authorizer update (`cognito.tf`, `control_panel_api.tf`) |
+| Control panel sign-in (optional) | Signs people in to the panel through any OpenID Connect provider (Cognito, Okta, Entra ID) | Only for the control panel | Terraform creates the panel's app client in the lab's Cognito pool (`control_panel.tf`) |
 | Auto-stop (on by default) | Stops the instance when nobody is using it and emails alerts through SNS | No; independent of domain access | `auto_stop.tf` (SSM parameter, Lambda watchdog, EventBridge rule, SNS topic) |
 
 ## What an administrator must provide
@@ -79,6 +82,8 @@ Terraform does not create, rotate, update, or destroy any of the secrets. Create
 - The **PowerShell Terraform wrapper** reads the Cloudflare token secret and exposes it only for the run.
 
 The identity that runs Terraform needs permission to create the EC2, IAM, security group, load balancer, SSM parameter, Lambda, SNS and EventBridge resources (and the Cognito resources when enabled), to read the ACM certificate, and to read the secrets.
+
+When the control panel variables are set, the identity that runs Terraform also needs permission to update the panel API's authorizer (`apigateway:PATCH` on the API) and to write the demo rows to the `panel_users` table.
 
 Relevant variables in `terraform.tfvars`:
 
@@ -177,6 +182,8 @@ The API token should be limited to this account and zone, with an expiry date. C
 | --- | --- | --- |
 | Zone (this domain) | **Zone: Zone Read** | Looking up the zone |
 | Zone (this domain) | **Zone: DNS Edit** | The proxied record for the hostname |
+| Account | **Account: Workers Scripts Edit** | The Worker that sends browser visitors to the control panel when the lab does not load. Needed only when `control_panel_url` is set |
+| Zone (this domain) | **Zone: Workers Routes Edit** | The route that attaches the fallback Worker to the lab hostname. Needed only when `control_panel_url` is set |
 | Account | **Account: Access: Apps and Policies Edit** | The Access application and its allow policy |
 | Account | **Account: Access: Organizations, Identity Providers, and Groups Edit** | The Cognito login method. Needed only when `enable_cognito = true`; without it the apply fails with a 403 when creating the identity provider |
 
@@ -228,6 +235,7 @@ Terraform does not currently:
 - Set the Cognito users' passwords (run `scripts/set-cognito-passwords.ps1` after `apply`).
 - Confirm the auto-stop email subscription (click the AWS confirmation link once).
 - Configure a Cloudflare Tunnel.
+- Create the control panel's hosting, its `cp` DNS record, API, Lambdas, tables or roles (see [Optional: control panel](#optional-control-panel)).
 
 Those actions must be completed before the corresponding Terraform resources can succeed, or by hand afterward.
 
@@ -239,10 +247,26 @@ Do these in the Cloudflare dashboard after the zone is **Active**. They are list
 2. **Enforce HTTPS at the edge.** Turn on **Always Use HTTPS** and **Automatic HTTPS Rewrites**, set the minimum TLS version to 1.2, and keep TLS 1.3 enabled. Add HSTS only after the site works correctly over HTTPS, and start with a short max-age.
 3. **Check the Access policy.** Confirm the application covers the whole hostname, that only the intended email addresses are allowed, and that a sign-in from an unlisted address is denied. Review the identity provider settings under Zero Trust > Settings > Authentication.
 4. **Lock the origin to Cloudflare.** By default the ALB's security group allows port 443 from the whole internet, and Access is enforced only at Cloudflare's edge. Anyone who learns the ALB's DNS name can reach Open WebUI's login page without going through Access or the WAF. Set `enable_origin_lockdown = true` to restrict the ALB to [Cloudflare's published IP ranges](https://www.cloudflare.com/ips/). See "Origin lockdown" below for the rollout order and recovery path. Authenticated Origin Pulls or validating the Access JWT at the origin are stronger options that this repo does not implement.
-5. **Turn on WAF protections and bot defenses.** Enable the managed WAF rules and Bot Fight Mode if the plan includes them. Consider a rate-limiting rule for the sign-in path. With Access in front, these are a second layer rather than the first.
+5. **Turn on WAF protections and bot defenses.** With Access in front, these are a second layer rather than the first. Decisions for the Free plan:
+   - **Free managed ruleset:** always active.
+   - **Bot Fight Mode: on** (Security > Settings > Bot traffic). It cannot be exempted per path, so after enabling it confirm that the Access sign-in, a chat message and streaming replies still work. If one breaks, turn it off.
+   - **Sign-in rate limit: skipped.** The Free plan allows one rate-limiting rule (per IP, 10-second window, 10-second block), and that slot is used by a "Leaked credential check" rule that blocks requests with leaked passwords. That rule is the more useful one to keep. Whether Cloudflare's leaked-credential detection recognises Open WebUI's sign-in request is not verified. Replacing it with a sign-in rate limit would be a weak speed bump, not brute-force protection. Cloudflare Access and Cognito sit in front of the sign-in path.
 6. **Publish email protections even though the domain sends no mail.** This stops others from spoofing the domain: a null MX record (`0 .`), an SPF record of `v=spf1 -all`, and a DMARC record such as `v=DMARC1; p=reject`.
-7. **Consider DNSSEC.** Enable it in Cloudflare and add the DS record at the registrar, if the registrar supports it for the domain's TLD.
+7. **DNSSEC: on.** See "DNSSEC" below. A wrong key at the registrar makes the whole domain fail to resolve for validating resolvers, so follow the steps and checks exactly.
 8. **Protect the accounts.** Use two-factor authentication on the Cloudflare account and on the AWS and registrar accounts. Keep the API token scoped, set an expiry, and rotate the Secrets Manager copy when it changes. Keep the registrar's transfer lock on.
+
+## DNSSEC
+
+The domain is registered in Route 53 and its DNS is hosted at Cloudflare, so the signing key comes from Cloudflare and the DS record is registered at Route 53.
+
+1. In Cloudflare, open DNS > Settings and choose **Enable DNSSEC**. Cloudflare shows the DS record details (key tag, algorithm, digest type, digest) and the public key. Do not click **Confirm** yet.
+2. In Route 53, open Registered domains > your domain > **DNSSEC keys** > **Add key**. Set **Key type** to **257 - KSK** (matching Cloudflare's flags of 257), **Algorithm** to **13 - ECDSAP256SHA256**, and paste the **public key** from Cloudflare. Route 53 takes the public key, not the DS digest.
+3. Compare the key tag and digest that Route 53 then lists with the ones Cloudflare shows. They must match exactly. Then click **Confirm** in Cloudflare.
+4. Wait for the registry to publish the DS record (resolvers may cache the old value for up to 15 minutes), then run the DNSSEC check in the smoke test.
+
+**Do not add the key as 256 - ZSK.** The flags are part of the DS calculation, so the registered DS will not match Cloudflare's key. Once the zone is signed, validating resolvers such as 8.8.8.8 and 1.1.1.1 return `SERVFAIL` and the site is unreachable for most visitors. To recover, remove the wrong key at Route 53 and add the correct one.
+
+**Rollback order.** Remove the key at Route 53 first and wait for the DS record to expire, then disable DNSSEC in Cloudflare. Disabling it in Cloudflare first leaves a DS record with no matching key, which causes the same outage. Remove the DS record at the registrar before moving DNS to another provider.
 
 ## Origin lockdown
 
@@ -325,6 +349,35 @@ Requirements and cautions:
   `branding/README.md` for how to replace them. Keep Open WebUI's own branding visible
   unless you meet the Open WebUI license terms for removing it.
 
+## Optional: control panel
+
+The control panel (`dashboards/`) is a separate web app where customers start the instances they are granted, and administrators manage who may start what. It lives on its own address (`https://cp.aiwebdemo.click`) and is built and kept by hand, so it does not depend on the lab being deployed. Without a lab it shows no instances. Without users it shows no users. See `dashboards/SETUP.md` for what exists and `dashboards/api/README.md` for the API.
+
+### What an administrator must provide
+
+- **AWS permissions** to create the S3 bucket, CloudFront distribution, DynamoDB tables, IAM roles, Lambda functions and API Gateway API.
+- **A DNS record** in the Cloudflare zone: a CNAME from `cp` to the CloudFront domain, set to **DNS only** (not proxied), because CloudFront already terminates TLS for it.
+- **A certificate** in us-east-1 that covers the panel's host name. The existing wildcard certificate for the domain does.
+- **A sign-in provider**, one of Cognito, Okta, Entra ID or any OpenID Connect provider, with a single-page app client (public, no secret, PKCE), the panel's address registered as a redirect URI, and a verified `email` claim in the ID token. Entra ID needs `email` added as an optional claim. The panel needs the provider's issuer URL and the app client ID.
+- **Bootstrap administrators**: the email addresses in the API's `BOOTSTRAP_ADMINS` setting. They always have the user manager role, so the panel can be opened before any user exists.
+
+### Who owns what
+
+| Piece | Owner |
+|---|---|
+| Hosting, DNS record, API, Lambdas, tables, IAM roles, the authorizer and its routes | Built by hand, kept when the lab is destroyed |
+| The panel's app client in the lab's Cognito pool | Terraform (`control_panel.tf`) |
+| The demo users' rows in `panel_users` (every demo user as `operators`, plus `user_mgrs` for the odd demo users and `admin` for `admin@example.local`), when `control_panel_users_table` is set | Terraform |
+| The lab's instance, target group and service address, as SSM parameters, and the `control-panel=managed` tag on the instance | Terraform (`control_panel_lab.tf`) |
+| The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
+| Real users, their roles and instance grants | The control panel. Terraform never touches them |
+
+Until a provider is wired, the authorizer trusts an empty holding Cognito pool that can never issue a token, so every API route answers 401. Apply points the authorizer at the lab's pool, and destroy points it back at the holding pool. The routes are never recreated. To use another provider, update the authorizer's issuer and audience by hand and upload a `config.js` for it.
+
+### Instance wiring
+
+The panel learns which instance and ALB target group to manage from SSM parameters that Terraform writes under `/<project_name>/control-panel/` (`instance-ids`, `target-group-arn`, `service-url`) when `control_panel_url` is set. The Lambdas read them live, so a new lab is picked up with nothing to copy, and a destroyed lab leaves the panel with no instances. Terraform also tags the instance `control-panel=managed`; the customer role can start only instances with that tag. The Lambdas' roles need read access to that parameter path.
+
 ## Can the providers be swapped?
 
 ### Domain registrar
@@ -343,6 +396,10 @@ Using another DNS provider would require replacing the Route 53 or Cloudflare re
 ### Certificate provider
 
 Partially. The current ALB listener is AWS-specific and consumes an ACM certificate ARN. A certificate from another public certificate authority could be used only after it is imported into ACM or the Terraform implementation is changed to manage the alternate certificate and attach it to the ALB. The certificate still needs to match the hostname and be available to the load balancer.
+
+### Control panel sign-in provider
+
+Yes. The panel and its API accept any OpenID Connect provider. Changing it means updating the authorizer's issuer and audience and uploading a new `config.js`. No code changes.
 
 ### Hosting provider
 
@@ -377,5 +434,7 @@ Moving the application to another hosting provider would require a separate Terr
 14. After the apply: run `scripts/set-cognito-passwords.ps1` if Cognito is on, and click the SNS confirmation link in the alert mailbox.
 15. Set the Cloudflare SSL/TLS mode to Full (strict) and review the other security settings above.
 16. Verify the ALB target health and the public HTTPS URL.
+
+17. Optional, for the control panel: build it as described in `dashboards/SETUP.md`, add the `cp` CNAME in Cloudflare as DNS only, and set the control panel variables in `terraform.tfvars`. The panel can be built and left in place before the lab exists.
 
 The lab can remain destroyed while waiting for domain delegation or Cloudflare activation. Those control-plane prerequisites do not require an EC2 instance or load balancer to be running.

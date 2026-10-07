@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VERSION: "1.9.8"
+
+jobs:
+  terraform:
+    name: Terraform fmt, validate, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Format check
+        run: terraform fmt -check -recursive -diff
+
+      - name: Init without a backend
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      # Mocked providers: no AWS or Cloudflare credentials are needed or used.
+      - name: Test
+        run: terraform test
+
+  scripts:
+    name: Shell scripts and Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      # cloud-init.sh.tpl is a Terraform template, so fill in its ${...} placeholders
+      # before linting. SC2157/SC2050 are expected once values are constants.
+      - name: Render cloud-init template
+        run: |
+          python3 - <<'PY'
+          import re
+          t = open("cloud-init.sh.tpl").read()
+          t = t.replace("$${", "\0DS{").replace("%%{", "%{")
+          t = re.sub(r"\$\{[a-z_0-9]+\}", "placeholder", t).replace("\0DS{", "${")
+          open("cloud-init.rendered.sh", "w").write(t)
+          PY
+
+      - name: Shellcheck
+        run: shellcheck --severity=warning --exclude=SC2157,SC2050 cloud-init.rendered.sh scripts/ai-lab-idle-check.sh scripts/ai-lab-register-vuln-mcp.sh
+
+      # mcp is pinned to the version bundled in the pinned Open WebUI image, so the
+      # registration tests exercise the same client library Open WebUI uses.
+      - name: Python unit tests (watchdog, MCP server, Open WebUI registration)
+        run: |
+          pip install boto3 mcp==1.27.2
+          python -m unittest discover -s tests -v
+
+  # Advisory for now: findings show in the log but do not fail the build.
+  # Review the first clean run, fix or suppress what is real, then remove continue-on-error.
+  lint-and-scan:
+    name: tflint and checkov (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: terraform-linters/setup-tflint@v6
+
+      - name: tflint
+        run: tflint --recursive --minimum-failure-severity=warning
+
+      # Run checkov even if tflint reports findings, so both results show.
+      - uses: actions/setup-python@v7
+        if: ${{ !cancelled() }}
+        with:
+          python-version: "3.12"
+
+      # Checkov reads the Terraform source and reports misconfigurations. It is
+      # installed from PyPI, so no third-party action version is involved.
+      - name: checkov
+        if: ${{ !cancelled() }}
+        run: |
+          pip install checkov
+          checkov -d . --framework terraform --compact --quiet

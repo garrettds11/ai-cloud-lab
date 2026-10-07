@@ -46,6 +46,14 @@ locals {
     var.cognito_extra_users
   )
   cognito_users = { for email, users in { for user in local.cognito_user_list : user.email => user... } : email => users[0] }
+  # Roles for the demo accounts in the control panel's users table. Every demo account can
+  # launch and access an instance (operators). The 1st, 3rd, 5th ... demo user (demo1,
+  # demo3 ...) are also user managers, who change grants. The administrator account is an
+  # administrator, who changes roles and grants. More administrators are made in the panel.
+  panel_demo_roles = merge(
+    { for index, user in var.open_webui_demo_users : user.email => { name = user.name, roles = index % 2 == 0 ? ["operators", "user_mgrs"] : ["operators"] } },
+    { (var.open_webui_admin_email) = { name = var.open_webui_admin_name, roles = tolist(["operators", "admin"]) } }
+  )
   open_webui_banners = var.security_banner_text == "" ? [] : [{
     id          = "security-notice"
     type        = "warning"
@@ -103,12 +111,33 @@ resource "aws_security_group" "ai_lab" {
 
   # Open WebUI 8080 and Ollama 11434 are intentionally not exposed.
   # Use SSM port forwarding or the optional SSH tunnel for private access.
-  egress {
-    description = "Allow Internet access for package and model downloads"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  # Outbound traffic is limited to what bootstrap and normal use need: HTTPS for the
+  # AWS APIs, Docker images, the Ollama installer and model downloads, and HTTP for
+  # apt mirrors. DNS, the instance metadata service and the Amazon time service are
+  # not filtered by security groups, so they need no rule. Anything else, such as a
+  # private database, must be added through extra_egress_cidrs.
+  dynamic "egress" {
+    for_each = toset([443, 80])
+
+    content {
+      description = egress.value == 443 ? "HTTPS for AWS APIs, container images and model downloads" : "HTTP for apt package mirrors"
+      from_port   = egress.value
+      to_port     = egress.value
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  dynamic "egress" {
+    for_each = length(var.extra_egress_cidrs) > 0 ? { extra = var.extra_egress_cidrs } : {}
+
+    content {
+      description = "Additional outbound destinations from extra_egress_cidrs"
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = egress.value
+    }
   }
 
   tags = {
@@ -211,7 +240,10 @@ resource "aws_iam_role_policy" "open_webui_admin_password" {
       Action = "secretsmanager:GetSecretValue"
       Resource = concat(
         [data.aws_secretsmanager_secret.open_webui_admin_password.arn],
-        var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn]
+        var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn],
+        var.enable_grafana_telemetry && var.grafana_credentials_secret_arn != null ? [var.grafana_credentials_secret_arn] : [],
+        # Only the instance (not the Lambda) reads the MCP token, to put it in Open WebUI at boot.
+        var.vuln_mcp_table_name != null && var.vuln_mcp_token_secret_arn != null ? [var.vuln_mcp_token_secret_arn] : []
       )
     }]
   })
@@ -220,6 +252,48 @@ resource "aws_iam_role_policy" "open_webui_admin_password" {
 resource "aws_iam_instance_profile" "ssm" {
   name_prefix = "${var.project_name}-"
   role        = aws_iam_role.ssm.name
+}
+
+# The cloud-init script, gzipped. EC2 refuses user data over 16384 bytes, and a refusal during a
+# replacement would come after the old instance is already destroyed, so the instance checks the
+# size first (see its preconditions). tests/test_vuln_mcp_registration.py estimates it offline.
+locals {
+  ai_lab_user_data = base64gzip(replace(templatefile("${path.module}/cloud-init.sh.tpl", {
+    llm_provider                         = var.llm_provider
+    llm_model                            = var.llm_model
+    open_webui_admin_email               = var.open_webui_admin_email
+    open_webui_admin_name                = var.open_webui_admin_name
+    open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
+    open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
+    open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
+    open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
+    open_webui_local_login_enabled       = var.open_webui_enable_local_login ? "true" : "false"
+    open_webui_local_demo_users_enabled  = var.open_webui_enable_local_login && !var.enable_cognito ? "true" : "false"
+    open_webui_default_user_role         = var.open_webui_default_user_role
+    open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
+    cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
+    cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
+    cognito_domain_prefix                = var.enable_cognito && var.cognito_domain_prefix != null ? var.cognito_domain_prefix : ""
+    open_webui_container_image           = var.open_webui_container_image
+    open_webui_container_name            = var.open_webui_container_name
+    open_webui_host_port                 = var.open_webui_host_port
+    open_webui_docker_volume             = var.open_webui_docker_volume
+    open_webui_domain_access_enabled     = var.enable_domain_access ? "true" : "false"
+    open_webui_ollama_base_url           = "http://127.0.0.1:11434"
+    open_webui_url                       = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
+    aws_region                           = var.aws_region
+    auto_stop_parameter_name             = local.auto_stop_parameter_name
+    auto_stop_script_b64                 = base64gzip(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
+    grafana_enabled                      = var.enable_grafana_telemetry ? "true" : "false"
+    grafana_otlp_instance_id             = var.grafana_otlp_instance_id == null ? "" : var.grafana_otlp_instance_id
+    grafana_otlp_endpoint                = var.grafana_otlp_endpoint == null ? "" : var.grafana_otlp_endpoint
+    grafana_credentials_secret_arn       = var.grafana_credentials_secret_arn == null ? "" : var.grafana_credentials_secret_arn
+    vuln_mcp_enabled                     = length(local.vuln_mcp_resources) > 0 ? "true" : "false"
+    vuln_mcp_url                         = local.vuln_mcp_url == null ? "" : local.vuln_mcp_url
+    vuln_mcp_token_secret_arn            = var.vuln_mcp_token_secret_arn == null ? "" : var.vuln_mcp_token_secret_arn
+    vuln_mcp_register_script             = replace(file("${path.module}/scripts/ai-lab-register-vuln-mcp.sh"), "\r\n", "\n")
+    alloy_config_b64                     = var.enable_grafana_telemetry ? base64gzip(replace(file("${path.module}/scripts/alloy-config.alloy"), "\r\n", "\n")) : ""
+  }), "\r\n", "\n"))
 }
 
 resource "aws_instance" "ai_lab" {
@@ -255,35 +329,16 @@ resource "aws_instance" "ai_lab" {
     delete_on_termination = true
   }
 
-  user_data_base64 = base64gzip(replace(templatefile("${path.module}/cloud-init.sh.tpl", {
-    ollama_model                         = var.ollama_model
-    open_webui_admin_email               = var.open_webui_admin_email
-    open_webui_admin_name                = var.open_webui_admin_name
-    open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
-    open_webui_demo_users_b64            = base64encode(jsonencode(var.open_webui_demo_users))
-    open_webui_demo_password_secret_arn  = var.open_webui_demo_user_password_secret_arn == null ? "" : data.aws_secretsmanager_secret.open_webui_demo_password[0].arn
-    open_webui_oidc_enabled              = var.enable_cognito ? "true" : "false"
-    open_webui_local_login_enabled       = var.open_webui_enable_local_login ? "true" : "false"
-    open_webui_local_demo_users_enabled  = var.open_webui_enable_local_login && !var.enable_cognito ? "true" : "false"
-    open_webui_default_user_role         = var.open_webui_default_user_role
-    open_webui_banners_b64               = base64encode(jsonencode(local.open_webui_banners))
-    cognito_user_pool_id                 = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : ""
-    cognito_client_id                    = var.enable_cognito ? aws_cognito_user_pool_client.lab["domain"].id : ""
-    open_webui_container_image           = var.open_webui_container_image
-    open_webui_container_name            = var.open_webui_container_name
-    open_webui_host_port                 = var.open_webui_host_port
-    open_webui_docker_volume             = var.open_webui_docker_volume
-    open_webui_domain_access_enabled     = var.enable_domain_access ? "true" : "false"
-    open_webui_ollama_base_url           = "http://127.0.0.1:11434"
-    open_webui_url                       = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
-    aws_region                           = var.aws_region
-    auto_stop_parameter_name             = local.auto_stop_parameter_name
-    auto_stop_script_b64                 = base64encode(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
-  }), "\r\n", "\n"))
+  user_data_base64 = local.ai_lab_user_data
 
   user_data_replace_on_change = true
 
   lifecycle {
+    precondition {
+      condition     = length(local.ai_lab_user_data) * 3 / 4 < 16000
+      error_message = "The cloud-init user data is within a few hundred bytes of the EC2 limit (16384 bytes after gzip). Shrink cloud-init.sh.tpl or the scripts it embeds before applying; EC2 would refuse the replacement instance after the old one is destroyed."
+    }
+
     precondition {
       condition     = !var.enable_ssh || (var.ssh_key_name != null && var.allowed_ssh_cidr != null)
       error_message = "When enable_ssh is true, ssh_key_name and allowed_ssh_cidr must both be set."
@@ -314,11 +369,17 @@ resource "aws_instance" "ai_lab" {
       error_message = "open_webui_demo_user_password_secret_arn must reference a pre-created Secrets Manager secret when demo users are enabled."
     }
 
+    precondition {
+      condition     = !var.enable_grafana_telemetry || (var.grafana_otlp_endpoint != null && var.grafana_otlp_instance_id != null && var.grafana_credentials_secret_arn != null)
+      error_message = "enable_grafana_telemetry requires grafana_otlp_endpoint, grafana_otlp_instance_id and grafana_credentials_secret_arn."
+    }
+
   }
 
-  tags = {
-    Name = var.project_name
-  }
+  tags = merge(
+    { Name = var.project_name },
+    var.control_panel_url != null ? { "control-panel" = "managed" } : {}
+  )
 
   depends_on = [
     aws_iam_role_policy_attachment.ssm,

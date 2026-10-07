@@ -23,3 +23,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# A local copy of the panel's settings; Terraform publishes the real one to the bucket
+dashboards/config.js
+# Control API build and test output
+dashboards/api/control-api.zip
+__pycache__/
+.pytest_cache/
+OLD-terraform-smoke-test-plan.md

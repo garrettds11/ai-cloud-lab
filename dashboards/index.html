@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cloud Lab · Control panel</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="gate">
+  <div id="gate" class="gate-msg" role="status" aria-live="polite"><p id="gate-text">Redirecting to sign-in…</p></div>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.5 3.5 7v10L12 21.5 20.5 17V7L12 2.5Z" fill="#fff"/><path d="M3.5 7 12 11.5 20.5 7M12 11.5v10" fill="none" stroke="#1f5ae0" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      <span>AI Cloud Lab</span>
+    </div>
+    <div class="topsearch" role="search">
+      <svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="#fff" stroke-width="1.8"/><path d="m15.2 15.2 5 5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <input id="global-search" type="search" placeholder="Search this page" aria-label="Search this page" autocomplete="off">
+      <kbd aria-hidden="true">Ctrl+K</kbd>
+    </div>
+    <div id="userchip" class="userchip" role="group" aria-label="Not signed in"></div>
+  </header>
+
+  <div class="shell">
+    <nav class="sidebar" aria-label="Main">
+      <ul class="nav" id="nav"></ul>
+    </nav>
+    <main id="main" class="main" tabindex="-1">
+      <noscript><p>This page needs JavaScript.</p></noscript>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <div id="api-status" class="status-wait"><span class="dot" aria-hidden="true"></span><span id="api-status-text">Connecting to the Control API</span></div>
+    <div>Region: <span id="region"></span></div>
+    <div class="push"><span id="last-updated">Not loaded yet</span></div>
+  </footer>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="config.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

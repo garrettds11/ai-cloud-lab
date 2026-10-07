@@ -11,10 +11,15 @@ The active lab provisions:
 - Docker for running Open WebUI with a persistent `open-webui` volume
 - AWS Systems Manager Session Manager for shell access and port forwarding
 - An IAM instance profile with `AmazonSSMManagedInstanceCore`
-- A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic)
+- A security group with no public inbound access to Open WebUI or Ollama (the instance may still have a public IP for outbound bootstrap traffic), and outbound traffic limited to TCP 443 and 80 plus anything in `extra_egress_cidrs`
 - Optional public HTTPS access through an Application Load Balancer and ACM, fronted by Cloudflare (DNS, proxy, and Cloudflare Access), or by Route 53 when Cloudflare is disabled
 
 PyGPT was removed because this lab is intended to be administered and used through private browser access on a headless EC2 instance. A desktop GUI, XFCE, XRDP, and PyGPT add extra bootstrap time and attack surface without helping the private web chat workflow.
+
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_login.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/branding/OpenWebUI_chat.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-starting.png?raw=true)
+![](https://github.com/garrettds11/ai-cloud-lab/blob/dev/dashboards/Control_Panel-running.png?raw=true)
 
 ## Architecture
 
@@ -106,6 +111,10 @@ for the full prerequisites, security settings, and trade-offs.
 
 The EC2 instance does not receive a public application ingress rule. When domain
 access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
+
+## Optional Control Panel
+
+A separate web app (`dashboards/`, at `https://cp.aiwebdemo.click`) lets customers start the instances they have been granted and open the service once it is ready. Administrators manage roles and grants on its User management page. It is built by hand and does not depend on the lab being deployed. See [dashboards/README.md](dashboards/README.md), [dashboards/SETUP.md](dashboards/SETUP.md) and [dashboards/api/README.md](dashboards/api/README.md). The panel's requirements are in "Optional: control panel" in [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
 
 ## Cost Guardrail: Auto-Stop
 
@@ -277,14 +286,14 @@ terraform plan `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 
 terraform apply `
   -var="aws_profile=<your-profile>" `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 ```
 
 Terraform uses `user_data_replace_on_change = true`, so bootstrap template changes replace the EC2 instance on the next apply.
@@ -447,7 +456,7 @@ terraform destroy `
   -var="aws_region=us-east-1" `
   -var="instance_type=c7i.4xlarge" `
   -var="root_volume_size=80" `
-  -var="ollama_model=llama3.2:3b"
+  -var="llm_model=llama3.2:3b"
 ```
 
 Do not commit `.terraform/`, `terraform.tfstate`, `terraform.tfvars`, or generated private keys.

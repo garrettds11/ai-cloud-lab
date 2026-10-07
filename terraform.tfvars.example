@@ -17,7 +17,110 @@ project_name = "aiwebdemo"
 
 instance_type    = "c7i.4xlarge"
 root_volume_size = 80
-ollama_model     = "llama3.2:3b"
+
+# https://aws.amazon.com/ec2/pricing/on-demand/
+
+# GPU EC2 INSTANCES — Linux On-Demand, us-east-1
+# https\://aws.amazon.com/ec2/pricing/on-demand/
+# instance_type    = "INSTANCE"       // $COST/HR | CPU | RAM | STORAGE | NETWORK | GPU
+# instance_type      = "g6.2xlarge"
+# instance_type    = "g6.xlarge"      // $0.8048 | 4  | 16 GiB  | 1 x 250 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA L4 24 GB
+# instance_type    = "g6.2xlarge"     // $0.9776 | 8  | 32 GiB  | 1 x 450 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA L4 24 GB
+# instance_type    = "g5.xlarge"      // $1.0060 | 4  | 16 GiB  | 1 x 250 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA A10G 24 GB
+# instance_type    = "g5.2xlarge"     // $1.2120 | 8  | 32 GiB  | 1 x 450 GB NVMe SSD | Up to 10 Gigabit | 1 x NVIDIA A10G 24 GB
+# instance_type    = "g6.4xlarge"     // $1.3232 | 16 | 64 GiB  | 1 x 600 GB NVMe SSD | Up to 25 Gigabit | 1 x NVIDIA L4 24 GB
+# instance_type    = "g6e.xlarge"     // $1.8610 | 4  | 32 GiB  | 1 x 250 GB NVMe SSD | Up to 20 Gigabit | 1 x NVIDIA L40S 48 GB
+# instance_type    = "g7.2xlarge"     // $2.5200 | 8  | 32 GiB  | 1 x 440 GB NVMe SSD | Up to 60 Gigabit | 1 x RTX PRO 4500 32 GB
+# instance_type    = "g7.4xlarge"     // $3.0421 | 16 | 64 GiB  | 1 x 875 GB NVMe SSD | Up to 100 Gigabit | 1 x RTX PRO 4500 32 GB
+# instance_type    = "g7e.2xlarge"    // $3.3631 | 8  | 64 GiB  | 1 x 1.9 TB NVMe SSD | 50 Gigabit | 1 x RTX PRO 6000 96 GB
+# instance_type    = "p5.4xlarge"     // $6.8800 | 16 | 256 GiB | 1 x 3.84 TB NVMe SSD | 100 Gigabit EFA | 1 x NVIDIA H100 80 GB
+
+# CPU EC2 INSTANCES — Linux On-Demand, us-east-1
+# instance_type    = "INSTANCE"       // $COST/HR | CPU | RAM | STORAGE | NETWORK | ARCH
+# instance_type    = "c7i.4xlarge"    // $0.7140  | 16 | 32 GiB  | EBS Only | Up to 12.5 Gigabit | x86_64
+# instance_type    = "c9g.4xlarge"    // $0.69552 | 16 | 32 GiB  | EBS Only | Up to 17 Gigabit   | ARM64 / Graviton5
+# instance_type    = "c8g.4xlarge"    // $0.6381  | 16 | 32 GiB  | EBS Only | Up to 15 Gigabit   | ARM64 / Graviton4
+# instance_type    = "c8i.4xlarge"    // $0.7497  | 16 | 32 GiB  | EBS Only | Up to 15 Gigabit   | x86_64 / Intel
+# instance_type    = "c8a.4xlarge"    // $0.8622  | 16 | 32 GiB  | EBS Only | Up to 15 Gigabit   | x86_64 / AMD
+# instance_type    = "m9g.4xlarge"    // $0.7827  | 16 | 64 GiB  | EBS Only | Up to 17 Gigabit   | ARM64 / Graviton5
+# instance_type    = "m8i.4xlarge"    // $0.8467  | 16 | 64 GiB  | EBS Only | Up to 15 Gigabit   | x86_64 / Intel
+# instance_type    = "r9g.4xlarge"    // $1.0274  | 16 | 128 GiB | EBS Only | Up to 17 Gigabit   | ARM64 / Graviton5
+# instance_type    = "r8i.4xlarge"    // $1.1114  | 16 | 128 GiB | EBS Only | Up to 15 Gigabit   | x86_64 / Intel
+# instance_type    = "r8a.4xlarge"    // $1.2781  | 16 | 128 GiB | EBS Only | Up to 15 Gigabit   | x86_64 / AMD
+
+# SHORTLIST FOR LOAD TESTING
+# instance_type = "c8g.4xlarge"     // $0.6381/hr  | CPU — cheapest / modern ARM
+# instance_type = "c9g.4xlarge"     // $0.69552/hr | CPU — newest Graviton generation
+# instance_type = "c7i.4xlarge"     // $0.7140/hr  | CPU — x86 baseline
+# instance_type = "m9g.4xlarge"     // $0.7827/hr  | CPU — more RAM for Open WebUI + Ollama + RAG
+# instance_type = "g6.xlarge"       // $0.8048/hr  | GPU — lowest-cost modern L4 option
+# instance_type   = "g6.2xlarge"    // $0.9776/hr  | GPU — your current-style sweet spot
+# instance_type = "g6.4xlarge"      // $1.3232/hr  | GPU — more system CPU/RAM, same L4 GPU
+# instance_type = "g6e.xlarge"      // $1.8610/hr  | GPU — 48 GB VRAM step-up
+
+# APPROXIMATE PRODUCTION MODEL FIT
+
+# g6.xlarge / g6.2xlarge
+# 24 GB NVIDIA L4
+# comfortable model weight target ~= 16-18 GB
+# good fit: 3B, 8B, 12B, many 14B, ~24B may become constrained
+
+# g7.2xlarge
+# 32 GB GPU
+# comfortable model weight target ~= 22-24 GB
+# good fit: through ~32B Q4 models depending on context/concurrency
+
+# g6e.xlarge
+# 48 GB NVIDIA L40S
+# comfortable model weight target ~= 33-36 GB
+# good fit: 24B / 32B; 70B Q4 is very tight or unsuitable for production headroom
+
+# g7e.2xlarge
+# 96 GB GPU
+# comfortable model weight target ~= 67-72 GB
+# good fit: 70B Q4 with meaningful runtime headroom
+
+# Generative AI Language Model Selection
+llm_provider = "ollama"
+llm_model    = "llama3.2:3b"
+
+# LLM MODEL OPTIONS — Ollama
+# https\://ollama.com/library
+#
+# llm_model = "MODEL"   // PROVIDER/FAMILY | PARAMETERS | OLLAMA SIZE | QUANTIZATION | CONTEXT | INPUT | PRACTICAL MEMORY CLASS
+
+# TINY / EDGE
+# llm_model = "qwen3:0.6b"                // Alibaba Qwen | 0.6B  | 523 MB | quantized | 40K  | Text       | ~2-4 GiB RAM
+# llm_model = "gemma3:1b"                 // Google Gemma  | 1B    | 815 MB | quantized | 32K  | Text       | ~2-4 GiB RAM
+# llm_model = "deepseek-r1:1.5b"          // DeepSeek R1   | 1.5B  | 1.1 GB | quantized | 128K | Text       | ~4 GiB RAM
+# llm_model = "qwen3:1.7b"                // Alibaba Qwen | 1.7B  | 1.4 GB | quantized | 40K  | Text       | ~4 GiB RAM
+
+# SMALL
+# llm_model = "llama3.2:3b"               // Meta Llama    | 3B    | 2.0 GB | quantized | 128K | Text       | ~4-8 GiB RAM/VRAM
+# llm_model = "qwen3:4b"                   // Alibaba Qwen | 4B    | 2.5 GB | quantized | 256K | Text       | ~6-8 GiB RAM/VRAM
+# llm_model = "gemma3:4b"                 // Google Gemma  | 4.3B  | 3.3 GB | Q4_K_M    | 128K | Text+Image | ~6-8 GiB RAM/VRAM
+# llm_model = "deepseek-r1:7b"             // DeepSeek R1   | 7B    | 4.7 GB | quantized | 128K | Text       | ~8-12 GiB RAM/VRAM
+# llm_model = "qwen3:8b"                   // Alibaba Qwen | 8B    | 5.2 GB | quantized | 40K  | Text       | ~8-12 GiB RAM/VRAM
+
+# MEDIUM
+# llm_model = "gemma3:12b"                // Google Gemma  | 12.2B | 8.1 GB | Q4_K_M    | 128K | Text+Image | ~12-16 GiB VRAM
+# llm_model = "deepseek-r1:14b"           // DeepSeek R1   | 14B   | 9.0 GB | quantized | 128K | Text       | ~16 GiB VRAM
+# llm_model = "qwen3:14b"                 // Alibaba Qwen | 14B   | 9.3 GB | quantized | 40K  | Text       | ~16 GiB VRAM
+
+# LARGE SINGLE-GPU
+# llm_model = "mistral-small3.2:24b"      // Mistral AI    | 24B   | 15 GB  | Q4_K_M    | 128K | Text+Image | ~24-32 GiB RAM/VRAM
+# llm_model = "gemma3:27b"                // Google Gemma  | 27B   | 17 GB  | quantized | 128K | Text+Image | ~24-32 GiB RAM/VRAM
+# llm_model = "qwen3:30b"                 // Alibaba Qwen | 30B   | 19 GB  | quantized | 256K | Text       | ~24-32 GiB RAM/VRAM
+# llm_model = "deepseek-r1:32b"           // DeepSeek R1   | 32B   | 20 GB  | quantized | 128K | Text       | ~32 GiB RAM/VRAM
+# llm_model = "qwen3:32b"                 // Alibaba Qwen | 32B   | 20 GB  | quantized | 40K  | Text       | ~32 GiB RAM/VRAM
+
+# VERY LARGE
+# llm_model = "llama3.3:70b"              // Meta Llama    | 70B   | 43 GB  | quantized | 128K | Text       | ~48-64+ GiB RAM/VRAM
+# llm_model = "deepseek-r1:70b"           // DeepSeek R1   | 70B   | 43 GB  | quantized | 128K | Text       | ~48-64+ GiB RAM/VRAM
+
+# EXTREME / MULTI-GPU
+# llm_model = "qwen3:235b"                // Alibaba Qwen | 235B  | 142 GB | quantized | 256K | Text       | ~160+ GiB aggregate memory
+# llm_model = "deepseek-r1:671b"          // DeepSeek R1   | 671B  | 404 GB | quantized | 160K | Text       | ~450+ GiB aggregate memory
 
 open_webui_admin_email = "admin@example.local"
 open_webui_admin_name  = "Lab Admin"
@@ -37,7 +140,7 @@ enable_domain_access     = true
 enable_cloudflare_access = true
 domain_name              = "aiwebdemo.click"
 route53_zone_name        = "aiwebdemo.click"
-acm_certificate_arn = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
+acm_certificate_arn      = "arn:aws:acm:us-east-1:394566733278:certificate/1163bb42-f265-4702-aad2-868c677ee07a"
 
 # Cloudflare deployment values. Replace this block when cloning the repo; do
 # not store the API token itself here.
@@ -61,7 +164,29 @@ cloudflare_access_allowed_emails = []
 enable_cognito                = true
 cognito_domain_prefix         = "aiwebdemo"
 cloudflare_access_team_domain = "green-union-d3da.cloudflareaccess.com"
-cognito_extra_users = []
+cognito_extra_users           = []
+
+# Control panel dashboard. Terraform only supplies its sign-in settings: an app
+# client in the Cognito pool and the config.js the page loads, which apply publishes to the
+# panel's bucket. The panel's hosting, DNS and API are built by hand (see dashboards/SETUP.md).
+control_panel_url = "https://cp.aiwebdemo.click"
+# The control panel API is built by hand ahead of Terraform (dashboards/SETUP.md). Its
+# address goes into the published config.js. The three ids let apply point the API's
+# sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
+control_panel_api_url         = "https://65j334bc19.execute-api.us-east-1.amazonaws.com"
+control_panel_api_id          = "65j334bc19"
+control_panel_authorizer_id   = "pnlj78"
+control_panel_holding_pool_id = "us-east-1_xcTOLNQJM"
+# The panel's bucket and CloudFront distribution (built by hand). Apply writes config.js into
+# the bucket and clears it from the distribution's cache; destroy removes that one object.
+control_panel_bucket          = "aiwebdemo-control-panel-394566733278"
+control_panel_distribution_id = "E2799OUDXX2ED3"
+
+# Optional: seed the demo users' roles into the control panel's users table.
+control_panel_users_table = "panel_users"
+
+# Optional: grant the lab instance to every demo user with the operators role.
+control_panel_entitlements_table = "instance_entitlements"
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
@@ -81,8 +206,9 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # bypass Cloudflare Access by connecting to the ALB directly. Requires
 # enable_cloudflare_access. Turn it on only after the site works through Cloudflare.
 # The ranges are in variables.tf (cloudflare_ipv4_cidrs, cloudflare_ipv6_cidrs);
+
 # override them here when Cloudflare publishes changes.
-# enable_origin_lockdown = true
+enable_origin_lockdown = true
 # origin_lockdown_extra_cidrs = ["203.0.113.10/32"] # Recovery only; leave empty normally
 
 # Cost guardrail: the lab stops itself with two independent controls. Set either to
@@ -96,5 +222,22 @@ security_banner_text = "This system is for authorized users only. Activity may b
 # Demo: idle 0 and limit 90, so it always stops 90 minutes after boot.
 # Production: idle 60 and limit 0, so it stops only when nobody is using it.
 auto_stop_idle_minutes       = 0
-auto_stop_max_uptime_minutes = 90
+auto_stop_max_uptime_minutes = 20
 auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link
+
+# Grafana Cloud telemetry (host metrics, logs and Open WebUI traces through Grafana
+# Alloy). On by default; set enable_grafana_telemetry = false to run without it. The
+# token lives only in a Secrets Manager secret; see grafana-telemetry.md for how to
+# create it. Changing these replaces the instance.
+enable_grafana_telemetry       = true
+grafana_otlp_instance_id       = "1846719"
+grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
+grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:grafana-api-token-aiwebdemo-MakqN8"
+
+# Optional: deploy the read-only vulnerability findings MCP server (lambda/vuln_mcp).
+# The table and the token secret are built by hand. Leave both out to deploy nothing.
+# When set, the lab instance connects Open WebUI to the server by itself at boot (the token
+# is read from the secret on the instance, never by Terraform). Turning this on or off
+# replaces the instance; changing only the table name does not.
+vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:vuln-mcp-token-aiwebdemo-aGyLZ"

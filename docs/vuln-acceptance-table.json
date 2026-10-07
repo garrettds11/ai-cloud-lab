@@ -1,0 +1,70 @@
+{
+  "TableName": "aiwebdemo-vuln-acceptance",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "host_name",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "finding_id",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "vulnerability_severity",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "last_seen",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "vulnerability_id",
+      "AttributeType": "S"
+    }
+  ],
+  "KeySchema": [
+    {
+      "AttributeName": "host_name",
+      "KeyType": "HASH"
+    },
+    {
+      "AttributeName": "finding_id",
+      "KeyType": "RANGE"
+    }
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "severity-lastseen-index",
+      "KeySchema": [
+        {
+          "AttributeName": "vulnerability_severity",
+          "KeyType": "HASH"
+        },
+        {
+          "AttributeName": "last_seen",
+          "KeyType": "RANGE"
+        }
+      ],
+      "Projection": {
+        "ProjectionType": "ALL"
+      }
+    },
+    {
+      "IndexName": "vuln-host-index",
+      "KeySchema": [
+        {
+          "AttributeName": "vulnerability_id",
+          "KeyType": "HASH"
+        },
+        {
+          "AttributeName": "host_name",
+          "KeyType": "RANGE"
+        }
+      ],
+      "Projection": {
+        "ProjectionType": "ALL"
+      }
+    }
+  ]
+}

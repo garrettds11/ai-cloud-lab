@@ -13,9 +13,9 @@ output "public_ip" {
   value       = aws_instance.ai_lab.public_ip
 }
 
-output "ollama_model" {
+output "llm_model" {
   description = "Model automatically installed in Ollama."
-  value       = var.ollama_model
+  value       = var.llm_model
 }
 
 output "open_webui_local_url" {
@@ -88,4 +88,31 @@ output "open_webui_admin_email" {
 output "cognito_user_emails" {
   description = "Emails of the Cognito users Terraform creates. Used by scripts/set-cognito-passwords.ps1."
   value       = var.enable_cognito ? sort(keys(local.cognito_users)) : []
+}
+
+output "control_panel_config" {
+  description = "Settings the control panel dashboard needs, when control_panel_url is set. control_panel_site.tf publishes them as config.js in the panel's bucket."
+  value = length(local.control_panel_resources) > 0 ? {
+    region            = var.aws_region
+    userPoolId        = aws_cognito_user_pool.lab["domain"].id
+    appClientId       = aws_cognito_user_pool_client.control_panel["domain"].id
+    hostedLoginDomain = "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com"
+    redirectUri       = "${var.control_panel_url}/"
+    apiUrl            = var.control_panel_api_url
+  } : null
+}
+
+output "vuln_mcp_url" {
+  description = "Function URL of the vulnerability findings MCP server when vuln_mcp_table_name is set. The lab instance registers it in Open WebUI at boot (with the bearer token read from Secrets Manager on the instance), so it needs no manual copying."
+  value       = local.vuln_mcp_url
+}
+
+output "vuln_mcp_function_name" {
+  description = "Name of the vulnerability findings MCP Lambda function when vuln_mcp_table_name is set. Used by the smoke test to find its CloudWatch logs."
+  value       = length(local.vuln_mcp_resources) > 0 ? aws_lambda_function.vuln_mcp["vuln_mcp"].function_name : null
+}
+
+output "vuln_mcp_log_group" {
+  description = "CloudWatch log group of the vulnerability findings MCP Lambda (one JSON tool_call line per call) when vuln_mcp_table_name is set."
+  value       = length(local.vuln_mcp_resources) > 0 ? aws_cloudwatch_log_group.vuln_mcp["vuln_mcp"].name : null
 }

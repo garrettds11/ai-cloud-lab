@@ -222,6 +222,19 @@ URL = the `vuln_mcp_url` output, auth **Bearer** with the token, then **Verify**
 without displaying it (**Local Windows PowerShell**):
 `aws secretsmanager get-secret-value --secret-id <vuln_mcp_token_secret_arn> --query SecretString --output text | Set-Clipboard`.
 
+**Turning local login off later.** Two separate Open WebUI settings are involved (read from the Open WebUI
+v0.11.4 source, not confirmed on a running instance):
+
+| Setting | Where it can be changed | Effect on this script |
+|---|---|---|
+| Login form (`ENABLE_LOGIN_FORM`) | A saved setting. An admin can toggle it in **Admin Settings > General** (the authentication section), and it survives restarts. The container variable only gives the starting value. | None. It only hides the email/password form on the login page. The sign-in API still works, so the registration script keeps working and an existing connection stays. |
+| Password sign-in (`ENABLE_PASSWORD_AUTH`) | Container environment variable only; there is no setting for it in the UI. In this lab that means `open_webui_enable_local_login = false`, which needs `enable_cognito = true` and replaces the instance. | The sign-in API refuses passwords, so the script exits 3 and cannot register or remove the connection. |
+
+So hiding the form in the UI is a soft change that is easy to undo; it steers people to Cognito but does not
+disable password sign-in through the API. A full lockdown needs the Terraform setting and a new instance, and
+after it the connection is managed by hand (above). If you plan that, do it when the instance is being
+replaced anyway.
+
 **Changing this replaces the instance.** The instance's cloud-init now carries the registration step and the
 feature's on/off setting, so the first apply of this change, and later turning the feature on or off,
 replaces the instance (the Open WebUI data on its disk starts fresh). Changing only the table name or token
@@ -234,7 +247,7 @@ value does not.
 | `Waiting for Open WebUI...` repeats, then `Gave up` | Open WebUI is slow or down. `sudo docker ps`, `sudo docker logs --tail 100 open-webui`; rerun the script when healthy. |
 | `Open WebUI could not connect to the MCP server and list its tools` | The Function URL is unreachable from the instance (egress is 443/80 only) or the token differs from the secret's. From Windows run the `401` check in `terraform-smoke-test-plan.md`; check the Lambda log group. |
 | `Open WebUI rejected the admin sign-in` | The admin secret no longer matches the admin password. Fix the secret or the account; the script does not retry this. |
-| `Local login is off` / exit 3 | See "Local login must be on" above. |
+| `Local login is off` / exit 3 | See "Local login must be on" and "Turning local login off later" above. |
 | `Could not read ... secret` | The instance role cannot read it: confirm `vuln_mcp_token_secret_arn` was applied (the role is updated only when the feature is on). |
 | Connection exists but a model never calls the tools | The tool must be switched on in the chat, and a small model may not call tools. See the acceptance tests. |
 | Two Vulnerability entries | One was added by hand with a different URL. Delete it; the managed one has id `vuln-findings`. |

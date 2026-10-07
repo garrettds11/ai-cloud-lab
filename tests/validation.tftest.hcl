@@ -98,11 +98,12 @@ mock_provider "aws" {
   }
 }
 
-mock_provider "cloudflare" {
-  mock_data "cloudflare_zones" {
-    defaults = {
-      result = [{ id = "0123456789abcdef0123456789abcdef" }]
-    }
+mock_provider "cloudflare" {}
+
+override_data {
+  target = data.cloudflare_zones.domain[0]
+  values = {
+    result = [{ id = "0123456789abcdef0123456789abcdef" }]
   }
 }
 
@@ -169,12 +170,13 @@ run "fallback_enabled_with_cloudflare_and_panel_url" {
   command = plan
 
   variables {
-    acm_certificate_arn             = "arn:aws:acm:us-east-1:123456789012:certificate/01234567-89ab-cdef-0123-456789abcdef"
-    enable_domain_access            = true
-    enable_cloudflare_access        = true
-    cloudflare_account_id           = "0123456789abcdef0123456789abcdef"
-    cloudflare_api_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cloudflare-AbCdEf"
-    control_panel_url               = "https://cp.example.com"
+    acm_certificate_arn              = "arn:aws:acm:us-east-1:123456789012:certificate/01234567-89ab-cdef-0123-456789abcdef"
+    enable_domain_access             = true
+    enable_cloudflare_access         = true
+    cloudflare_access_allowed_emails = ["test@example.com"]
+    cloudflare_account_id            = "0123456789abcdef0123456789abcdef"
+    cloudflare_api_token_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cloudflare-AbCdEf"
+    control_panel_url                = "https://cp.example.com"
   }
 
   assert {

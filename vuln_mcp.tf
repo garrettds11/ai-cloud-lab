@@ -12,6 +12,18 @@
 
 locals {
   vuln_mcp_resources = var.vuln_mcp_table_name != null ? { vuln_mcp = true } : {}
+
+  # The MCP endpoint (the Function URL already ends in a slash). The lab instance connects
+  # Open WebUI to it at boot; see scripts/ai-lab-register-vuln-mcp.sh.
+  vuln_mcp_url = length(local.vuln_mcp_resources) > 0 ? "${aws_lambda_function_url.vuln_mcp["vuln_mcp"].function_url}mcp" : null
+}
+
+# Registration needs the Open WebUI admin API, which needs local password sign-in.
+check "vuln_mcp_registration_needs_local_login" {
+  assert {
+    condition     = var.vuln_mcp_table_name == null || var.open_webui_enable_local_login
+    error_message = "The vulnerability MCP is on but open_webui_enable_local_login is false, so the instance cannot sign in to Open WebUI to register it. Add the connection by hand in Admin Settings > External Tools (see lambda/vuln_mcp/README.md), or turn local login on."
+  }
 }
 
 data "aws_caller_identity" "current" {}

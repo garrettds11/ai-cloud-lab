@@ -1,0 +1,664 @@
+{
+  "aiwebdemo-vuln-acceptance": [
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "dc-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2020-1472#tcp/445"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2020-1472"
+          },
+          "title": {
+            "S": "Netlogon Elevation of Privilege (Zerologon)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2020-1472"
+          },
+          "vulnerability_severity": {
+            "S": "Critical"
+          },
+          "vulnerability_score_base": {
+            "N": "10.0"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2020-1472"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "445"
+          },
+          "last_seen": {
+            "S": "2026-10-01T02:20:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "dev-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2022-22965#tcp/8080"
+          },
+          "environment": {
+            "S": "dev"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2022-22965"
+          },
+          "title": {
+            "S": "Spring Framework Data Binding Remote Code Execution (Spring4Shell)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2022-22965"
+          },
+          "vulnerability_severity": {
+            "S": "Critical"
+          },
+          "vulnerability_score_base": {
+            "N": "9.8"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2022-22965"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "8080"
+          },
+          "last_seen": {
+            "S": "2026-09-30T02:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2014-0160#tcp/443"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2014-0160"
+          },
+          "title": {
+            "S": "OpenSSL Heartbleed Information Disclosure"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2014-0160"
+          },
+          "vulnerability_severity": {
+            "S": "High"
+          },
+          "vulnerability_score_base": {
+            "N": "7.5"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "reopened"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "443"
+          },
+          "last_seen": {
+            "S": "2026-10-02T02:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2016-2183#tcp/443"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2016-2183"
+          },
+          "title": {
+            "S": "TLS 3DES Birthday Attack (Sweet32)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2016-2183"
+          },
+          "vulnerability_severity": {
+            "S": "High"
+          },
+          "vulnerability_score_base": {
+            "N": "7.5"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2016-2183"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "fixed"
+          },
+          "exploit_available": {
+            "BOOL": false
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "443"
+          },
+          "last_seen": {
+            "S": "2026-08-20T02:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2021-44228#tcp/8080"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2021-44228"
+          },
+          "title": {
+            "S": "Apache Log4j2 JNDI Remote Code Execution (Log4Shell)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2021-44228"
+          },
+          "vulnerability_severity": {
+            "S": "Critical"
+          },
+          "vulnerability_score_base": {
+            "N": "10.0"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "8080"
+          },
+          "last_seen": {
+            "S": "2026-09-17T02:48:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2022-22965#tcp/8080"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2022-22965"
+          },
+          "title": {
+            "S": "Spring Framework Data Binding Remote Code Execution (Spring4Shell)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2022-22965"
+          },
+          "vulnerability_severity": {
+            "S": "Critical"
+          },
+          "vulnerability_score_base": {
+            "N": "9.8"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2022-22965"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "8080"
+          },
+          "last_seen": {
+            "S": "2026-10-02T02:37:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2023-48795#tcp/22"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2023-48795"
+          },
+          "title": {
+            "S": "OpenSSH Terrapin Attack Vulnerability"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2023-48795"
+          },
+          "vulnerability_severity": {
+            "S": "Medium"
+          },
+          "vulnerability_score_base": {
+            "N": "5.9"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": false
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "22"
+          },
+          "last_seen": {
+            "S": "2026-10-01T02:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "PLUGIN-104743#tcp/443"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "PLUGIN-104743"
+          },
+          "title": {
+            "S": "TLS Version 1.0 Protocol Detection"
+          },
+          "vulnerability_description": {
+            "S": "Description of PLUGIN-104743"
+          },
+          "vulnerability_severity": {
+            "S": "Info"
+          },
+          "vulnerability_score_base": {
+            "N": "0.0"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/PLUGIN-104743"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": false
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "443"
+          },
+          "last_seen": {
+            "S": "2026-10-01T02:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-02.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2021-44228#tcp/8080"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2021-44228"
+          },
+          "title": {
+            "S": "Apache Log4j2 JNDI Remote Code Execution (Log4Shell)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2021-44228"
+          },
+          "vulnerability_severity": {
+            "S": "Critical"
+          },
+          "vulnerability_score_base": {
+            "N": "10.0"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "8080"
+          },
+          "last_seen": {
+            "S": "2026-10-01T02:10:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-app-03.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2021-44228#tcp/8080"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2021-44228"
+          },
+          "title": {
+            "S": "Apache Log4j2 JNDI Remote Code Execution (Log4Shell)"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2021-44228"
+          },
+          "vulnerability_severity": {
+            "S": "Critical"
+          },
+          "vulnerability_score_base": {
+            "N": "10.0"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "fixed"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "8080"
+          },
+          "last_seen": {
+            "S": "2026-08-20T02:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "prod-web-02.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2014-0160#tcp/443"
+          },
+          "environment": {
+            "S": "prod"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2014-0160"
+          },
+          "title": {
+            "S": "OpenSSL Heartbleed Information Disclosure"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2014-0160"
+          },
+          "vulnerability_severity": {
+            "S": "High"
+          },
+          "vulnerability_score_base": {
+            "N": "7.5"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "reopened"
+          },
+          "exploit_available": {
+            "BOOL": true
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "443"
+          },
+          "last_seen": {
+            "S": "2026-10-02T02:30:00Z"
+          }
+        }
+      }
+    },
+    {
+      "PutRequest": {
+        "Item": {
+          "host_name": {
+            "S": "stage-web-01.corp.example.local"
+          },
+          "finding_id": {
+            "S": "CVE-2023-48795#tcp/22"
+          },
+          "environment": {
+            "S": "stage"
+          },
+          "vulnerability_id": {
+            "S": "CVE-2023-48795"
+          },
+          "title": {
+            "S": "OpenSSH Terrapin Attack Vulnerability"
+          },
+          "vulnerability_description": {
+            "S": "Description of CVE-2023-48795"
+          },
+          "vulnerability_severity": {
+            "S": "Medium"
+          },
+          "vulnerability_score_base": {
+            "N": "5.9"
+          },
+          "cvss_vector": {
+            "S": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "vulnerability_reference": {
+            "L": [
+              {
+                "S": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
+              }
+            ]
+          },
+          "vulnerability_status": {
+            "S": "open"
+          },
+          "exploit_available": {
+            "BOOL": false
+          },
+          "epss_score": {
+            "N": "0.5"
+          },
+          "network_port": {
+            "N": "22"
+          },
+          "last_seen": {
+            "S": "2026-10-01T03:00:00Z"
+          }
+        }
+      }
+    }
+  ]
+}

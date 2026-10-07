@@ -366,6 +366,33 @@ else
     echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
 fi
 
+# Vulnerability MCP connection in Open WebUI. The script is always installed. It adds the
+# connection when the vulnerability MCP is deployed and removes it when it is not. It reads the
+# bearer token from Secrets Manager itself, so the token is never in user-data, Terraform state or
+# logs; the settings file holds names, URLs and ARNs only. A failure is logged but never fails
+# bootstrap; run `sudo ai-lab-register-vuln-mcp` to retry.
+mkdir -p /etc/ai-lab
+cat > /etc/ai-lab/vuln-mcp.env <<'EOF'
+ENABLED='${vuln_mcp_enabled}'
+URL='${vuln_mcp_url}'
+TOKEN_ARN='${vuln_mcp_token_secret_arn}'
+ADMIN_ARN='${open_webui_admin_password_secret_arn}'
+ADMIN_EMAIL='${open_webui_admin_email}'
+LOCAL_LOGIN='${open_webui_local_login_enabled}'
+PORT='${open_webui_host_port}'
+REGION='${aws_region}'
+EOF
+cat > /usr/local/sbin/ai-lab-register-vuln-mcp <<'VULN_MCP_REGISTER_EOF'
+${vuln_mcp_register_script}
+VULN_MCP_REGISTER_EOF
+chmod 0755 /usr/local/sbin/ai-lab-register-vuln-mcp
+
+register_status=0
+/usr/local/sbin/ai-lab-register-vuln-mcp || register_status=$?
+if [[ "$register_status" -ne 0 ]]; then
+    echo "WARNING: Open WebUI vulnerability MCP registration did not finish (exit $register_status); continuing. Run 'sudo ai-lab-register-vuln-mcp' to retry. See $LOG_FILE."
+fi
+
 # Optional Grafana Cloud telemetry through Grafana Alloy. A failure here is logged but
 # never fails bootstrap, because the lab must come up even if telemetry cannot. The
 # credentials are read from Secrets Manager through the instance role, so they are
@@ -391,7 +418,7 @@ setup_grafana_telemetry() {
     [[ -n "$token" && "$token" != "None" ]] || return 1
 
     install -d -m 0755 /etc/alloy
-    printf '%s' '${alloy_config_b64}' | base64 --decode > /etc/alloy/config.alloy || return 1
+    printf '%s' '${alloy_config_b64}' | base64 --decode | gunzip > /etc/alloy/config.alloy || return 1
 
     # Root-only: systemd reads this file and hands the values to Alloy.
     (umask 077 && printf 'GRAFANA_OTLP_ENDPOINT=%s\nGRAFANA_OTLP_INSTANCE_ID=%s\nGRAFANA_OTLP_TOKEN=%s\n' \
@@ -438,7 +465,7 @@ OLLAMA_PORT=11434
 AUTO_STOP_PARAMETER=${auto_stop_parameter_name}
 EOF
 
-printf '%s' '${auto_stop_script_b64}' | base64 --decode > /usr/local/sbin/ai-lab-idle-check
+printf '%s' '${auto_stop_script_b64}' | base64 --decode | gunzip > /usr/local/sbin/ai-lab-idle-check
 chmod 0755 /usr/local/sbin/ai-lab-idle-check
 
 cat > /etc/systemd/system/ai-lab-idle-check.service <<'EOF'
@@ -492,6 +519,10 @@ sudo docker ps --filter name=${open_webui_container_name} || true
 echo
 echo "--- Open WebUI HTTP ---"
 curl -I http://127.0.0.1:${open_webui_host_port} || true
+
+echo
+echo "--- Vulnerability MCP connection in Open WebUI (read-only check) ---"
+sudo AI_LAB_RETRIES=1 AI_LAB_READY_ATTEMPTS=1 /usr/local/sbin/ai-lab-register-vuln-mcp --check || true
 
 echo
 echo "--- SSM Agent ---"

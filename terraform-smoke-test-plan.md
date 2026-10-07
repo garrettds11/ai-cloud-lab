@@ -665,7 +665,7 @@ aws secretsmanager create-secret --name vuln-mcp-token-aiwebdemo --secret-string
 After apply, call the function with the token (the `$token` variable above, if it is still set in this window) and without it:
 
 ```powershell
-$url = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")
+$url = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")   # local Windows PowerShell
 $body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $body | ConvertTo-Json -Depth 5
 Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Body $body
@@ -678,7 +678,44 @@ $call = '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"summari
 Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $call | ConvertTo-Json -Depth 10
 ```
 
-With the standard test data this shows 9 open Critical findings. If a call returns an error, read the function's log group `/aws/lambda/<project_name>-vuln-mcp` in CloudWatch.
+With the standard test data this shows 9 open Critical findings. If a call returns an error, read the function's CloudWatch log group, whose name the `vuln_mcp_log_group` output gives:
+
+```powershell
+$logGroup = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_log_group")
+aws logs tail $logGroup --since 15m
+```
+
+Each tool call is one JSON `tool_call` line (tool, arguments, `ok`, size, time). No token or finding data is logged.
+
+#### Automatic Open WebUI registration
+
+The lab instance connects Open WebUI to the server by itself at the end of bootstrap; there is no endpoint or token to copy. The connection is added when `vuln_mcp_table_name` is set and removed when it is not. It needs `open_webui_enable_local_login = true` (Terraform warns otherwise). Because this changes the instance's cloud-init, the apply that introduces it, and later turning the feature on or off, replaces the instance.
+
+Linux (SSM shell on the lab instance; open it with `aws ssm start-session --target $env:instance_id` from PowerShell, as in section 2):
+
+```bash
+grep -F '[register-vuln-mcp]' /var/log/ai-lab-bootstrap.log
+sudo ai-lab-register-vuln-mcp --check
+sudo ai-lab-register-vuln-mcp
+sudo ai-lab-register-vuln-mcp
+```
+
+Expected, with the feature on:
+
+- The bootstrap log shows `Open WebUI connected to the MCP server and listed 6 tools: find_hosts_by_vulnerability, get_data_dictionary, get_finding, get_host_findings, list_findings, summarize_findings` and `Connection registered.`
+- `--check` ends with `Check only. Connection is already correct (feature true).`
+- Each of the two plain runs ends with `Connection already correct; nothing to change.` (repeating adds no second connection).
+- The log and the output contain no token or password.
+
+Open WebUI (browser, signed in as the admin): **Admin Settings > External Tools** shows exactly one **Vulnerability Findings** connection (MCP, enabled), and its verify button succeeds.
+
+With the feature off (`vuln_mcp_table_name = null`): `--check` ends with `Connection is already correct (feature false)` and **External Tools** has no Vulnerability Findings entry.
+
+If the bootstrap log has `WARNING: Open WebUI vulnerability MCP registration did not finish`, read the lines above it and use the troubleshooting table in `lambda/vuln_mcp/README.md`, then run `sudo ai-lab-register-vuln-mcp` again. Exit code 3 means local login is off and the connection must be added by hand (also in that README).
+
+#### Model-driven acceptance tests
+
+Whether a model actually calls the tools is tested by hand in [docs/vuln-mcp-acceptance-tests.md](docs/vuln-mcp-acceptance-tests.md). They use a separate table loaded from the repository's test fixture so the answers are exact, and they require proof that the tool ran (chat tool-call entry plus a CloudWatch `tool_call` line), not just a plausible answer. All of them are pending manual execution.
 
 ## 4. Stop or destroy the test system
 

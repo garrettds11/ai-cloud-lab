@@ -32,6 +32,16 @@ output "functions" {
   value       = { for k, f in aws_lambda_function.function : k => f.function_name }
 }
 
+output "webui_admin_document" {
+  description = "The SSM document the admin function runs for Open WebUI actions. It accepts only the listed action names."
+  value       = aws_ssm_document.webui_admin.name
+}
+
+output "webui_desired_state_table" {
+  description = "Table for the Open WebUI settings the panel will own (phase 2 of #55). Not read or written yet."
+  value       = aws_dynamodb_table.webui_desired_state.name
+}
+
 output "lab_tfvars" {
   description = "Lines to paste into the lab's terraform.tfvars (repository root) so the lab wires itself to this API."
   value       = <<-EOT

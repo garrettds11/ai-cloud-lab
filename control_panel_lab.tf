@@ -2,8 +2,8 @@
 #
 # The panel's two Lambda functions read these parameters while running (no settings to copy
 # by hand after a deployment). With no lab deployed they do not exist, so the panel shows no
-# instances. Replacing the instance updates instance-ids in place; a destroy removes all
-# three. The panel itself, its API and its roles are built by hand and are not touched here.
+# instances. Replacing the instance updates instance-ids in place; a destroy removes them
+# all. The panel itself, its API and its roles are built by hand and are not touched here.
 #
 # Also tags the instance control-panel=managed. The customer function's IAM role may start
 # only instances that carry this tag, whatever the project's other tags are.
@@ -39,6 +39,19 @@ resource "aws_ssm_parameter" "control_panel_service_url" {
   description = "Where the control panel's Access button goes."
   type        = "String"
   value       = "https://${var.domain_name}"
+}
+
+# The Open WebUI image the lab runs. The panel passes its version to the Open WebUI admin
+# document, which reports whether the running Open WebUI matches what the actions were
+# written for (and, from phase 2 of #55, refuses changes when it does not).
+resource "aws_ssm_parameter" "control_panel_open_webui_image" {
+  for_each = local.control_panel_lab
+  #checkov:skip=CKV2_AWS_34:The value is not secret (a container image name); SecureString would only add a KMS dependency for every reader
+
+  name        = "${local.control_panel_lab_prefix}/open-webui-image"
+  description = "Container image of the lab's Open WebUI, for the control panel's version check."
+  type        = "String"
+  value       = var.open_webui_container_image
 }
 
 # One grant per demo user who has the operators role, for the lab instance, in the same

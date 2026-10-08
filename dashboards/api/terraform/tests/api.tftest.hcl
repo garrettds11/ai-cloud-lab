@@ -79,8 +79,8 @@ run "every_route_exists_and_admin_routes_go_to_the_admin_function" {
   command = apply
 
   assert {
-    condition     = length(aws_apigatewayv2_route.panel) == 13
-    error_message = "The API must have the thirteen routes the handler serves (see ../openapi.yaml)."
+    condition     = length(aws_apigatewayv2_route.panel) == 15
+    error_message = "The API must have the fifteen routes the handler serves (see ../openapi.yaml)."
   }
 
   assert {
@@ -151,6 +151,44 @@ run "the_admin_role_cannot_start_instances_or_write_ssm" {
   assert {
     condition     = !strcontains(aws_iam_role_policy.function["admin"].policy, "ec2:StartInstances") && !strcontains(aws_iam_role_policy.function["admin"].policy, "ssm:PutParameter")
     error_message = "The admin role must not start instances or write SSM parameters."
+  }
+}
+
+run "open_webui_actions_run_only_the_panel_document_on_managed_instances" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.action.allowedValues == ["status"]
+    error_message = "The document must accept only the listed action names."
+  }
+
+  assert {
+    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.expectedVersion.allowedPattern == "^([0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4})?$"
+    error_message = "expectedVersion must be limited to an empty value or a dotted version number."
+  }
+
+  assert {
+    condition     = strcontains(join("\n", jsondecode(aws_ssm_document.webui_admin.content).mainSteps[0].inputs.runCommand), "ACTION='{{ action }}'")
+    error_message = "The document must run ../webui-admin.sh."
+  }
+
+  assert {
+    condition = length([for s in jsondecode(aws_iam_role_policy.function["admin"].policy).Statement : s
+      if contains(flatten([s.Action]), "ssm:SendCommand") && !(
+        flatten([s.Resource]) == ["arn:aws:ssm:us-east-1:123456789012:document/${aws_ssm_document.webui_admin.name}"] ||
+        try(s.Condition.StringEquals["ssm:resourceTag/control-panel"], "") == "managed"
+    )]) == 0
+    error_message = "ssm:SendCommand must be limited to the panel's document and to instances tagged control-panel=managed."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.function["customer"].policy, "ssm:SendCommand")
+    error_message = "Only the admin function may run Open WebUI actions."
+  }
+
+  assert {
+    condition     = aws_lambda_function.function["admin"].environment[0].variables["WEBUI_DOCUMENT"] == aws_ssm_document.webui_admin.name
+    error_message = "The admin function must be told the document's name."
   }
 }
 

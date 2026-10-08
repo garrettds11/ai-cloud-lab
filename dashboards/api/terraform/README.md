@@ -8,10 +8,12 @@ This folder builds the control panel's API with Terraform, separately from the l
 |---|---|
 | HTTP API, `$default` stage | CORS for `panel_origin` only. Throttled (10 requests a second, bursts of 20, by default). Access log in CloudWatch: who, which route, the status. No bodies or tokens |
 | JWT authorizer | Created trusting an empty holding pool, so every route answers 401. The lab points it at its own Cognito pool on apply and back on destroy (`control_panel_api.tf` at the root), exactly as before. This stack never changes the issuer or audience after creating it |
-| 13 routes | The list in `api.tf`. `../tests/test_openapi.py` fails if it differs from `../openapi.yaml` or from what `handler.py` serves |
+| 15 routes | The list in `api.tf`. `../tests/test_openapi.py` fails if it differs from `../openapi.yaml` or from what `handler.py` serves |
 | Two functions and their roles | `<name_prefix>-customer` and `<name_prefix>-admin`, built from `../handler.py`. The policies are the ones `../README.md` documents: only the customer role can start an instance (tagged `control-panel=managed`) and write the timer reset; the admin role can do neither |
 | Three tables | `panel_users`, `instance_entitlements`, `control_panel_events`, with deletion protection and point-in-time recovery. Existing hand-built tables are imported, keeping their data |
 | Holding pool | An empty Cognito pool, no users, no app clients |
+| Open WebUI admin document | `<name_prefix>-webui-admin`: the only way the panel reaches Open WebUI. SSM runs it on the managed instance with one action name from a fixed list (today only `status`); its script is `../webui-admin.sh`. The admin function may run this document and nothing else, and only on instances tagged `control-panel=managed`. No Open WebUI credential leaves the instance |
+| Desired-state table | `<name_prefix>-webui-desired-state`, for the Open WebUI settings the panel will own. Created now, used from phase 2 of #55 |
 
 Not here (still built by hand, see `../../../SETUP.md`): the panel's S3 bucket, CloudFront distribution, certificate and DNS.
 

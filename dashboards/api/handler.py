@@ -60,6 +60,11 @@ AUTO_STOP_PARAMETER = os.environ.get("AUTO_STOP_PARAMETER", "")
 # Terraform creates (auto_stop.tf), so there is no extra setting to copy by hand.
 RESET_PARAMETER = os.environ.get("RESET_PARAMETER", f"{AUTO_STOP_PARAMETER}/reset-at" if AUTO_STOP_PARAMETER else "")
 EVENT_TTL_DAYS = int(os.environ.get("EVENT_TTL_DAYS", "90"))
+# The SSM document that runs Open WebUI admin actions on the lab instance (admin function only).
+# It accepts only the action names below; the API stack's webui_admin.tf defines both lists.
+WEBUI_DOCUMENT = os.environ.get("WEBUI_DOCUMENT", "")
+WEBUI_ACTIONS = {"status": "Open WebUI health and version"}
+OPEN_WEBUI_IMAGE = os.environ.get("OPEN_WEBUI_IMAGE", "")  # fallback when no lab prefix is set
 
 SETUP_GRACE_MINUTES = 30  # same as the watchdog: idle rules wait this long after a start
 SILENT_AFTER_MINUTES = 10  # no heartbeat for this long means the idle monitor is silent
@@ -238,7 +243,7 @@ def _lab():
     service-url. With no lab deployed they do not exist, so the panel manages nothing.
     Cached for a minute. If they cannot be read the call fails closed."""
     if not LAB_PARAMETER_PREFIX:
-        return {"instance_ids": INSTANCE_IDS, "target_group_arn": TARGET_GROUP_ARN, "service_url": SERVICE_URL}
+        return {"instance_ids": INSTANCE_IDS, "target_group_arn": TARGET_GROUP_ARN, "service_url": SERVICE_URL, "open_webui_image": OPEN_WEBUI_IMAGE}
     now = time.time()
     if _lab_cache["value"] is not None and now - _lab_cache["at"] < LAB_CACHE_SECONDS:
         return _lab_cache["value"]
@@ -258,6 +263,7 @@ def _lab():
         "instance_ids": [i.strip() for i in found.get("instance-ids", "").split(",") if i.strip()],
         "target_group_arn": found.get("target-group-arn", ""),
         "service_url": found.get("service-url", ""),
+        "open_webui_image": found.get("open-webui-image", ""),
     }
     _lab_cache.update(at=now, value=value)
     return value
@@ -892,6 +898,128 @@ def _set_grant(caller, user_id, instance_id, grant, user_name, roles, names):
     _log(caller["id"], "info", f"{'Granted' if grant else 'Revoked'} {user_name} access to {instance_name}")
 
 
+# ---- admin: Open WebUI actions --------------------------------------------------------
+#
+# The panel never talks to Open WebUI itself. An administrator asks for one named action, the
+# admin function asks SSM to run the panel's document on the managed instance, and the result
+# is read back later (SSM runs commands asynchronously). Each request and each result is
+# recorded under pk "webui-actions" in the events table, and as a log line for the person.
+
+_TERMINAL = {"Success", "Failed", "Cancelled", "TimedOut"}
+_COMMAND_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _require_admin_role(caller):
+    if ROLE_ADMIN not in caller["roles"]:
+        raise ApiError(403, "Only an administrator can run Open WebUI actions.")
+
+
+def _expected_version():
+    """The Open WebUI version the lab pins, from its image tag, or "" when it is not a version."""
+    match = re.search(r":v?(\d{1,4}\.\d{1,4}\.\d{1,4})$", _lab().get("open_webui_image", ""))
+    return match.group(1) if match else ""
+
+
+def _action_record(command_id):
+    rows = events.query(KeyConditionExpression=Key("pk").eq("webui-actions") & Key("sk").eq(command_id)).get("Items", [])
+    return rows[0] if rows else None
+
+
+def start_webui_action(caller, payload):
+    _require_admin_role(caller)
+    action = payload.get("action")
+    if action not in WEBUI_ACTIONS:
+        raise ApiError(400, "Unknown action.")
+    instance_id = payload.get("instanceId")
+    if instance_id not in _instance_ids():
+        raise ApiError(404, "Instance not found.")
+    if not WEBUI_DOCUMENT:
+        raise ApiError(503, "Open WebUI actions are not set up on this control panel yet.")
+    raws = _describe([instance_id])
+    if instance_id not in raws:
+        raise ApiError(404, "Instance not found.")
+    name = _tag(raws[instance_id]["instance"], "Name") or instance_id
+    if raws[instance_id]["instance"]["State"]["Name"] != "running":
+        raise ApiError(409, "The instance is not running, so Open WebUI cannot be reached.")
+    try:
+        out = ssm.send_command(
+            DocumentName=WEBUI_DOCUMENT,
+            InstanceIds=[instance_id],
+            Parameters={"action": [action], "expectedVersion": [_expected_version()]},
+            TimeoutSeconds=120,
+            Comment=f"control panel: {action} by {caller['id']}"[:100],
+        )
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "")
+        _log(caller["id"], "error", f"{name}: Open WebUI action '{action}' could not start, {code}", instance_id)
+        print(json.dumps({"error": "send_command", "detail": str(err)}))
+        if code in ("InvalidInstanceId", "InvalidInstanceInformationFilterValue"):
+            raise ApiError(409, "The instance is not connected to Systems Manager yet. Try again in a minute.")
+        raise ApiError(502, "Could not start the action. Try again shortly.")
+    command_id = out["Command"]["CommandId"]
+    t = now_ms()
+    events.put_item(Item={
+        "pk": "webui-actions", "sk": command_id, "t": t, "expiresAt": int(t / 1000) + EVENT_TTL_DAYS * 86400,
+        "action": action, "instanceId": instance_id, "requestedBy": caller["id"], "status": "Pending",
+    })
+    _log(caller["id"], "info", f"Requested Open WebUI action '{action}' on {name}", instance_id)
+    return {"commandId": command_id, "instanceId": instance_id, "action": action, "status": "Pending", "requestedAt": t}
+
+
+def _last_json_line(text):
+    for line in reversed((text or "").strip().splitlines()):
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def get_webui_action(caller, command_id):
+    _require_admin_role(caller)
+    if not _COMMAND_ID.match(command_id or ""):
+        raise ApiError(400, "That is not an action ID.")
+    record = _action_record(command_id)
+    if record is None or not WEBUI_DOCUMENT:
+        raise ApiError(404, "No such action.")
+    instance_id = record["instanceId"]
+    try:
+        inv = ssm.get_command_invocation(CommandId=command_id, InstanceId=instance_id)
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") == "InvocationDoesNotExist":
+            inv = {"Status": "Pending", "DocumentName": WEBUI_DOCUMENT}  # SSM has not registered it yet
+        else:
+            print(json.dumps({"error": "get_command_invocation", "detail": str(err)}))
+            raise ApiError(502, "Could not read the action's result. Try again shortly.")
+    if inv.get("DocumentName") != WEBUI_DOCUMENT:
+        raise ApiError(404, "No such action.")  # never show the output of anything else
+    status = inv.get("Status", "Pending")
+    result = _last_json_line(inv.get("StandardOutputContent")) if status in _TERMINAL else None
+    if status in _TERMINAL:
+        try:
+            events.put_item(
+                Item={"pk": "webui-actions", "sk": f"{command_id}#result", "t": now_ms(),
+                      "expiresAt": int(record["expiresAt"]), "status": status},
+                ConditionExpression="attribute_not_exists(sk)",
+            )
+            ok = status == "Success" and bool((result or {}).get("ok"))
+            _log(caller["id"], "info" if ok else "error",
+                 f"Open WebUI action '{record['action']}' on {instance_id}: {'done' if ok else 'failed (' + status + ')'}", instance_id)
+        except ClientError as err:
+            if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+    return {
+        "commandId": command_id,
+        "instanceId": instance_id,
+        "action": record["action"],
+        "requestedBy": record["requestedBy"],
+        "requestedAt": _num(record["t"]),
+        "status": status,
+        "result": result,
+    }
+
+
 # ---- routing -------------------------------------------------------------------------
 
 
@@ -931,6 +1059,10 @@ def _admin_routes(event, caller):
         return list_all_logs(caller, event.get("queryStringParameters") or {})
     if key == "PUT /admin/users/{userId}":
         return save_user(caller, path["userId"], _body(event))
+    if key == "POST /admin/webui/actions":
+        return start_webui_action(caller, _body(event))
+    if key == "GET /admin/webui/actions/{commandId}":
+        return get_webui_action(caller, path["commandId"])
     return None
 
 

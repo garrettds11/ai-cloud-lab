@@ -41,6 +41,8 @@ All routes need `Authorization: Bearer <ID token>`. Times are milliseconds since
 | `GET /admin/logins` | `admin` only | Everyone's last 200 panel sign-ins, with user name |
 | `GET /admin/logs?source=&severity=&windowMinutes=` | `admin` only | Everyone's log lines, plus EC2 start/stop activity for every managed instance |
 | `PUT /admin/users/{userId}` | `user_mgrs` or `admin` (role changes: `admin` only) | Body `{roles:[{role,member}], grants:[{instanceId,grant}]}`; returns `{applied}` |
+| `POST /admin/webui/actions` | `admin` only | Body `{action, instanceId}`. Runs one named Open WebUI action (today only `status`) through the panel's SSM document on a running managed instance. Returns `{commandId, status: "Pending", ...}`. 400 unknown action, 404 unknown instance, 409 not running or not yet in Systems Manager, 503 document not configured. Only on the Terraform-built API (`terraform/`) |
+| `GET /admin/webui/actions/{commandId}` | `admin` only | The action's status and, once finished, its JSON `result`. Only actions this panel started, and only if SSM confirms they ran the panel's document. The outcome is logged once |
 
 An instance in `GET /instances` has `phase` (`stopped`, `pending`, `initializing`, `ready`, `stopping`), `checks` (`ec2`, `http`), `launchedAt`, the shared auto-stop `rule`, and `autoStop` while running. `autoStop.resetAt` is the time of the last timer reset during this run (null if none; a reset from an earlier run is ignored), and the hard stop is `max(launchedAt, resetAt) + maxUptimeMinutes`. The Access button turns on at `ready`, which needs both EC2 status checks `ok` and the ALB target `healthy`.
 

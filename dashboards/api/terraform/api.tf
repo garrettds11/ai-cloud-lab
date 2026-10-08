@@ -17,6 +17,8 @@ locals {
     "GET /admin/logins"                        = "admin"
     "GET /admin/logs"                          = "admin"
     "PUT /admin/users/{userId}"                = "admin"
+    "POST /admin/webui/actions"                = "admin"
+    "GET /admin/webui/actions/{commandId}"     = "admin"
   }
 
   holding_issuer = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.holding.id}"

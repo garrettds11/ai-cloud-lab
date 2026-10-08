@@ -46,11 +46,13 @@ Run these in PowerShell from the repository, in the window where `AWS_PROFILE` a
    terraform apply cutover.tfplan
    ```
 
-5. **Point the lab at the new API.** Print the lines for the lab's settings, and replace the matching lines in the root `terraform.tfvars`:
+5. **Point the lab at the new API.** The stack publishes the API's address, IDs and table names in the SSM parameter `/<lab_project_name>/control-panel-api/settings` (`lab_settings.tf`). With `control_panel_api_from_ssm = true` in the root `terraform.tfvars` (the root example sets it), the lab reads them from there, so nothing is copied. Check the parameter:
 
    ```powershell
-   terraform output -raw lab_tfvars
+   aws ssm get-parameter --name (terraform output -raw lab_settings_parameter) --query Parameter.Value --output text
    ```
+
+   Remove any of `control_panel_api_url`, `control_panel_api_id`, `control_panel_authorizer_id`, `control_panel_holding_pool_id`, `control_panel_users_table` and `control_panel_entitlements_table` from the root `terraform.tfvars`: a value set there wins over the parameter. (With `control_panel_api_from_ssm = false`, put the lines from `terraform output -raw lab_tfvars` there instead.)
 
    Then apply the lab as usual from the repository root. Read its plan first: it must show `terraform_data.control_panel_authorizer["authorizer"]` **must be replaced**, because the API and authorizer IDs changed. That replacement is the switch-over. It points the old authorizer back at its holding pool, so the old API starts answering 401, and points the new authorizer at the lab's Cognito pool. The same apply publishes the new address in `config.js` and clears it from CloudFront's cache. Pages that are already open keep the old address until they are reloaded.
 
@@ -76,7 +78,7 @@ Run these in PowerShell from the repository, in the window where `AWS_PROFILE` a
    aws cognito-idp delete-user-pool --user-pool-id us-east-1_xcTOLNQJM
    ```
 
-**Going back** before step 7: put the old values back in the root `terraform.tfvars` (API `65j334bc19`, authorizer `pnlj78`, holding pool `us-east-1_xcTOLNQJM`, and the old API address) and apply the lab. The same replacement happens in reverse.
+**Going back** before step 7: put the old values back in the root `terraform.tfvars` (they win over the parameter) (API `65j334bc19`, authorizer `pnlj78`, holding pool `us-east-1_xcTOLNQJM`, and the old API address) and apply the lab. The same replacement happens in reverse.
 
 **Request limit.** The stage throttle (`throttle_rate_limit`, `throttle_burst_limit`) is applied before sign-in is checked, and the `execute-api` address is public. So anyone who finds the address can use up the limit and make the panel answer 429 (too many requests) for everyone while they keep sending. Nothing is exposed and nothing costs more than a few cents. If it ever happens, raise the limits, or put the API behind the same CloudFront distribution as the pages (tracked with the hosting work in #65).
 

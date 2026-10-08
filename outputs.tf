@@ -106,7 +106,7 @@ output "control_panel_config" {
     appClientId       = aws_cognito_user_pool_client.control_panel["domain"].id
     hostedLoginDomain = "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com"
     redirectUri       = "${var.control_panel_url}/"
-    apiUrl            = var.control_panel_api_url
+    apiUrl            = local.panel_api.url
   } : null
 }
 

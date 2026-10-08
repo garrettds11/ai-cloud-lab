@@ -42,8 +42,13 @@ output "webui_desired_state_table" {
   value       = aws_dynamodb_table.webui_desired_state.name
 }
 
+output "lab_settings_parameter" {
+  description = "The SSM parameter this stack publishes for the lab. With control_panel_api_from_ssm = true the lab reads the API address, IDs and table names from it, so nothing is copied by hand."
+  value       = aws_ssm_parameter.lab_settings.name
+}
+
 output "lab_tfvars" {
-  description = "Lines to paste into the lab's terraform.tfvars (repository root) so the lab wires itself to this API."
+  description = "Only if the lab does not read the settings parameter (control_panel_api_from_ssm = false): lines to put in the lab's terraform.tfvars (repository root). Values set there win over the parameter."
   value       = <<-EOT
     control_panel_api_url            = "${aws_apigatewayv2_stage.default.invoke_url}"
     control_panel_api_id             = "${aws_apigatewayv2_api.panel.id}"

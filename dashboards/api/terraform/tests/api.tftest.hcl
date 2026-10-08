@@ -230,6 +230,32 @@ run "the_api_is_throttled_and_logged" {
   }
 }
 
+run "the_lab_settings_are_published_for_the_lab" {
+  command = apply
+
+  assert {
+    condition     = aws_ssm_parameter.lab_settings.name == "/aiwebdemo/control-panel-api/settings" && aws_ssm_parameter.lab_settings.type == "String"
+    error_message = "The settings must be published at /<lab_project_name>/control-panel-api/settings, where the lab looks for them."
+  }
+
+  assert {
+    condition = jsondecode(aws_ssm_parameter.lab_settings.value) == {
+      api_url            = aws_apigatewayv2_stage.default.invoke_url
+      api_id             = "abc123defg"
+      authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+      holding_pool_id    = "us-east-1_HOLDING01"
+      users_table        = aws_dynamodb_table.users.name
+      entitlements_table = aws_dynamodb_table.entitlements.name
+    }
+    error_message = "The settings must hold exactly the six values the lab reads."
+  }
+
+  assert {
+    condition     = !startswith(aws_ssm_parameter.lab_settings.name, "/aiwebdemo/control-panel/")
+    error_message = "The settings must sit outside the path the panel's functions may read."
+  }
+}
+
 run "panel_origin_with_a_path_is_rejected" {
   command = plan
 

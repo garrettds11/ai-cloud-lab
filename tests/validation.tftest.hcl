@@ -125,33 +125,41 @@ variables {
   auto_stop_alert_email                    = "test@example.com"
 
   # Everything that can change which resources exist, pinned to the plain defaults
-  enable_domain_access            = false
-  enable_cloudflare_access        = false
-  enable_alb_http_redirect        = false
-  enable_cognito                  = false
-  enable_origin_lockdown          = false
-  enable_ssh                      = false
-  open_webui_enable_local_login   = true
-  allowed_ssh_cidr                = null
-  ssh_key_name                    = null
-  extra_egress_cidrs              = []
-  enable_grafana_telemetry        = false
-  grafana_otlp_endpoint           = null
-  grafana_otlp_instance_id        = null
-  grafana_credentials_secret_arn  = null
-  origin_lockdown_extra_cidrs     = []
-  cloudflare_account_id           = null
-  cloudflare_api_token_secret_arn = null
-  cloudflare_access_team_domain   = null
-  control_panel_url               = null
-  cognito_domain_prefix           = null
-  cognito_extra_users             = []
-  root_volume_size                = 80
-  open_webui_host_port            = 8080
-  auto_stop_idle_minutes          = 60
-  auto_stop_max_uptime_minutes    = 0
-  vuln_mcp_table_name             = null
-  vuln_mcp_token_secret_arn       = null
+  enable_domain_access             = false
+  enable_cloudflare_access         = false
+  enable_alb_http_redirect         = false
+  enable_cognito                   = false
+  enable_origin_lockdown           = false
+  enable_ssh                       = false
+  open_webui_enable_local_login    = true
+  allowed_ssh_cidr                 = null
+  ssh_key_name                     = null
+  extra_egress_cidrs               = []
+  enable_grafana_telemetry         = false
+  grafana_otlp_endpoint            = null
+  grafana_otlp_instance_id         = null
+  grafana_credentials_secret_arn   = null
+  origin_lockdown_extra_cidrs      = []
+  cloudflare_account_id            = null
+  cloudflare_api_token_secret_arn  = null
+  cloudflare_access_team_domain    = null
+  control_panel_url                = null
+  control_panel_api_from_ssm       = false
+  control_panel_api_url            = null
+  control_panel_api_id             = null
+  control_panel_authorizer_id      = null
+  control_panel_holding_pool_id    = null
+  control_panel_users_table        = null
+  control_panel_entitlements_table = null
+  control_panel_bucket             = null
+  cognito_domain_prefix            = null
+  cognito_extra_users              = []
+  root_volume_size                 = 80
+  open_webui_host_port             = 8080
+  auto_stop_idle_minutes           = 60
+  auto_stop_max_uptime_minutes     = 0
+  vuln_mcp_table_name              = null
+  vuln_mcp_token_secret_arn        = null
 }
 
 run "baseline_plan_succeeds" {
@@ -203,6 +211,109 @@ run "fallback_enabled_with_cloudflare_and_panel_url" {
   assert {
     condition     = strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "export default {") && strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "fetch(request)")
     error_message = "The module Worker must export a fetch handler."
+  }
+}
+
+# ---- Control panel API settings from SSM ----
+# The API stack (dashboards/api/terraform) publishes /<project_name>/control-panel-api/settings.
+
+run "api_settings_are_not_read_unless_asked" {
+  command = plan
+
+  assert {
+    condition     = length(data.aws_ssm_parameters_by_path.control_panel_api) == 0 && length(data.aws_ssm_parameter.control_panel_api) == 0
+    error_message = "With control_panel_api_from_ssm = false the lab must not read the API's parameter."
+  }
+
+  assert {
+    condition     = alltrue([for v in values(local.panel_api) : v == null])
+    error_message = "Without the parameter or tfvars values, the lab must have no API settings."
+  }
+}
+
+run "api_settings_come_from_the_published_parameter" {
+  command = plan
+
+  variables {
+    project_name               = "aiwebdemo"
+    control_panel_api_from_ssm = true
+  }
+
+  override_data {
+    target = data.aws_ssm_parameters_by_path.control_panel_api
+    values = { names = ["/aiwebdemo/control-panel-api/settings"] }
+  }
+
+  override_data {
+    target = data.aws_ssm_parameter.control_panel_api
+    values = {
+      insecure_value = "{\"api_url\":\"https://abc123defg.execute-api.us-east-1.amazonaws.com/\",\"api_id\":\"abc123defg\",\"authorizer_id\":\"auth01\",\"holding_pool_id\":\"us-east-1_HOLDING01\",\"users_table\":\"panel_users\",\"entitlements_table\":\"instance_entitlements\"}"
+    }
+  }
+
+  assert {
+    condition = local.panel_api == {
+      url                = "https://abc123defg.execute-api.us-east-1.amazonaws.com/"
+      api_id             = "abc123defg"
+      authorizer_id      = "auth01"
+      holding_pool_id    = "us-east-1_HOLDING01"
+      users_table        = "panel_users"
+      entitlements_table = "instance_entitlements"
+    }
+    error_message = "All six API settings must come from the parameter when tfvars leaves them null."
+  }
+
+  assert {
+    condition     = length(aws_dynamodb_table_item.panel_demo_user) > 0
+    error_message = "The users table name from the parameter must seed the demo users."
+  }
+}
+
+run "api_settings_in_tfvars_win_over_the_parameter" {
+  command = plan
+
+  variables {
+    project_name               = "aiwebdemo"
+    control_panel_api_from_ssm = true
+    control_panel_api_url      = "https://override.example.com/"
+  }
+
+  override_data {
+    target = data.aws_ssm_parameters_by_path.control_panel_api
+    values = { names = ["/aiwebdemo/control-panel-api/settings"] }
+  }
+
+  override_data {
+    target = data.aws_ssm_parameter.control_panel_api
+    values = {
+      insecure_value = "{\"api_url\":\"https://abc123defg.execute-api.us-east-1.amazonaws.com/\",\"api_id\":\"abc123defg\",\"authorizer_id\":\"auth01\",\"holding_pool_id\":\"us-east-1_HOLDING01\",\"users_table\":\"panel_users\",\"entitlements_table\":\"instance_entitlements\"}"
+    }
+  }
+
+  assert {
+    condition     = local.panel_api.url == "https://override.example.com/" && local.panel_api.api_id == "abc123defg"
+    error_message = "A value set in tfvars must win; the rest must still come from the parameter."
+  }
+}
+
+run "missing_api_parameter_is_a_warning_not_a_failure" {
+  command = plan
+
+  variables {
+    project_name               = "aiwebdemo"
+    control_panel_api_from_ssm = true
+  }
+
+  override_data {
+    target = data.aws_ssm_parameters_by_path.control_panel_api
+    values = { names = [] }
+  }
+
+  expect_failures = [check.control_panel_api_settings_found]
+
+  assert {
+    condition     = length(data.aws_ssm_parameter.control_panel_api) == 0 && alltrue([for v in values(local.panel_api) : v == null])
+    error_message = "Without the parameter the lab must plan without API settings instead of failing."
   }
 }
 

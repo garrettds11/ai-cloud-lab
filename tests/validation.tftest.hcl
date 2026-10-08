@@ -12,7 +12,12 @@
 mock_provider "aws" {
   mock_data "aws_vpc" {
     defaults = {
-      id = "vpc-0123456789abcdef0"
+      id         = "vpc-0123456789abcdef0"
+      cidr_block = "172.31.0.0/16"
+      cidr_block_associations = [
+        { association_id = "vpc-cidr-assoc-0aaa", cidr_block = "172.31.0.0/16", state = "associated" },
+        { association_id = "vpc-cidr-assoc-0bbb", cidr_block = "100.64.0.0/16", state = "associated" },
+      ]
     }
   }
 
@@ -48,6 +53,18 @@ mock_provider "aws" {
 
   # Resources that other resources reference by ARN. The provider validates ARN
   # arguments, so the mock must return well-formed ARNs, not random strings.
+  mock_resource "aws_lb" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/test-alb/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/0123456789abcdef"
+    }
+  }
+
   mock_resource "aws_iam_role" {
     defaults = {
       arn = "arn:aws:iam::123456789012:role/test-role"
@@ -337,6 +354,42 @@ run "local_login_off_requires_cognito" {
 }
 
 # ---- Origin lockdown ----
+
+# The ALB answers only Cloudflare when locked down (on 443 and on the optional port 80
+# redirect), forwards only to Open WebUI inside the VPC, and offers TLS 1.2 or later.
+run "alb_is_locked_down_and_forwards_only_to_open_webui" {
+  command = apply
+
+  plan_options {
+    target = [aws_security_group.alb, aws_lb_listener.https, aws_lb_listener.http_redirect]
+  }
+
+  variables {
+    enable_domain_access          = true
+    enable_alb_http_redirect      = true
+    enable_origin_lockdown        = true
+    enable_cloudflare_access      = true
+    cloudflare_account_id         = "0123456789abcdef0123456789abcdef"
+    cloudflare_access_team_domain = "example.cloudflareaccess.com"
+    acm_certificate_arn           = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  }
+
+  assert {
+    condition     = alltrue([for rule in aws_security_group.alb["domain"].ingress : !contains(rule.cidr_blocks, "0.0.0.0/0")])
+    error_message = "With origin lockdown, neither port 443 nor the port 80 redirect may be open to the whole Internet."
+  }
+
+  assert {
+    condition = alltrue([for rule in aws_security_group.alb["domain"].egress :
+    rule.protocol == "tcp" && rule.from_port == 8080 && rule.to_port == 8080 && toset(rule.cidr_blocks) == toset(["172.31.0.0/16", "100.64.0.0/16"])])
+    error_message = "The ALB may only send traffic to Open WebUI's port, to every IPv4 range of the VPC and nothing else."
+  }
+
+  assert {
+    condition     = aws_lb_listener.https["domain"].ssl_policy == "ELBSecurityPolicy-TLS13-1-2-2021-06"
+    error_message = "The HTTPS listener must use a TLS 1.2+ policy with strong ciphers."
+  }
+}
 
 run "origin_lockdown_requires_cloudflare_access" {
   command = plan

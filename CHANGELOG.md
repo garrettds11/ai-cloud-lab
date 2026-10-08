@@ -6,6 +6,18 @@ version numbers yet, so everything is listed under Unreleased.
 
 ## [Unreleased]
 
+### Security
+- The HTTPS listener now uses `ELBSecurityPolicy-TLS13-1-2-2021-06` (TLS 1.2 and 1.3, forward-secret
+  ciphers only), and the ALB drops requests with malformed header names.
+- With origin lockdown on, the optional port 80 redirect is now limited to Cloudflare addresses like
+  port 443 (it was open to the whole Internet).
+- The ALB's outbound rule allows only Open WebUI's port inside the VPC instead of all traffic everywhere.
+- Auto-stop alert messages are encrypted at rest with the AWS managed SNS key.
+
+### Changed
+- CI: the tflint and checkov job is now blocking, with checkov pinned. Every remaining finding is skipped
+  inline next to its resource with the reason. The control panel API tests now also run in CI.
+
 ### Fixed
 - Auto-stop timer reset: a far-future, oversized or malformed value in the `reset-at` parameter could
   switch the hard limit off (the instance monitor and the watchdog treated it as "reset just now" every

@@ -38,6 +38,7 @@ check "auto_stop_alert_email" {
 # user-data, means changing the toggle or the timeout updates in place and never
 # replaces the instance.
 resource "aws_ssm_parameter" "auto_stop" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
   name = local.auto_stop_parameter_name
   type = "String"
   value = jsonencode({
@@ -51,6 +52,7 @@ resource "aws_ssm_parameter" "auto_stop" {
 # parameter's existence is managed here; its value is runtime state, so Terraform never
 # reverts it. "0" means never reset.
 resource "aws_ssm_parameter" "auto_stop_reset" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
   name        = local.auto_stop_reset_parameter_name
   description = "Epoch seconds of the last auto-stop timer reset from the control panel. Runtime state; Terraform does not overwrite it."
   type        = "String"
@@ -88,6 +90,9 @@ resource "aws_sns_topic" "auto_stop" {
   for_each = local.auto_stop_resources
 
   name = "${var.project_name}-auto-stop-alerts"
+  # Encrypt stored messages with the AWS managed SNS key. The watchdog publishes with its own
+  # IAM role through the SNS API, which that key's policy allows; no key permissions are needed.
+  kms_master_key_id = "alias/aws/sns"
 }
 
 # Email subscriptions stay "pending" until the recipient clicks the confirmation link.
@@ -172,6 +177,8 @@ resource "aws_iam_role_policy" "auto_stop_watchdog" {
 }
 
 resource "aws_cloudwatch_log_group" "auto_stop_watchdog" {
+  #checkov:skip=CKV_AWS_338:Short retention is deliberate for a lab: the logs are operational and cost and privacy favour 14 days
+  #checkov:skip=CKV_AWS_158:Logs are encrypted at rest by CloudWatch; a customer managed key adds cost for no lab benefit
   for_each = local.auto_stop_resources
 
   name              = "/aws/lambda/${var.project_name}-auto-stop-watchdog"
@@ -179,6 +186,12 @@ resource "aws_cloudwatch_log_group" "auto_stop_watchdog" {
 }
 
 resource "aws_lambda_function" "auto_stop_watchdog" {
+  #checkov:skip=CKV_AWS_50:X-Ray adds cost and nothing for a five-minute scheduled check; results are logged as JSON
+  #checkov:skip=CKV_AWS_272:Code is built from this repository by Terraform; code signing adds a signing profile for no lab benefit
+  #checkov:skip=CKV_AWS_117:The watchdog calls only AWS APIs; putting it in a VPC would need NAT or endpoints for no gain
+  #checkov:skip=CKV_AWS_116:EventBridge retries failed runs and the next run is five minutes later; a failed run has nothing to replay
+  #checkov:skip=CKV_AWS_115:Reserved concurrency fails on new accounts whose concurrency quota is 10; EventBridge invokes it once per five minutes
+  #checkov:skip=CKV_AWS_173:Environment variables hold only names and ARNs, no secrets; Lambda encrypts them at rest with an AWS managed key
   for_each = local.auto_stop_resources
 
   function_name    = "${var.project_name}-auto-stop-watchdog"

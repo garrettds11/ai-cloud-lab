@@ -869,3 +869,13 @@ def test_an_action_ssm_forgot_before_anyone_read_it_is_expired_not_pending(aws, 
     webui.invocation_error = "InvocationDoesNotExist"
     body = call(ACTION, ADM, path={"commandId": CMD})[1]
     assert body["status"] == "Expired" and body["result"] is None
+
+
+def test_the_outcome_is_logged_for_the_administrator_who_asked(aws, webui):
+    aws.users.items[(BOOT,)] = {"email": BOOT, "name": "Boot", "roles": ["admin"], "source": "panel"}
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status"})}
+    call(ACTION, BOOT, path={"commandId": CMD})  # another administrator reads it first
+    done = [r for r in aws.events.items.values() if ": done" in r.get("event", "")]
+    assert len(done) == 1 and done[0]["pk"] == f"user#{ADM}"

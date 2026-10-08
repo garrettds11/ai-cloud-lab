@@ -1024,7 +1024,8 @@ def get_webui_action(caller, command_id):
     try:
         events.put_item(Item=item, ConditionExpression="attribute_not_exists(sk)")
         ok = status == "Success" and bool((result or {}).get("ok"))
-        _log(caller["id"], "info" if ok else "error",
+        # The outcome belongs in the log of whoever asked, whichever administrator reads it first.
+        _log(record["requestedBy"], "info" if ok else "error",
              f"Open WebUI action '{record['action']}' on {instance_id}: {'done' if ok else 'failed (' + status + ')'}", instance_id)
     except ClientError as err:
         if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":

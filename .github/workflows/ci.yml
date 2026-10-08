@@ -83,6 +83,12 @@ jobs:
           pip install boto3 mcp==1.27.2
           python -m unittest discover -s tests -v
 
+      - name: Control panel API tests (handler, OpenAPI spec)
+        working-directory: dashboards/api
+        run: |
+          pip install pytest pyyaml openapi-spec-validator
+          python -m pytest -q
+
   # Advisory for now: findings show in the log but do not fail the build.
   # Review the first clean run, fix or suppress what is real, then remove continue-on-error.
   lint-and-scan:

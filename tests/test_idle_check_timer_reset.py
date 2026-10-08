@@ -121,10 +121,36 @@ class IdleCheckResetTest(unittest.TestCase):
         self.assertTrue(off)
         self.assertIn("hard_limit_minutes=130/120", out)
 
-    def test_a_reset_time_in_the_future_counts_as_now(self):
-        off, out, _, _ = self.run_script(uptime_minutes=130, reset=int(time.time()) + 100000)
+    def test_a_slightly_future_reset_counts_as_now(self):
+        # Within the clock-skew allowance (5 minutes).
+        off, out, _, _ = self.run_script(uptime_minutes=130, reset=int(time.time()) + 120)
         self.assertFalse(off)
         self.assertIn("hard_limit_minutes=0/120", out)
+
+    def test_a_far_future_reset_is_ignored_and_the_limit_still_applies(self):
+        off, out, logged, _ = self.run_script(uptime_minutes=130, reset=int(time.time()) + 100000)
+        self.assertTrue(off)
+        self.assertIn("hard_limit_minutes=130/120", out)
+        self.assertIn("ignoring an invalid or future timer reset", logged)
+
+    def test_a_value_too_large_for_bash_cannot_disable_the_limit(self):
+        off, out, _, _ = self.run_script(uptime_minutes=300, reset="99999999999999999999")
+        self.assertTrue(off)
+        self.assertIn("hard_limit_minutes=300/120", out)
+
+    def test_leading_zeros_are_read_as_decimal_not_octal(self):
+        # "089" is not valid octal; bash would error on it without the 10# prefix.
+        off, out, _, _ = self.run_script(uptime_minutes=130, reset="089")
+        self.assertTrue(off)
+        self.assertIn("hard_limit_minutes=130/120", out)
+        padded = str(self.minutes_ago(10)).zfill(10)
+        off, out, _, _ = self.run_script(uptime_minutes=130, reset=padded)
+        self.assertFalse(off)
+
+    def test_a_reset_of_zero_is_not_logged_as_invalid(self):
+        off, _, logged, _ = self.run_script(uptime_minutes=130, reset=0)
+        self.assertTrue(off)
+        self.assertNotIn("ignoring", logged)
 
     def test_an_unreadable_reset_skips_the_hard_limit_for_that_minute(self):
         off, _, logged, _ = self.run_script(uptime_minutes=300, reset="error")

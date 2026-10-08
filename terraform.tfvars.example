@@ -168,15 +168,18 @@ cognito_extra_users           = []
 
 # Control panel dashboard. Terraform only supplies its sign-in settings: an app
 # client in the Cognito pool and the config.js the page loads, which apply publishes to the
-# panel's bucket. The panel's hosting, DNS and API are built by hand (see dashboards/SETUP.md).
+# panel's bucket. The panel's hosting and DNS are built by hand (see SETUP.md).
 control_panel_url = "https://cp.aiwebdemo.click"
-# The control panel API is built by hand ahead of Terraform (dashboards/SETUP.md). Its
-# address goes into the published config.js. The three ids let apply point the API's
-# sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
-control_panel_api_url         = "https://65j334bc19.execute-api.us-east-1.amazonaws.com"
-control_panel_api_id          = "65j334bc19"
-control_panel_authorizer_id   = "pnlj78"
-control_panel_holding_pool_id = "us-east-1_xcTOLNQJM"
+# The control panel API is its own Terraform stack (dashboards/api/terraform), applied before
+# the lab. Its address goes into the published config.js. The three ids let apply point the
+# API's sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
+# These are the demo account's values. They change whenever the API stack is created: after
+# applying it, run `terraform output -raw lab_tfvars` in dashboards/api/terraform, put the
+# printed lines here, commit, and copy this file over terraform.tfvars as usual.
+control_panel_api_url         = "https://yi743toqn6.execute-api.us-east-1.amazonaws.com/"
+control_panel_api_id          = "yi743toqn6"
+control_panel_authorizer_id   = "7y34oy"
+control_panel_holding_pool_id = "us-east-1_Tb34wYRgC"
 # The panel's bucket and CloudFront distribution (built by hand). Apply writes config.js into
 # the bucket and clears it from the distribution's cache; destroy removes that one object.
 control_panel_bucket          = "aiwebdemo-control-panel-394566733278"

@@ -7,6 +7,8 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Added
+- OpenAPI 3.1 description of the control panel API (`dashboards/api/openapi.yaml`), with a test that
+  keeps its route list in step with `handler.py`.
 - Auto-stop timer reset: a reset icon in the control panel (between Start and Access, on a running lab
   with a hard limit) gives the lab another full `auto_stop_max_uptime_minutes` without restarting it. Each
   reset writes a log line under the person who pressed it and shows "Timer reset at ..." under the status.

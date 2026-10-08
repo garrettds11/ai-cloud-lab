@@ -532,3 +532,187 @@ def test_only_admin_sees_everyones_logins_and_logs(aws):
     status, logs = call("GET /admin/logs", ADM)
     assert status == 200
     assert {OP, ADM} <= {r["userId"] for r in logs if r["source"] == "Control panel"}
+
+
+# ---- auto-stop timer reset ---------------------------------------------------------------
+
+RESET = "POST /instances/{instanceId}/reset-timer"
+RESET_NAME = "/lab/auto-stop/reset-at"
+
+
+class FakeResetSSM:
+    """The auto-stop rule plus the reset parameter, which can be read, written or made to fail."""
+
+    def __init__(self, max_minutes=90, reset=None, read_error=None, write_error=None):
+        self.rule = {"enabled": True, "idle_minutes": 60, "max_uptime_minutes": max_minutes}
+        self.value = reset  # epoch seconds as a string, or None when the parameter does not exist
+        self.read_error, self.write_error, self.writes = read_error, write_error, []
+
+    def get_parameter(self, Name):
+        if Name == RESET_NAME:
+            if self.read_error:
+                raise client_error(self.read_error)
+            if self.value is None:
+                raise client_error("ParameterNotFound")
+            return {"Parameter": {"Value": self.value}}
+        return {"Parameter": {"Value": json.dumps(self.rule)}}
+
+    def put_parameter(self, **kwargs):
+        if self.write_error:
+            raise client_error(self.write_error)
+        self.writes.append(kwargs)
+        self.value = kwargs["Value"]
+
+
+def running(aws, minutes_up=40):
+    aws.ec2.state["i-aaa"] = "running"
+    aws.ec2.launched["i-aaa"] = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes_up)
+
+
+def use_reset_ssm(monkeypatch, **kwargs):
+    fake = FakeResetSSM(**kwargs)
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "RESET_PARAMETER", RESET_NAME)
+    return fake
+
+
+def ago_s(minutes):
+    return str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) - minutes * 60)
+
+
+def test_reset_gives_another_full_period_and_is_logged(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    before = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 200 and body["ok"] is True
+    assert len(ssm.writes) == 1
+    write = ssm.writes[0]
+    assert write["Name"] == RESET_NAME and write["Overwrite"] is True and write["Type"] == "String"
+    assert before <= int(write["Value"]) <= before + 5
+    assert body["resetAt"] == int(write["Value"]) * 1000
+    assert body["stopAt"] == body["resetAt"] + 90 * 60000
+    assert body["maxUptimeMinutes"] == 90
+    assert body["message"] == "Auto-stop timer reset. The lab has another 90 minutes."
+    # One log line for the person who pressed it, visible in their own log.
+    status, logs = call("GET /logs", OP)
+    lines = [r for r in logs if "Reset the auto-stop timer" in r["event"]]
+    assert len(lines) == 1
+    assert lines[0]["severity"] == "info" and lines[0]["instanceId"] == "i-aaa" and "another 90 minutes" in lines[0]["event"]
+    assert lines[0]["userId"] == OP
+    # The administrator sees it, with the name of the person.
+    admin_lines = [r for r in call("GET /admin/logs", ADM)[1] if "Reset the auto-stop timer" in r["event"]]
+    assert [r["userName"] for r in admin_lines] == ["Olive Operator"]
+
+
+def test_reset_changes_nothing_else(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch)
+    call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert aws.ec2.started == [] and aws.ec2.state["i-aaa"] == "running"
+
+
+def test_reset_needs_a_grant(aws, monkeypatch):
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, OP, path={"instanceId": "i-aaa"})[0] == 403
+    grant(aws, OP, "i-aaa", status="revoked")
+    assert call(RESET, OP, path={"instanceId": "i-aaa"})[0] == 403
+    assert ssm.writes == []
+    assert any("refused" in r["event"] for r in call("GET /logs", OP)[1])
+
+
+def test_reset_needs_the_operator_role_even_with_a_grant(aws, monkeypatch):
+    grant(aws, NONE, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, NONE, path={"instanceId": "i-aaa"})[0] == 403
+    assert ssm.writes == []
+
+
+def test_administrator_may_reset_without_a_grant(aws, monkeypatch):
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, ADM, path={"instanceId": "i-aaa"})[0] == 200
+    assert len(ssm.writes) == 1
+
+
+def test_reset_rejects_unmanaged_and_stopped_instances(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, OP, path={"instanceId": "i-zzz"})[0] == 404
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})  # stopped
+    assert status == 409 and "not running" in body["message"]
+    assert ssm.writes == []
+
+
+def test_reset_with_no_hard_limit_has_nothing_to_reset(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch, max_minutes=0)
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 409 and "no hard time limit" in body["message"].lower()
+    assert ssm.writes == []
+
+
+def test_failed_write_is_reported_and_logged_not_claimed(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch, write_error="AccessDeniedException")
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 502 and "Could not reset the timer" in body["message"] and "AccessDenied" not in body["message"]
+    lines = call("GET /logs", OP)[1]
+    assert any(r["severity"] == "error" and "reset failed" in r["event"] for r in lines)
+    assert not any("Reset the auto-stop timer" in r["event"] for r in lines)
+
+
+def test_reset_without_a_configured_parameter_is_a_clear_503(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch)
+    monkeypatch.setattr(handler, "RESET_PARAMETER", "")
+    assert call(RESET, OP, path={"instanceId": "i-aaa"})[0] == 503
+
+
+def test_the_admin_lambda_has_no_reset_route(aws):
+    assert _raw(handler.admin_handler, RESET, BOTH, {"instanceId": "i-aaa"}) == 404
+
+
+def test_instance_view_carries_the_reset_for_this_run_only(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws, minutes_up=120)
+    use_reset_ssm(monkeypatch)
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None  # never reset
+    ssm = use_reset_ssm(monkeypatch, reset=ago_s(10))
+    view = call("GET /instances", OP)[1][0]["autoStop"]
+    assert abs(view["resetAt"] - (int(ago_s(10)) * 1000)) < 5000
+    assert view["launchedAt"] < view["resetAt"]
+    ssm.value = ago_s(500)  # left over from an earlier run: older than this launch
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+
+
+def test_a_future_reset_time_is_shown_as_now(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch, reset=str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 86400))
+    reset_at = call("GET /instances", OP)[1][0]["autoStop"]["resetAt"]
+    assert reset_at <= handler.now_ms()
+
+
+def test_unreadable_or_garbage_reset_shows_the_launch_countdown(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch, read_error="AccessDeniedException")
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+    use_reset_ssm(monkeypatch, reset="soon")
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+
+
+def test_no_hard_limit_means_the_reset_is_not_read(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch, max_minutes=0, reset=ago_s(1))
+    ssm.get_parameter = lambda Name: (_ for _ in ()).throw(AssertionError("read")) if Name == RESET_NAME else {"Parameter": {"Value": json.dumps(ssm.rule)}}
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None

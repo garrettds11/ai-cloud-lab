@@ -71,6 +71,7 @@
     list: '<path d="M5 6.5h14M5 12h14M5 17.5h9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
     users: '<circle cx="9" cy="9" r="3.3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19c.5-3.2 2.8-5 5.5-5s5 1.8 5.5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15.5 6.2a3 3 0 0 1 0 5.6M17.5 14.3c1.8.6 3 2.2 3.3 4.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
     refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.2h-4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+    timer: '<path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5M4.5 4.2v3.6h3.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4.2l2.8 1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
     arrow: '<path d="M12 5v14m0 0-5-5m5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     spinner: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.4" opacity=".25"/><path d="M12 4a8 8 0 0 1 8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
     dot: '<circle cx="12" cy="12" r="6" fill="currentColor"/>',
@@ -120,6 +121,8 @@
   // Instances just started from this page. EC2 can still report "stopped" for a moment after
   // a start is accepted, so for 30 seconds a stopped answer is shown as starting.
   const pendingStarts = new Map();
+  // Instances whose timer reset is being sent, so a double click sends one request.
+  const resetting = new Set();
 
   // ---- feedback: toasts, live region, dialog, focus -----------------------------------
 
@@ -251,7 +254,8 @@
     const silent = a.heartbeatAgeMinutes >= 10;
     if (silent) lines.push({ text: 'Idle monitor not reporting', tone: 'amber' });
     if (a.maxUptimeMinutes > 0) {
-      const stopAt = a.launchedAt + a.maxUptimeMinutes * MIN;
+      const resetAt = a.resetAt && a.resetAt > a.launchedAt ? a.resetAt : null;
+      const stopAt = (resetAt || a.launchedAt) + a.maxUptimeMinutes * MIN;
       const left = (stopAt - t) / MIN;
       if (left <= 0) return [{ text: 'Stopping', tone: 'amber' }];
       const warn = left <= (a.maxUptimeMinutes >= 60 ? 30 : 10);
@@ -259,6 +263,7 @@
         text: (warn ? 'Stopping soon. ' : '') + 'Stops at about ' + fmt.time(stopAt) + '. ' + duration(left) + ' left.',
         tone: warn ? 'amber' : 'muted',
       });
+      if (resetAt) lines.push({ text: 'Timer reset at ' + fmt.time(resetAt) + '. The lab got another ' + duration(a.maxUptimeMinutes) + '.', tone: 'green' });
     }
     if (a.idleLimitMinutes > 0 && !silent) {
       if (a.activeUsers === -1) {
@@ -287,6 +292,27 @@
       'data-key': 'start:' + inst.id,
       onClick: can ? () => onStart(inst) : (e) => e.preventDefault(),
     }, icon('play'));
+  }
+
+  // Restarts the hard-stop countdown without stopping or restarting the lab.
+  function resetButton(inst) {
+    const a = inst.autoStop;
+    const running = inst.phase === 'ready' || inst.phase === 'initializing';
+    const limited = !!(a && a.enabled && a.maxUptimeMinutes > 0);
+    const busy = resetting.has(inst.id);
+    const can = running && limited && !busy;
+    const title = !running ? 'Only a running instance has an auto-stop timer to reset'
+      : !limited ? 'No hard time limit is set, so there is nothing to reset'
+      : busy ? 'Resetting the timer' : 'Reset auto-stop timer';
+    return h('button', {
+      type: 'button',
+      class: 'icon-btn reset',
+      'aria-label': 'Reset auto-stop timer for ' + inst.name,
+      'aria-disabled': can ? null : 'true',
+      title,
+      'data-key': 'reset:' + inst.id,
+      onClick: can ? () => onReset(inst) : (e) => e.preventDefault(),
+    }, icon('timer'));
   }
 
   function accessButton(inst) {
@@ -329,7 +355,7 @@
   function ruleText(inst) {
     const r = inst.rule;
     const parts = [];
-    if (r.maxUptimeMinutes > 0) parts.push('Hard limit ' + r.maxUptimeMinutes + ' min after start');
+    if (r.maxUptimeMinutes > 0) parts.push('Hard limit ' + r.maxUptimeMinutes + ' min after start or the last timer reset');
     if (r.idleMinutes > 0) parts.push('Idle limit ' + r.idleMinutes + ' min');
     return r.enabled && parts.length ? parts.join('. ') : 'Off';
   }
@@ -357,7 +383,7 @@
           h('code', { text: inst.id }),
           h('button', { type: 'button', class: 'icon-btn small', 'aria-label': 'Copy instance ID of ' + inst.name, title: 'Copy instance ID', 'data-key': 'copy:' + inst.id, onClick: () => copyId(inst) }, icon('copy')))),
       statusCell(inst),
-      h('td', { class: 'cell-actions' }, h('div', { class: 'actions' }, startButton(inst), accessButton(inst))))];
+      h('td', { class: 'cell-actions' }, h('div', { class: 'actions' }, startButton(inst), resetButton(inst), accessButton(inst))))];
     if (open) {
       rows.push(h('tr', { class: 'details' }, h('td', { colspan: '4' }, h('dl', null,
         h('dt', { text: 'Instance ID' }), h('dd', { text: inst.id }),
@@ -513,6 +539,35 @@
       toast(err.message, 'error');
       announce(err.message);
     }
+  }
+
+  async function onReset(inst) {
+    const a = inst.autoStop;
+    const max = a.maxUptimeMinutes;
+    const currentStop = (a.resetAt && a.resetAt > a.launchedAt ? a.resetAt : a.launchedAt) + max * MIN;
+    const ok = await confirmDialog({
+      title: 'Reset the auto-stop timer?',
+      body: h('div', null,
+        h('p', { text: 'Extend this lab for another full session?' }),
+        h('p', { class: 'muted', text: inst.name + ' will stop in ' + duration(max) + ' (at about ' + fmt.time(API.now() + max * MIN) + '), instead of at about ' + fmt.time(currentStop) + '. Nothing is restarted, and the idle timer is not affected.' })),
+      confirmLabel: 'Reset timer',
+    });
+    if (!ok || resetting.has(inst.id)) return;
+    resetting.add(inst.id);
+    paintInstances();
+    try {
+      announce('Resetting the auto-stop timer for ' + inst.name);
+      const result = await API.resetTimer(inst.id);
+      toast(result.message, 'ok');
+      announce(result.message);
+      if (inst.autoStop) inst.autoStop.resetAt = result.resetAt; // show it now; the next read confirms it
+    } catch (err) {
+      toast(err.message, 'error');
+      announce(err.message);
+    } finally {
+      resetting.delete(inst.id);
+    }
+    await loadInstances();
   }
 
   // The countdown ticks on the page between reads; repaint only when a line changes.

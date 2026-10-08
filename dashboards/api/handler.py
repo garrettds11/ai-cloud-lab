@@ -11,7 +11,9 @@ Rules, checked on every call (see README.md):
     table, read on every call, so a role change takes effect at once.
   * Customers see and start only the instances they hold an active grant for, and only
     while they hold the operators role. Administrators hold every right: they see and start
-    every managed instance without grants. Nobody here can stop an instance.
+    every managed instance without grants. Nobody here can stop an instance. Anyone who
+    may start a running instance may also reset its auto-stop timer (extend the hard
+    uptime limit by one full period); that writes one SSM parameter and a log line.
   * Admin routes need the user_mgrs or the admin role. User managers and administrators
     change who may start which instance (grants). Only an administrator changes anyone's
     roles, including who else is an administrator. Saving changes writes the panel's users
@@ -53,6 +55,10 @@ INSTANCE_IDS = [i.strip() for i in os.environ.get("INSTANCE_IDS", "").split(",")
 TARGET_GROUP_ARN = os.environ.get("TARGET_GROUP_ARN", "")  # the ALB health check is the "HTTP" check
 SERVICE_URL = os.environ.get("SERVICE_URL", "")  # where the Access button goes
 AUTO_STOP_PARAMETER = os.environ.get("AUTO_STOP_PARAMETER", "")
+# Where the last auto-stop timer reset is kept (epoch seconds). The lab's instance monitor and
+# watchdog read it. Defaults to the auto-stop parameter's "reset-at" child, which is what
+# Terraform creates (auto_stop.tf), so there is no extra setting to copy by hand.
+RESET_PARAMETER = os.environ.get("RESET_PARAMETER", f"{AUTO_STOP_PARAMETER}/reset-at" if AUTO_STOP_PARAMETER else "")
 EVENT_TTL_DAYS = int(os.environ.get("EVENT_TTL_DAYS", "90"))
 
 SETUP_GRACE_MINUTES = 30  # same as the watchdog: idle rules wait this long after a start
@@ -330,6 +336,28 @@ def _points(metric, statistic, instance_id, minutes):
     return sorted(out.get("Datapoints", []), key=lambda p: p["Timestamp"])
 
 
+def _reset_at_ms(launched_ms):
+    """When the hard-limit timer was last reset during this run, in ms, or None.
+
+    A reset older than this run's launch is left over from an earlier run and does not
+    count. A time in the future is treated as now. If the parameter cannot be read the
+    panel simply shows the countdown from launch, which is what the lab falls back to too."""
+    if not RESET_PARAMETER:
+        return None
+    try:
+        raw = ssm.get_parameter(Name=RESET_PARAMETER)["Parameter"]["Value"]
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "ParameterNotFound":
+            print(json.dumps({"warning": "timer reset unreadable", "detail": str(err)}))
+        return None
+    try:
+        reset_ms = int(str(raw).strip()) * 1000
+    except ValueError:
+        return None
+    reset_ms = min(reset_ms, now_ms())
+    return reset_ms if reset_ms > launched_ms else None
+
+
 def _auto_stop(instance_id, launched_ms, rule):
     uptime = (now_ms() - launched_ms) / 60000
     heartbeat_age = None
@@ -356,6 +384,7 @@ def _auto_stop(instance_id, launched_ms, rule):
         "idleLimitMinutes": rule["idle"],
         "maxUptimeMinutes": rule["max"],
         "launchedAt": launched_ms,
+        "resetAt": _reset_at_ms(launched_ms) if rule["max"] > 0 else None,
         "setupDone": setup_done,
         "idleMinutes": idle if idle is not None else 0,
         "activeUsers": active,
@@ -427,6 +456,51 @@ def start_instance(caller, instance_id):
         raise ApiError(502, "AWS could not start the instance. Try again, and tell your administrator if it keeps failing.")
     _log(caller["id"], "info", f"Start requested for {name}", instance_id)
     return {"ok": True}
+
+
+def reset_timer(caller, instance_id):
+    """Give a running lab another full hard-limit period, counted from now.
+
+    Does not start, stop or restart anything and does not touch the idle timer. It only
+    records the time in the reset parameter, which the instance monitor and the watchdog
+    both read. Allowed for exactly the people who may start this instance."""
+    if not _can_operate(caller):
+        raise ApiError(403, "You do not have permission to do that.")
+    if instance_id not in _instance_ids():
+        raise ApiError(404, "Instance not found.")
+    if instance_id not in _usable_ids(caller):
+        _log(caller["id"], "warning", f"Timer reset refused for {instance_id}: no active grant", instance_id)
+        raise ApiError(403, "You do not have access to this instance.")
+    raws = _describe([instance_id])
+    if instance_id not in raws:
+        raise ApiError(404, "Instance not found.")
+    name = _tag(raws[instance_id]["instance"], "Name") or instance_id
+    if raws[instance_id]["instance"]["State"]["Name"] != "running":
+        raise ApiError(409, "This instance is not running, so there is no auto-stop timer to reset.")
+    rule = _rule()
+    if not (rule["enabled"] and rule["max"] > 0):
+        raise ApiError(409, "No hard time limit is set for this lab, so there is nothing to reset.")
+    if not RESET_PARAMETER:
+        print(json.dumps({"error": "timer reset parameter not configured"}))
+        raise ApiError(503, "Timer reset is not set up on this control panel yet. Tell your administrator.")
+    reset_s = int(time.time())
+    try:
+        ssm.put_parameter(Name=RESET_PARAMETER, Value=str(reset_s), Type="String", Overwrite=True)
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "")
+        _log(caller["id"], "error", f"{name}: auto-stop timer reset failed, {code}", instance_id)
+        print(json.dumps({"error": "put_parameter", "detail": str(err)}))
+        raise ApiError(502, "Could not reset the timer. Try again, and tell your administrator if it keeps failing.")
+    stop_ms = reset_s * 1000 + rule["max"] * 60000
+    stop_text = datetime.datetime.fromtimestamp(stop_ms / 1000, datetime.timezone.utc).strftime("%H:%M UTC")
+    _log(caller["id"], "info", f"Reset the auto-stop timer for {name}: another {rule['max']} minutes, stopping at about {stop_text}", instance_id)
+    return {
+        "ok": True,
+        "resetAt": reset_s * 1000,
+        "stopAt": stop_ms,
+        "maxUptimeMinutes": rule["max"],
+        "message": f"Auto-stop timer reset. The lab has another {rule['max']} minutes.",
+    }
 
 
 # ---- session, logins, logs ------------------------------------------------------------
@@ -827,6 +901,8 @@ def _customer_routes(event, caller):
         return list_instances(caller)
     if key == "POST /instances/{instanceId}/start":
         return start_instance(caller, path["instanceId"])
+    if key == "POST /instances/{instanceId}/reset-timer":
+        return reset_timer(caller, path["instanceId"])
     if key == "GET /logins":
         return list_logins(caller)
     if key == "GET /logs":

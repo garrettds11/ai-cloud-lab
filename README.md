@@ -154,11 +154,28 @@ an hour) and stops the instance a few minutes after it if the monitor has not.
 
 What to know:
 
-- **The hard time limit counts from boot** and includes first-boot setup. At the
-  limit the instance stops even if people are still chatting, so a demo lab is never
-  left running after the event. Start it again to continue; it gets a fresh limit.
+- **The hard time limit counts from boot** (or from the last timer reset, below) and
+  includes first-boot setup. At the limit the instance stops even if people are still
+  chatting, so a demo lab is never left running after the event. Start it again to
+  continue; it gets a fresh limit.
   For production, set `auto_stop_max_uptime_minutes = 0` so active users are never
   stopped, and use the idle shutdown instead.
+- **Reset timer button.** When a hard limit is set, the control panel shows a reset
+  icon between Start and Access on a running lab. Pressing it (after a confirmation)
+  gives the lab another full `auto_stop_max_uptime_minutes` from that moment, without
+  stopping or restarting the instance and without touching the idle timer. The panel
+  logs the reset under the person who pressed it and shows "Timer reset at ..." under
+  the status. It writes the time (epoch seconds) to the SSM parameter
+  `/<project_name>/auto-stop/reset-at`. Both the on-instance monitor and the watchdog
+  count the limit from `max(boot or launch time, last reset)`, so a reset left over
+  from an earlier run is ignored after the next start. Terraform creates that parameter
+  but never overwrites its value, so a normal `terraform apply` does not undo a reset.
+  If the monitor cannot read it, it skips the hard limit for that minute and the
+  watchdog, which falls back to the launch time, enforces the original deadline.
+  Anyone who may start the instance may reset it, with no cap on how often, so
+  `auto_stop_max_uptime_minutes` is a limit per reset, not an absolute ceiling. Setting
+  it up on an existing panel takes a few hand-built steps; see
+  `dashboards/api/README.md`.
 - With both settings at `0` auto-stop is off: nothing stops the instance, and the
   watchdog, SNS topic and alert email are not needed.
 - The idle monitor publishes `ActiveUsers`, `IdleMinutes`, `UptimeMinutes` and

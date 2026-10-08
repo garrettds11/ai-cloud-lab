@@ -10,7 +10,7 @@ Live at `https://cp.aiwebdemo.click`. Setup of everything it needs is in [`SETUP
 
 | Person | Role (panel's own table) | What they see |
 |---|---|---|
-| Customer with a grant | `operators` | Their instances, with Start and, once ready, Access |
+| Customer with a grant | `operators` | Their instances, with Start, Reset auto-stop timer (while running) and, once ready, Access |
 | A user with no role, or no grants | none | "You have no instances available for edit." |
 | User manager | `user_mgrs` (usually with `operators`) | The same pages, plus **User management**, where they change who may start which instance |
 | Administrator | `admin` (any number of people) | The same pages, and on **User management** they also change roles, including who else is an administrator |

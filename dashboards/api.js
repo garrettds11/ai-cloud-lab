@@ -229,6 +229,7 @@
 
     listInstances: () => request('GET', '/instances'),
     startInstance: (instanceId) => request('POST', '/instances/' + enc(instanceId) + '/start'),
+    resetTimer: (instanceId) => request('POST', '/instances/' + enc(instanceId) + '/reset-timer'),
     listLogins: () => request('GET', '/logins'),
     listAllLogins: () => request('GET', '/admin/logins'),
     listAllLogs: (filter) => request('GET', '/admin/logs?' + new URLSearchParams(filter || {}).toString()),

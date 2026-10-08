@@ -63,3 +63,20 @@ def test_the_spec_is_valid_openapi_3_1():
     validator = pytest.importorskip("openapi_spec_validator")
     assert SPEC["openapi"].startswith("3.1")
     validator.validate(SPEC)
+
+
+def terraform_routes():
+    """Route key => function from the API stack (dashboards/api/terraform/api.tf)."""
+    text = open(os.path.join(HERE, "..", "terraform", "api.tf"), encoding="utf-8").read()
+    block = text.split("routes = {", 1)[1].split("\n  }", 1)[0]
+    return dict(re.findall(r'"([A-Z]+ /[^"]*)"\s*=\s*"(customer|admin)"', block))
+
+
+def test_the_terraform_stack_creates_exactly_the_spec_routes_on_the_right_function():
+    expected = {
+        f"{method.upper()} {path}": op["x-lambda"]
+        for path, item in SPEC["paths"].items()
+        for method, op in item.items()
+        if method in METHODS
+    }
+    assert terraform_routes() == expected

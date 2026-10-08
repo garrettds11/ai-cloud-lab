@@ -26,6 +26,11 @@ version numbers yet, so everything is listed under Unreleased.
   also falls back to the launch time on network errors instead of failing the run.
 
 ### Added
+- The control panel API as its own Terraform stack (`dashboards/api/terraform`): HTTP API with throttling and
+  an access log, JWT authorizer starting on an empty holding pool, the 13 routes, both functions and their
+  least-privilege roles, and the three tables (imported when they already exist, with deletion protection
+  and point-in-time recovery). Tests check its routes against `openapi.yaml` and its IAM boundaries. The
+  README has a no-outage cutover from the hand-built API.
 - OpenAPI 3.1 description of the control panel API (`dashboards/api/openapi.yaml`), with a test that
   keeps its route list in step with `handler.py`.
 - Auto-stop timer reset: a reset icon in the control panel (between Start and Access, on a running lab

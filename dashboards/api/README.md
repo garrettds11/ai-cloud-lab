@@ -177,7 +177,7 @@ The reset button needs three hand-built changes, because the API's routes and th
    ```
 
    If the function's resource policy was created per route rather than for the whole API, also allow the new route: check with `aws lambda get-policy --function-name ai-lab-control-customer`.
-4. **Deploy the new function code and pages** with the commands below and in `../SETUP.md`.
+4. **Deploy the new function code and pages** with the commands below and in `../../SETUP.md`.
 
 If step 2 or 3 is missed, the button shows an error toast and nothing changes (the lab keeps its original stop time).
 

@@ -26,6 +26,11 @@ version numbers yet, so everything is listed under Unreleased.
   also falls back to the launch time on network errors instead of failing the run.
 
 ### Added
+- Open WebUI admin actions, foundations (#55 phase 0, #58): an SSM document in the API stack that accepts only
+  named actions (today `status`: health and version against the pinned version), two more administrator-only routes
+  (15 in all) to run one and read its result, kept readable after SSM forgets the command, a record and log line per action, and a desired-state table for phase 2. The
+  panel never connects to Open WebUI or holds its credentials. The lab publishes its Open WebUI image for the
+  version check.
 - The control panel API as its own Terraform stack (`dashboards/api/terraform`): HTTP API with throttling and
   an access log, JWT authorizer starting on an empty holding pool, the 13 routes, both functions and their
   least-privilege roles, and the three tables (imported when they already exist, with deletion protection

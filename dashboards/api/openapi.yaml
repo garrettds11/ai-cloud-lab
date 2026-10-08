@@ -470,6 +470,108 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /admin/webui/actions:
+    post:
+      tags: [Admin]
+      operationId: startWebuiAction
+      summary: Run one named Open WebUI admin action on the lab instance
+      description: |
+        Asks Systems Manager to run the panel's own document on the managed instance. The document
+        accepts only the action names listed here; it runs on the instance, reads nothing secret
+        for these actions, and prints one JSON result. Neither this API nor the browser ever talks
+        to Open WebUI or holds an Open WebUI credential.
+
+        The action runs asynchronously: poll `GET /admin/webui/actions/{commandId}` for the
+        result. Each request is recorded with who asked, and as a log line for that person.
+      x-lambda: admin
+      x-required-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebuiActionRequest"
+      responses:
+        "200":
+          description: The action was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebuiActionStarted"
+        "400":
+          description: Unknown action.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The instance is not running, or not yet connected to Systems Manager.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          description: The panel has no Open WebUI document configured, or a dependency could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/webui/actions/{commandId}:
+    get:
+      tags: [Admin]
+      operationId: getWebuiAction
+      summary: The status and result of an Open WebUI admin action
+      description: |
+        Only actions this panel started are shown, and only when Systems Manager reports that they
+        ran the panel's document. `result` is the action's JSON output once it has finished. The
+        first time a finished action is read, its outcome is recorded and logged.
+      x-lambda: admin
+      x-required-roles: [admin]
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          description: The ID returned when the action was started.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The action's state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebuiAction"
+        "400":
+          description: The ID is not a command ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No action with this ID was started by the panel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     cognitoJwt:
@@ -890,3 +992,92 @@ components:
           description: |
             Role changes actually made, plus every grant or revoke processed. A repeated grant or a
             revoke of something never granted still counts as one.
+
+    WebuiActionName:
+      type: string
+      enum: [status]
+      description: |
+        `status`: Open WebUI health and version, compared with the version the lab pins. More
+        actions arrive with phases 1 and 2 of issue #55; each one is added to the SSM document,
+        the instance script and this list together.
+
+    WebuiActionRequest:
+      type: object
+      required: [action, instanceId]
+      properties:
+        action:
+          $ref: "#/components/schemas/WebuiActionName"
+        instanceId:
+          type: string
+          pattern: "^i-[0-9a-f]+$"
+
+    WebuiActionStarted:
+      type: object
+      required: [commandId, instanceId, action, status, requestedAt]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+        action:
+          $ref: "#/components/schemas/WebuiActionName"
+        status:
+          const: Pending
+        requestedAt:
+          type: integer
+          format: int64
+
+    WebuiAction:
+      type: object
+      required: [commandId, instanceId, action, requestedBy, requestedAt, status, result]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+        action:
+          $ref: "#/components/schemas/WebuiActionName"
+        requestedBy:
+          type: string
+          description: The administrator who started it.
+        requestedAt:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [Pending, InProgress, Delayed, Success, Failed, Cancelled, TimedOut, Cancelling, Expired]
+          description: |
+            Systems Manager's state for the command. A finished action is answered from the stored
+            result, so it stays readable after Systems Manager drops it (about 30 days). `Expired`
+            means Systems Manager no longer knows the command and its result was never read back.
+        result:
+          description: The action's JSON output once it has finished, or null.
+          oneOf:
+            - $ref: "#/components/schemas/WebuiStatusResult"
+            - type: "null"
+
+    WebuiStatusResult:
+      type: object
+      required: [ok, action]
+      description: Output of the `status` action, or an error from any action (`ok` false with `error`).
+      properties:
+        ok:
+          type: boolean
+        action:
+          type: string
+        error:
+          type: string
+        healthy:
+          type: boolean
+          description: Open WebUI's /health answered.
+        version:
+          type: [string, "null"]
+          description: The version Open WebUI reports.
+        expectedVersion:
+          type: [string, "null"]
+          description: The version the lab's image tag pins, or null when the tag is not a version.
+        versionMatches:
+          type: [boolean, "null"]
+          description: Null when either version is unknown.

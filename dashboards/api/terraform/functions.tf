@@ -16,7 +16,7 @@ locals {
 
   functions = {
     customer = { handler = "customer.lambda_handler", description = "Control panel API: sign-in, own instances, start, timer reset, own logins and logs" }
-    admin    = { handler = "admin.lambda_handler", description = "Control panel API: users, roles, grants, change history and everyone's activity. Cannot start instances" }
+    admin    = { handler = "admin.lambda_handler", description = "Control panel API: users, roles, grants, change history, everyone's activity and Open WebUI admin actions. Cannot start instances" }
   }
 
   common_environment = {
@@ -33,7 +33,9 @@ locals {
       AUTO_STOP_PARAMETER = local.auto_stop_param
       RESET_PARAMETER     = local.reset_param
     })
-    admin = local.common_environment
+    admin = merge(local.common_environment, {
+      WEBUI_DOCUMENT = aws_ssm_document.webui_admin.name
+    })
   }
 }
 
@@ -142,10 +144,32 @@ locals {
     ]
   })
 
-  # No EC2 start and no SSM write: the admin function changes only the panel's own tables.
+  # No EC2 start and no SSM parameter write. Besides the panel's own tables, the admin function
+  # can only run the panel's Open WebUI document, and only on instances tagged control-panel=managed.
   admin_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Sid      = "RunOnlyThePanelDocument"
+        Effect   = "Allow"
+        Action   = "ssm:SendCommand"
+        Resource = "arn:${format(local.arn_base, "ssm")}:document/${aws_ssm_document.webui_admin.name}"
+      },
+      {
+        Sid       = "OnlyOnManagedInstances"
+        Effect    = "Allow"
+        Action    = "ssm:SendCommand"
+        Resource  = "arn:${format(local.arn_base, "ec2")}:instance/*"
+        Condition = { StringEquals = { "ssm:resourceTag/control-panel" = "managed" } }
+      },
+      {
+        # GetCommandInvocation has no resource-level permissions. The function reads a result
+        # only after checking that the command ran the panel's document.
+        Sid      = "ReadActionResults"
+        Effect   = "Allow"
+        Action   = "ssm:GetCommandInvocation"
+        Resource = "*"
+      },
       {
         # DescribeTargetHealth is not in the hand-built admin role; without it every instance
         # read logged an AccessDenied warning (the code treats target health as optional).

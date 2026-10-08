@@ -738,3 +738,154 @@ def test_no_hard_limit_means_the_reset_is_not_read(aws, monkeypatch):
     ssm = use_reset_ssm(monkeypatch, max_minutes=0, reset=ago_s(1))
     ssm.get_parameter = lambda Name: (_ for _ in ()).throw(AssertionError("read")) if Name == RESET_NAME else {"Parameter": {"Value": json.dumps(ssm.rule)}}
     assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+
+
+# ---- Open WebUI admin actions ----------------------------------------------------------
+
+ACTIONS = "POST /admin/webui/actions"
+ACTION = "GET /admin/webui/actions/{commandId}"
+CMD = "0123abcd-4567-89ab-cdef-0123456789ab"
+
+
+class FakeSSMCommands:
+    def __init__(self, rule):
+        self.rule = rule
+        self.sent = []
+        self.send_error = None
+        self.invocation = {"Status": "InProgress", "DocumentName": "panel-webui-admin", "StandardOutputContent": ""}
+        self.invocation_error = None
+
+    def get_parameter(self, Name):
+        return {"Parameter": {"Value": json.dumps(self.rule)}}
+
+    def send_command(self, **kwargs):
+        if self.send_error:
+            raise client_error(self.send_error)
+        self.sent.append(kwargs)
+        return {"Command": {"CommandId": CMD}}
+
+    def get_command_invocation(self, CommandId, InstanceId):
+        if self.invocation_error:
+            raise client_error(self.invocation_error)
+        return dict(self.invocation)
+
+
+@pytest.fixture
+def webui(aws, monkeypatch):
+    fake = FakeSSMCommands({"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 90})
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "WEBUI_DOCUMENT", "panel-webui-admin")
+    monkeypatch.setattr(handler, "OPEN_WEBUI_IMAGE", "ghcr.io/open-webui/open-webui:v0.11.4")
+    aws.ec2.state["i-aaa"] = "running"
+    return fake
+
+
+def test_only_administrators_can_run_open_webui_actions(aws, webui):
+    for user in (OP, BOTH, NONE):
+        assert call(ACTIONS, user, body={"action": "status", "instanceId": "i-aaa"})[0] == 403
+        assert call(ACTION, user, path={"commandId": CMD})[0] == 403
+    assert webui.sent == []
+
+
+def test_the_customer_function_has_no_open_webui_routes(aws, webui):
+    assert _raw(handler.customer_handler, ACTIONS, ADM) == 404
+
+
+def test_an_action_runs_the_panel_document_with_the_pinned_version(aws, webui):
+    status, body = call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    assert status == 200 and body["commandId"] == CMD and body["status"] == "Pending"
+    sent = webui.sent[0]
+    assert sent["DocumentName"] == "panel-webui-admin" and sent["InstanceIds"] == ["i-aaa"]
+    assert sent["Parameters"] == {"action": ["status"], "expectedVersion": ["0.11.4"]}
+    record = aws.events.items[("webui-actions", CMD)]
+    assert record["requestedBy"] == ADM and record["action"] == "status"
+    assert any("Requested Open WebUI action 'status'" in r.get("event", "") for r in aws.events.items.values())
+
+
+def test_unknown_actions_unmanaged_instances_and_stopped_instances_are_refused(aws, webui):
+    assert call(ACTIONS, ADM, body={"action": "rm -rf /", "instanceId": "i-aaa"})[0] == 400
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-zzz"})[0] == 404
+    aws.ec2.state["i-aaa"] = "stopped"
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})[0] == 409
+    assert webui.sent == []
+
+
+def test_an_unpinned_image_sends_no_expected_version(aws, webui, monkeypatch):
+    monkeypatch.setattr(handler, "OPEN_WEBUI_IMAGE", "ghcr.io/open-webui/open-webui:main")
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    assert webui.sent[0]["Parameters"]["expectedVersion"] == [""]
+
+
+def test_without_the_document_setting_actions_are_unavailable(aws, webui, monkeypatch):
+    monkeypatch.setattr(handler, "WEBUI_DOCUMENT", "")
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})[0] == 503
+
+
+def test_an_instance_not_yet_in_ssm_is_a_clear_conflict(aws, webui):
+    webui.send_error = "InvalidInstanceId"
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})[0] == 409
+
+
+def test_the_result_is_read_back_and_recorded_once(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    assert call(ACTION, ADM, path={"commandId": CMD})[1]["status"] == "InProgress"
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": "noise\n" + json.dumps({"ok": True, "action": "status", "healthy": True, "version": "0.11.4"})}
+    status, body = call(ACTION, ADM, path={"commandId": CMD})
+    assert status == 200 and body["status"] == "Success" and body["result"]["version"] == "0.11.4"
+    call(ACTION, ADM, path={"commandId": CMD})
+    done = [r for r in aws.events.items.values() if "Open WebUI action 'status' on i-aaa: done" in r.get("event", "")]
+    assert len(done) == 1
+    assert ("webui-actions", CMD + "#result") in aws.events.items
+
+
+def test_a_command_from_another_document_is_never_shown(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "AWS-RunShellScript", "StandardOutputContent": "secret"}
+    assert call(ACTION, ADM, path={"commandId": CMD})[0] == 404
+
+
+def test_unknown_or_malformed_action_ids_are_refused(aws, webui):
+    assert call(ACTION, ADM, path={"commandId": "not-an-id"})[0] == 400
+    assert call(ACTION, ADM, path={"commandId": "ffffffff-ffff-ffff-ffff-ffffffffffff"})[0] == 404
+
+
+def test_an_invocation_ssm_has_not_registered_yet_reads_as_pending(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation_error = "InvocationDoesNotExist"
+    assert call(ACTION, ADM, path={"commandId": CMD})[1]["status"] == "Pending"
+
+
+def test_a_failed_action_without_json_output_reports_no_result(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Failed", "DocumentName": "panel-webui-admin", "StandardOutputContent": "bash: error"}
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Failed" and body["result"] is None
+
+
+def test_a_finished_action_stays_readable_after_ssm_forgets_it(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status", "version": "0.11.4"})}
+    call(ACTION, ADM, path={"commandId": CMD})
+    webui.invocation_error = "InvocationDoesNotExist"  # SSM history has expired
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Success" and body["result"]["version"] == "0.11.4"
+
+
+def test_an_action_ssm_forgot_before_anyone_read_it_is_expired_not_pending(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    aws.events.items[("webui-actions", CMD)]["t"] = handler.now_ms() - 3600 * 1000
+    webui.invocation_error = "InvocationDoesNotExist"
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Expired" and body["result"] is None
+
+
+def test_the_outcome_is_logged_for_the_administrator_who_asked(aws, webui):
+    aws.users.items[(BOOT,)] = {"email": BOOT, "name": "Boot", "roles": ["admin"], "source": "panel"}
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status"})}
+    call(ACTION, BOOT, path={"commandId": CMD})  # another administrator reads it first
+    done = [r for r in aws.events.items.values() if ": done" in r.get("event", "")]
+    assert len(done) == 1 and done[0]["pk"] == f"user#{ADM}"

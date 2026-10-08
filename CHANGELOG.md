@@ -18,6 +18,13 @@ version numbers yet, so everything is listed under Unreleased.
 - CI: the tflint and checkov job is now blocking, with checkov pinned. Every remaining finding is skipped
   inline next to its resource with the reason. The control panel API tests now also run in CI.
 
+### Fixed
+- Auto-stop timer reset: a far-future, oversized or malformed value in the `reset-at` parameter could
+  switch the hard limit off (the instance monitor and the watchdog treated it as "reset just now" every
+  run), and a huge value could crash the watchdog. Now only a decimal of at most 10 digits, no more than
+  5 minutes in the future, counts; anything else is ignored and the limit counts from boot. The watchdog
+  also falls back to the launch time on network errors instead of failing the run.
+
 ### Added
 - OpenAPI 3.1 description of the control panel API (`dashboards/api/openapi.yaml`), with a test that
   keeps its route list in step with `handler.py`.

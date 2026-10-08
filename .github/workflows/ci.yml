@@ -40,6 +40,14 @@ jobs:
       - name: Test
         run: terraform test
 
+      # The control panel API is its own stack (its own state), so it is validated separately.
+      - name: Control API stack - init, validate, test
+        working-directory: dashboards/api/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
   scripts:
     name: Shell scripts and Lambda
     runs-on: ubuntu-latest

@@ -1,6 +1,6 @@
 # Control panel setup (built by hand, outside Terraform)
 
-The control panel at `https://cp.aiwebdemo.click` is built and kept by hand, so it does not depend on the lab being deployed. Terraform supplies only three things when the variables are set: the panel's Cognito app client, the demo users' rows in `panel_users`, and the authorizer's issuer and audience on apply and destroy. This page is the record of what exists, so nothing is a surprise later.
+The control panel at `https://cp.aiwebdemo.click` is built and kept separately from the lab, so it does not depend on the lab being deployed. Its API (functions, roles, tables, holding pool and authorizer) now has its own Terraform stack in `dashboards/api/terraform`; follow its README to move from the hand-built pieces listed below. The hosting (bucket, CloudFront, certificate, DNS) is still built by hand. Terraform supplies only three things when the variables are set: the panel's Cognito app client, the demo users' rows in `panel_users`, and the authorizer's issuer and audience on apply and destroy. This page is the record of what exists, so nothing is a surprise later.
 
 Run every command in PowerShell, in the same window where `AWS_PROFILE` and `AWS_DEFAULT_REGION` are set. Account 394566733278, region us-east-1.
 

@@ -31,3 +31,6 @@ dashboards/api/control-api.zip
 __pycache__/
 .pytest_cache/
 OLD-terraform-smoke-test-plan.md
+
+# Control API Terraform stack build output
+dashboards/api/terraform/.build/

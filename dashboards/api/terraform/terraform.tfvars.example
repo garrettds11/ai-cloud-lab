@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (git-ignored) in this folder and fill in.
+
+aws_region       = "us-east-1"
+aws_profile      = null # or the profile name you use for the lab
+lab_project_name = "<the lab's project_name>"
+panel_origin     = "https://cp.aiwebdemo.click"
+bootstrap_admins = ["garrettds11@gmail.com"]
+
+# First apply on an account that already has the hand-built panel: keep the existing tables
+# and their data. Leave it true afterwards; it does nothing once they are imported.
+adopt_existing_tables = true

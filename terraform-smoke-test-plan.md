@@ -13,7 +13,7 @@ The repository has two separate Terraform configurations, each with its own stat
 
 Order:
 
-- **First time, or after the API stack was destroyed:** the API stack first (section 2A), then the lab (section 2B). The lab needs the API's IDs, which change whenever the API stack is created.
+- **First time, or after the API stack was destroyed:** the API stack first (section 2A), then the lab (section 2B). The lab needs the API's IDs, which change whenever the API stack is created; section 2A step 3 puts them in the root example.
 - **Every other build:** only the stack whose files changed. Lab changes need section 2B only. Changes to the API stack's inputs (anything in `dashboards\api\terraform`, or `handler.py`, `customer.py`, `admin.py` or `webui-admin.sh` in `dashboards\api`) need section 2A's "Later API changes" only. Page changes need "Deploy the pages" only. If both stacks changed in one pull, do the API stack first.
 - **Destroying:** the lab first, then the API stack if you mean to remove it too (section 4).
 
@@ -37,13 +37,13 @@ Get-ChildItem *.tf
 
 If `Get-ChildItem *.tf` returns *no files*, `STOP` and *change to the correct repository directory* before continuing.
 
-Create the local variables file once:
+At the start of **every** run, copy the example over the local variables file. `terraform.tfvars.example` is the source of truth and is kept in the repository; `terraform.tfvars` is a git-ignored working copy that each run replaces:
 
 ```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars
+Copy-Item terraform.tfvars.example terraform.tfvars -Force
 ```
 
-Open `terraform.tfvars` in an editor and set your own values, such as the domain name, secret ARNs and the auto-stop timeout.
+Then, only if this run needs a different value, edit the copy explicitly with one of the commands below. A lasting change belongs in `terraform.tfvars.example` (committed); an edit made only in the copy is lost at the next run.
 
 ```VS-Code
 code terraform.tfvars
@@ -107,13 +107,9 @@ $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 
 **Where the profile really comes from.** A value in a `terraform.tfvars` file beats a `TF_VAR_` environment variable, and both example files set `aws_profile = null`. So with the examples as they are, `TF_VAR_aws_profile` is ignored. `null` means "name no profile", and the AWS provider then uses `$env:AWS_PROFILE` from this window. That works only in a window where `$env:AWS_PROFILE` is set. In a new window without it, Terraform would use your **default** profile, which may be a different account.
 
-To make it independent of the window, put the profile name in **both** settings files: the root `terraform.tfvars` and `dashboards\api\terraform\terraform.tfvars`.
+Keep `aws_profile = null` in both examples and set `$env:AWS_PROFILE` (your own profile name) at the start of every window. Do not put a profile name in only the working `terraform.tfvars`: the next copy from the example removes it. A profile name in the examples would be committed, and would be wrong for anyone whose profile is named differently.
 
-```hcl
-aws_profile = "ai-cloud-lab"
-```
-
-Either way, confirm the account before any plan, apply or destroy, in either stack:
+Confirm the account before any plan, apply or destroy, in either stack:
 
 ```powershell
 aws sts get-caller-identity --query Account --output text
@@ -215,13 +211,15 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
 
 1. Settings, once:
 
+   Like the lab, this stack's `terraform.tfvars.example` is the source of truth. Copy it over the working copy at the start of every run, and edit the copy only for a one-off change:
+
    ```powershell
    Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
-   Copy-Item terraform.tfvars.example terraform.tfvars
+   Copy-Item terraform.tfvars.example terraform.tfvars -Force
    notepad terraform.tfvars
    ```
 
-   Set `lab_project_name` to the root `terraform.tfvars` `project_name`, and `bootstrap_admins` to your address.
+   Check that `lab_project_name` matches the root example's `project_name` (`aiwebdemo` for the demo), and that `bootstrap_admins` has your address.
 
    Set `adopt_existing_tables` by whether the tables already exist:
    - **`true`** when `panel_users`, `instance_entitlements` and `control_panel_events` already exist, as on this account (built by hand, or left behind by a destroyed API stack). They are imported, data included.
@@ -258,7 +256,7 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
    terraform output -raw lab_tfvars
    ```
 
-   Replace the six matching lines in the **root** `terraform.tfvars` with the printed ones (`control_panel_api_url`, `control_panel_api_id`, `control_panel_authorizer_id`, `control_panel_holding_pool_id`, `control_panel_users_table`, `control_panel_entitlements_table`).
+   Replace the six matching lines in the **root** `terraform.tfvars.example` with the printed ones (`control_panel_api_url`, `control_panel_api_id`, `control_panel_authorizer_id`, `control_panel_holding_pool_id`, `control_panel_users_table`, `control_panel_entitlements_table`), commit that change, then copy the example over `terraform.tfvars` again before section 2B. Changing only the working copy works for this run but is lost at the next copy, and the lab would then point the panel back at the old API's IDs.
 
 4. Check, before the lab is pointed at it:
 

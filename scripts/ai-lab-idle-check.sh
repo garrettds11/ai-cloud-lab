@@ -83,15 +83,22 @@ idle_minutes=$(((now - last_activity) / 60))
 uptime_seconds=$(awk '{print int($1)}' "$UPTIME_FILE")
 uptime_minutes=$((uptime_seconds / 60))
 
-# Hard limit clock: the later of boot and the last timer reset. A reset time in the future
-# is treated as now, so a reset can never give more than one full period from this moment.
+# Hard limit clock: the later of boot and the last timer reset. Only a plain decimal of at
+# most 10 digits counts, and a reset more than RESET_SKEW_SECONDS in the future is ignored
+# (the clock then runs from boot), so a bad or hand-written value can never switch the hard
+# limit off. A slightly future value (clock skew) is treated as now.
+RESET_SKEW_SECONDS=300
 hard_minutes=$uptime_minutes
 hard_limit_known=true
 if ((MAX_UPTIME_MINUTES > 0)); then
   reset_at=0
   if [[ -n $region ]]; then
     if reset_raw=$(aws ssm get-parameter --region "$region" --name "$AUTO_STOP_PARAMETER/reset-at" --query Parameter.Value --output text 2>"$STATE_DIR/reset-error"); then
-      [[ $reset_raw =~ ^[0-9]+$ ]] && reset_at=$reset_raw
+      if [[ $reset_raw =~ ^[0-9]{1,10}$ ]] && ((10#$reset_raw <= now + RESET_SKEW_SECONDS)); then
+        reset_at=$((10#$reset_raw))
+      elif [[ $reset_raw != 0 ]]; then
+        logger -t ai-lab-idle "ignoring an invalid or future timer reset value; counting the hard limit from boot"
+      fi
     elif ! grep -q ParameterNotFound "$STATE_DIR/reset-error" 2>/dev/null; then
       hard_limit_known=false
     fi

@@ -21,7 +21,7 @@ import json
 import os
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "")
 IDLE_MINUTES = int(os.environ.get("IDLE_MINUTES", "0"))  # 0 = idle shutdown off
@@ -79,13 +79,18 @@ def _alb_requests(now, minutes):
     return sum(point["Sum"] for point in response["Datapoints"])
 
 
+RESET_SKEW_SECONDS = 300  # a reset a little in the future is clock skew; further is invalid
+RESET_MAX_DIGITS = 10  # epoch seconds stay 10 digits until the year 2286
+
+
 def _reset_time(now):
     """When the hard-limit timer was last reset, as a datetime, or None when it never was.
 
     Returns False when the parameter cannot be read, so the caller can fall back to the
     launch time. That fails toward stopping, which is the safe direction for a cost limit.
-    A time in the future is clamped to now, so a reset can never give more than one full
-    period from the moment it is read."""
+    Only a plain decimal of at most 10 digits counts. A value more than RESET_SKEW_SECONDS
+    in the future is ignored (the limit then counts from launch), so a bad or hand-written
+    value can never switch the hard limit off. A slightly future value is treated as now."""
     if not RESET_PARAMETER:
         return None
     try:
@@ -95,14 +100,24 @@ def _reset_time(now):
             return None
         print(json.dumps({"warning": "reset parameter unreadable; using the launch time", "detail": str(err)}))
         return False
-    try:
-        seconds = int(str(raw).strip())
-    except ValueError:
-        print(json.dumps({"warning": "reset parameter is not a number; ignoring it", "value": str(raw)[:40]}))
+    except BotoCoreError as err:  # timeouts and connection errors
+        print(json.dumps({"warning": "reset parameter unreadable; using the launch time", "detail": str(err)}))
+        return False
+    text = str(raw).strip()
+    if not (text.isascii() and text.isdigit() and len(text) <= RESET_MAX_DIGITS):
+        print(json.dumps({"warning": "reset parameter is not a valid time; ignoring it", "value": text[:40]}))
         return None
+    seconds = int(text)
     if seconds <= 0:
         return None
-    return min(datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc), now)
+    if seconds > now.timestamp() + RESET_SKEW_SECONDS:
+        print(json.dumps({"warning": "reset parameter is in the future; ignoring it", "value": text}))
+        return None
+    try:
+        reset = datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
+    return min(reset, now)
 
 
 def _alert(subject, message):

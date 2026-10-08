@@ -174,12 +174,13 @@ resource "aws_security_group" "alb" {
   }
 
   # The ALB only forwards to Open WebUI and health-checks it, both on this one port inside the VPC.
+  # Every IPv4 range of the VPC is included, in case the instance's subnet is in a secondary one.
   egress {
     description = "Open WebUI on the lab instance (traffic and health checks)"
     from_port   = var.open_webui_host_port
     to_port     = var.open_webui_host_port
     protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    cidr_blocks = distinct(concat([data.aws_vpc.default.cidr_block], [for a in data.aws_vpc.default.cidr_block_associations : a.cidr_block]))
   }
 
   tags = {

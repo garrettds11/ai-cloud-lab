@@ -14,6 +14,10 @@ mock_provider "aws" {
     defaults = {
       id         = "vpc-0123456789abcdef0"
       cidr_block = "172.31.0.0/16"
+      cidr_block_associations = [
+        { association_id = "vpc-cidr-assoc-0aaa", cidr_block = "172.31.0.0/16", state = "associated" },
+        { association_id = "vpc-cidr-assoc-0bbb", cidr_block = "100.64.0.0/16", state = "associated" },
+      ]
     }
   }
 
@@ -377,8 +381,8 @@ run "alb_is_locked_down_and_forwards_only_to_open_webui" {
 
   assert {
     condition = alltrue([for rule in aws_security_group.alb["domain"].egress :
-    rule.protocol == "tcp" && rule.from_port == 8080 && rule.to_port == 8080 && length(rule.cidr_blocks) == 1 && one(rule.cidr_blocks) == "172.31.0.0/16"])
-    error_message = "The ALB may only send traffic to Open WebUI's port inside the VPC."
+    rule.protocol == "tcp" && rule.from_port == 8080 && rule.to_port == 8080 && toset(rule.cidr_blocks) == toset(["172.31.0.0/16", "100.64.0.0/16"])])
+    error_message = "The ALB may only send traffic to Open WebUI's port, to every IPv4 range of the VPC and nothing else."
   }
 
   assert {

@@ -573,6 +573,7 @@ def use_reset_ssm(monkeypatch, **kwargs):
     fake = FakeResetSSM(**kwargs)
     monkeypatch.setattr(handler, "ssm", fake)
     monkeypatch.setattr(handler, "RESET_PARAMETER", RESET_NAME)
+    monkeypatch.setattr(handler, "INSTANCE_IDS", ["i-aaa"])  # a reset is only allowed for a single-instance lab
     return fake
 
 
@@ -637,6 +638,17 @@ def test_administrator_may_reset_without_a_grant(aws, monkeypatch):
     ssm = use_reset_ssm(monkeypatch)
     assert call(RESET, ADM, path={"instanceId": "i-aaa"})[0] == 200
     assert len(ssm.writes) == 1
+
+
+def test_reset_is_refused_when_the_lab_has_several_instances(aws, monkeypatch):
+    # One reset value is shared by the whole lab, so a reset for A would extend B too.
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    monkeypatch.setattr(handler, "INSTANCE_IDS", ["i-aaa", "i-bbb"])
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 409 and "single instance" in body["message"]
+    assert ssm.writes == []
 
 
 def test_reset_rejects_unmanaged_and_stopped_instances(aws, monkeypatch):

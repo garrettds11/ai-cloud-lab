@@ -471,6 +471,10 @@ def reset_timer(caller, instance_id):
     if instance_id not in _usable_ids(caller):
         _log(caller["id"], "warning", f"Timer reset refused for {instance_id}: no active grant", instance_id)
         raise ApiError(403, "You do not have access to this instance.")
+    if len(_instance_ids()) != 1:
+        # The reset time is one value for the whole lab and every instance monitor reads it,
+        # so with several managed instances a reset for one would extend all of them.
+        raise ApiError(409, "Timer reset only works while the lab has a single instance, because the reset applies to the whole lab.")
     raws = _describe([instance_id])
     if instance_id not in raws:
         raise ApiError(404, "Instance not found.")

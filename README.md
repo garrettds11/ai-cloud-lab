@@ -172,7 +172,8 @@ What to know:
   but never overwrites its value, so a normal `terraform apply` does not undo a reset.
   If the monitor cannot read it, it skips the hard limit for that minute and the
   watchdog, which falls back to the launch time, enforces the original deadline.
-  Anyone who may start the instance may reset it, with no cap on how often, so
+  The reset is one value for the whole lab, so the panel refuses it if the lab has more
+  than one managed instance. Anyone who may start the instance may reset it, with no cap on how often, so
   `auto_stop_max_uptime_minutes` is a limit per reset, not an absolute ceiling. Setting
   it up on an existing panel takes a few hand-built steps; see
   `dashboards/api/README.md`.

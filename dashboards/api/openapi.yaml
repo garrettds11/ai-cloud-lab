@@ -412,7 +412,11 @@ paths:
         Rules: only an administrator may send role changes (a user manager who tries gets 403).
         Nobody can remove their own `admin` role, and a `BOOTSTRAP_ADMINS` address cannot be
         demoted. Removing `operators` revokes all of the person's grants. A person who is not an
-        operator cannot be granted an instance. Revoking something never granted adds nothing.
+        operator cannot be granted an instance. Revoking something never granted writes no row.
+
+        Role changes that are already in effect are skipped and not counted. Every grant or revoke in
+        the request is processed and counted, even a repeat: a repeated grant is rewritten with a new
+        `grantedAt` and a new history line.
       x-lambda: admin
       x-required-roles: [user_mgrs, admin]
       x-required-roles-note: Sending a non-empty `roles` list needs `admin`.
@@ -805,7 +809,10 @@ components:
             $ref: "#/components/schemas/Role"
         source:
           type: string
-          description: "`panel` for someone who signed in, `settings` for a `BOOTSTRAP_ADMINS` address who has not."
+          description: |
+            Where the row came from: `panel` (created when they first signed in), `settings` (a
+            `BOOTSTRAP_ADMINS` address with no row yet), or `lab` (seeded by Terraform, for example the
+            demo users). Treat unknown values as opaque text.
         lastSeenAt:
           type: [integer, "null"]
           format: int64
@@ -878,4 +885,6 @@ components:
         applied:
           type: integer
           minimum: 0
-          description: Role and grant changes made. Changes that were already in effect add nothing.
+          description: |
+            Role changes actually made, plus every grant or revoke processed. A repeated grant or a
+            revoke of something never granted still counts as one.

@@ -208,6 +208,6 @@ The tests replace AWS with in-memory fakes, so no account is needed. They cover 
 
 ```powershell
 cd C:\GitHub\ai-cloud-lab\dashboards\api
-python -m pip install boto3 pytest
+python -m pip install boto3 pytest pyyaml openapi-spec-validator
 python -m pytest -q
 ```

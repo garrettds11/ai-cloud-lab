@@ -1,7 +1,8 @@
 """openapi.yaml must describe the routes handler.py really serves.
 
 Run from dashboards/api:   python -m pytest -q tests/test_openapi.py
-Needs PyYAML (skipped without it). The full 3.1 check also needs openapi-spec-validator.
+Needs PyYAML (the route checks fail without it, on purpose, so drift cannot go unnoticed).
+The full 3.1 check also needs openapi-spec-validator and is skipped without it.
 """
 
 import os
@@ -9,7 +10,7 @@ import re
 
 import pytest
 
-yaml = pytest.importorskip("yaml")
+import yaml  # noqa: E402  (pip install pyyaml)
 
 HERE = os.path.dirname(__file__)
 SPEC = yaml.safe_load(open(os.path.join(HERE, "..", "openapi.yaml"), encoding="utf-8"))

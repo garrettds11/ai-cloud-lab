@@ -9,7 +9,7 @@ This folder builds the control panel's API with Terraform, separately from the l
 | HTTP API, `$default` stage | CORS for `panel_origin` only. Throttled (10 requests a second, bursts of 20, by default). Access log in CloudWatch: who, which route, the status. No bodies or tokens |
 | JWT authorizer | Created trusting an empty holding pool, so every route answers 401. The lab points it at its own Cognito pool on apply and back on destroy (`control_panel_api.tf` at the root), exactly as before. This stack never changes the issuer or audience after creating it |
 | 13 routes | The list in `api.tf`. `../tests/test_openapi.py` fails if it differs from `../openapi.yaml` or from what `handler.py` serves |
-| Two functions and their roles | `<name_prefix>-customer` and `<name_prefix>-admin`, built from `../handler.py`. The policies are the ones `../README.md` documents: only the customer role can start an instance (tagged `control-panel=managed`) and write the timer reset; the admin role can do neither |
+| Two functions and their roles | `<name_prefix>-customer` and `<name_prefix>-admin`, built from `../handler.py`. The policies are the ones `../README.md` documents, plus target-health reads for the admin role: only the customer role can start an instance (tagged `control-panel=managed`) and write the timer reset; the admin role can do neither |
 | Three tables | `panel_users`, `instance_entitlements`, `control_panel_events`, with deletion protection and point-in-time recovery. Existing hand-built tables are imported, keeping their data |
 | Holding pool | An empty Cognito pool, no users, no app clients |
 
@@ -50,7 +50,9 @@ Run these in PowerShell from the repository, in the window where `AWS_PROFILE` a
    terraform output -raw lab_tfvars
    ```
 
-   Then apply the lab as usual from the repository root. That publishes the new address in `config.js` and points the new authorizer at the lab's Cognito pool. Until then the new API answers 401 to everything, which is expected.
+   Then apply the lab as usual from the repository root. Read its plan first: it must show `terraform_data.control_panel_authorizer["authorizer"]` **must be replaced**, because the API and authorizer IDs changed. That replacement is the switch-over. It points the old authorizer back at its holding pool, so the old API starts answering 401, and points the new authorizer at the lab's Cognito pool. The same apply publishes the new address in `config.js` and clears it from CloudFront's cache. Pages that are already open keep the old address until they are reloaded.
+
+   Before this apply the new API answers 401 to everything, which is expected. If the plan does not show the replacement, stop: the lab would publish the new address while the new authorizer still trusts only the holding pool. You can force the replacement with `terraform apply -replace='terraform_data.control_panel_authorizer["authorizer"]'`.
 
 6. **Check the panel.** Sign in, see the instance, start it, reset the timer, and as an administrator open User management and the logs.
 
@@ -72,7 +74,9 @@ Run these in PowerShell from the repository, in the window where `AWS_PROFILE` a
    aws cognito-idp delete-user-pool --user-pool-id us-east-1_xcTOLNQJM
    ```
 
-**Going back** before step 7: put the old values back in the root `terraform.tfvars` (API `65j334bc19`, authorizer `pnlj78`, holding pool `us-east-1_xcTOLNQJM`, and the old API address) and apply the lab.
+**Going back** before step 7: put the old values back in the root `terraform.tfvars` (API `65j334bc19`, authorizer `pnlj78`, holding pool `us-east-1_xcTOLNQJM`, and the old API address) and apply the lab. The same replacement happens in reverse.
+
+**Request limit.** The stage throttle (`throttle_rate_limit`, `throttle_burst_limit`) is applied before sign-in is checked, and the `execute-api` address is public. So anyone who finds the address can use up the limit and make the panel answer 429 (too many requests) for everyone while they keep sending. Nothing is exposed and nothing costs more than a few cents. If it ever happens, raise the limits, or put the API behind the same CloudFront distribution as the pages (tracked with the hosting work in #65).
 
 ## Later changes
 

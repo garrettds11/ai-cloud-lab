@@ -1,7 +1,7 @@
 # The two functions share one zip (handler.py plus the two entry points) and differ only in
 # their entry point and their role. Each role allows exactly what its function's routes need;
 # the split holds even if the code is wrong. These policies are the ones dashboards/api/README.md
-# documented for the hand-built roles.
+# documented for the hand-built roles, plus target-health reads for the admin function.
 
 locals {
   account   = data.aws_caller_identity.current.account_id
@@ -147,9 +147,11 @@ locals {
     Version = "2012-10-17"
     Statement = [
       {
+        # DescribeTargetHealth is not in the hand-built admin role; without it every instance
+        # read logged an AccessDenied warning (the code treats target health as optional).
         Sid      = "ReadLabState"
         Effect   = "Allow"
-        Action   = ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus", "cloudtrail:LookupEvents"]
+        Action   = ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus", "elasticloadbalancing:DescribeTargetHealth", "cloudtrail:LookupEvents"]
         Resource = "*"
       },
       {

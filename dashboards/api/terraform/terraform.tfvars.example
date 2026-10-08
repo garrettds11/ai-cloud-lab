@@ -1,11 +1,17 @@
-# Copy to terraform.tfvars (git-ignored) in this folder and fill in.
+# The control panel API stack's settings. Like the root terraform.tfvars.example, this file is
+# the source of truth: at the start of each run copy it over terraform.tfvars (git-ignored),
+# optionally edit that copy, then plan. Change values here, not only in the copy, so the next
+# run keeps them.
 
-aws_region       = "us-east-1"
-aws_profile      = null # or the profile name you use for the lab
-lab_project_name = "<the lab's project_name>"
+aws_region = "us-east-1"
+# null uses the profile set in the window ($env:AWS_PROFILE). Check the account with
+# `aws sts get-caller-identity` before planning.
+aws_profile      = null
+lab_project_name = "aiwebdemo" # the root terraform.tfvars.example project_name
 panel_origin     = "https://cp.aiwebdemo.click"
 bootstrap_admins = ["garrettds11@gmail.com"]
 
-# First apply on an account that already has the hand-built panel: keep the existing tables
-# and their data. Leave it true afterwards; it does nothing once they are imported.
+# true on this account: panel_users, instance_entitlements and control_panel_events exist and
+# are imported with their data (or are already in this stack's state, where it does nothing).
+# false only on a new account where those tables do not exist yet.
 adopt_existing_tables = true

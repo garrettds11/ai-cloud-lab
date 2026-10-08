@@ -174,8 +174,8 @@ control_panel_url = "https://cp.aiwebdemo.click"
 # the lab. Its address goes into the published config.js. The three ids let apply point the
 # API's sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
 # These are the demo account's values. They change whenever the API stack is created: after
-# applying it, run `terraform output -raw lab_tfvars` in dashboards/api/terraform and copy the
-# printed lines here and into your terraform.tfvars.
+# applying it, run `terraform output -raw lab_tfvars` in dashboards/api/terraform, put the
+# printed lines here, commit, and copy this file over terraform.tfvars as usual.
 control_panel_api_url         = "https://yi743toqn6.execute-api.us-east-1.amazonaws.com/"
 control_panel_api_id          = "yi743toqn6"
 control_panel_authorizer_id   = "7y34oy"

@@ -7,6 +7,13 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Added
+- Auto-stop timer reset: a reset icon in the control panel (between Start and Access, on a running lab
+  with a hard limit) gives the lab another full `auto_stop_max_uptime_minutes` without restarting it. Each
+  reset writes a log line under the person who pressed it and shows "Timer reset at ..." under the status.
+  The time is kept in the new SSM parameter `/<project_name>/auto-stop/reset-at` (created by Terraform, never
+  overwritten by it); the instance monitor and the watchdog both count the limit from the later of boot and
+  the last reset. The new API route and the customer Lambda's IAM change are applied by hand; see
+  `dashboards/api/README.md`.
 - Vulnerability findings MCP server (Lambda) and automatic registration in Open
   WebUI at instance bootstrap. The bearer token is read from Secrets Manager at
   run time and never stored in Terraform state, outputs or user data. See

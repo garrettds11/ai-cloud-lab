@@ -722,6 +722,54 @@ If the bootstrap log has `WARNING: Open WebUI vulnerability MCP registration did
 
 Whether a model actually calls the tools is tested by hand in [docs/vuln-mcp-acceptance-tests.md](docs/vuln-mcp-acceptance-tests.md). They use a separate table loaded from the repository's test fixture so the answers are exact, and they require proof that the tool ran (chat tool-call entry plus a CloudWatch `tool_call` line), not just a plausible answer. All of them are pending manual execution.
 
+### Auto-stop timer reset test
+
+**All steps below are pending manual execution; nothing here has been run against a live lab.** Offline tests cover the logic with mocked AWS (`tests/test_idle_check_timer_reset.py`, `tests/test_auto_stop_watchdog.py`, `dashboards/api/tests/test_handler.py`); they do not prove the live SSM, IAM or API Gateway wiring this section checks.
+
+Before starting, the reset route and IAM change from "Adding the timer reset route to an existing panel" in `dashboards/api/README.md` must be in place, and the lab applied with a short hard limit, for example `auto_stop_max_uptime_minutes = 20` (the minimum is 15) and `auto_stop_idle_minutes = 0`.
+
+Browser (control panel, signed in as an operator with a grant on the running lab):
+
+1. A reset icon (circular arrow around a clock) sits between Play and Access. Hovering shows `Reset auto-stop timer`.
+2. Press it. A dialog asks `Extend this lab for another full session?` and names the new stop time. **Cancel** changes nothing (the `Stops at about` line does not move).
+3. Press it again and choose **Reset timer**. A toast says `Auto-stop timer reset. The lab has another 20 minutes.` Under the green Ready indicator the status shows a new `Stops at about ...` time 20 minutes ahead and a green `Timer reset at ...` line. A page refresh keeps both.
+4. Open **Logs**. There is one new line from the control panel: `Reset the auto-stop timer for <name>: another 20 minutes, stopping at about <HH:MM> UTC`. As an administrator, **Logs** shows the same line with the operator's name.
+5. The button is greyed out when the lab is stopped, and for a lab with no hard limit. A user with the operator role but no grant for the lab sees no lab and no button.
+
+Local Windows PowerShell:
+
+```powershell
+$param = (terraform output -json auto_stop_reset_parameter | ConvertFrom-Json).name
+aws ssm get-parameter --name $param --query Parameter.Value --output text
+[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+```
+
+The first number is the reset time and should be within a minute of the second just after pressing the button. Then run the watchdog once and read its result:
+
+```powershell
+$fn = terraform output -raw auto_stop_watchdog
+aws lambda invoke --function-name $fn watchdog-out.json | Out-Null
+Get-Content watchdog-out.json
+```
+
+Expected: `timer_reset_at` is present and `hard_limit_elapsed_minutes` is small (minutes since the reset, not since boot).
+
+Linux (SSM shell on the lab instance):
+
+```bash
+sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check
+```
+
+Expected: `hard_limit_minutes=N/20` where N is minutes since the reset, while `uptime_minutes` is larger.
+
+Then, with the lab left running past its original 20 minute deadline and not reset again:
+
+- It is still running at the original deadline, and the stop warning email (about 10 minutes before a short limit) arrives relative to the new deadline, not the old one.
+- It stops about 20 minutes after the reset (the instance monitor within a minute, or the watchdog within about 5 more minutes).
+- Start it again from the panel: no `Timer reset at` line, and `ai-lab-idle-check` counts `hard_limit_minutes` from the new boot (the earlier reset is ignored).
+
+Terraform drift check, after a reset: `terraform plan` shows no change to `aws_ssm_parameter.auto_stop_reset`.
+
 ## 4. Stop or destroy the test system
 
 If you may test again later, stop the instance to avoid ongoing compute charges:

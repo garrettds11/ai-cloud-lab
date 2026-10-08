@@ -70,6 +70,14 @@ output "auto_stop_watchdog" {
   value       = local.auto_stop_enabled ? aws_lambda_function.auto_stop_watchdog["auto_stop"].function_name : null
 }
 
+output "auto_stop_reset_parameter" {
+  description = "Name and ARN of the SSM parameter that holds the last auto-stop timer reset (epoch seconds, written by the control panel's reset button). The control panel's customer Lambda role needs ssm:GetParameter and ssm:PutParameter on exactly this ARN; see dashboards/api/README.md."
+  value = {
+    name = aws_ssm_parameter.auto_stop_reset.name
+    arn  = aws_ssm_parameter.auto_stop_reset.arn
+  }
+}
+
 output "cognito_user_pool_id" {
   description = "Cognito user pool ID when enable_cognito is true."
   value       = var.enable_cognito ? aws_cognito_user_pool.lab["domain"].id : null

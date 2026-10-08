@@ -396,6 +396,35 @@ run "auto_stop_off_creates_no_watchdog" {
   }
 }
 
+run "auto_stop_reset_parameter_is_created_and_scoped_to_the_readers" {
+  command = apply
+
+  variables {
+    auto_stop_idle_minutes       = 60
+    auto_stop_max_uptime_minutes = 120
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.auto_stop_reset.name == "/${var.project_name}/auto-stop/reset-at"
+    error_message = "The timer reset parameter must be /<project>/auto-stop/reset-at."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.auto_stop_agent.policy, aws_ssm_parameter.auto_stop_reset.arn) && !strcontains(aws_iam_role_policy.auto_stop_agent.policy, "PutParameter")
+    error_message = "The instance may read the reset parameter and must never write it."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.auto_stop_watchdog["auto_stop"].policy, aws_ssm_parameter.auto_stop_reset.arn) && !strcontains(aws_iam_role_policy.auto_stop_watchdog["auto_stop"].policy, "PutParameter")
+    error_message = "The watchdog may read the reset parameter and must never write it."
+  }
+
+  assert {
+    condition     = aws_lambda_function.auto_stop_watchdog["auto_stop"].environment[0].variables["RESET_PARAMETER"] == aws_ssm_parameter.auto_stop_reset.name
+    error_message = "The watchdog must be told which parameter holds the timer reset."
+  }
+}
+
 run "auto_stop_alert_email_must_look_like_an_email" {
   command = plan
 

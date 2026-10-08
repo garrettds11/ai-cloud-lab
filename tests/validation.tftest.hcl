@@ -49,6 +49,18 @@ mock_provider "aws" {
 
   # Resources that other resources reference by ARN. The provider validates ARN
   # arguments, so the mock must return well-formed ARNs, not random strings.
+  mock_resource "aws_lb" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/test-alb/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/0123456789abcdef"
+    }
+  }
+
   mock_resource "aws_iam_role" {
     defaults = {
       arn = "arn:aws:iam::123456789012:role/test-role"
@@ -365,7 +377,7 @@ run "alb_is_locked_down_and_forwards_only_to_open_webui" {
 
   assert {
     condition = alltrue([for rule in aws_security_group.alb["domain"].egress :
-    rule.protocol == "tcp" && rule.from_port == 8080 && rule.to_port == 8080 && rule.cidr_blocks == ["172.31.0.0/16"]])
+    rule.protocol == "tcp" && rule.from_port == 8080 && rule.to_port == 8080 && length(rule.cidr_blocks) == 1 && one(rule.cidr_blocks) == "172.31.0.0/16"])
     error_message = "The ALB may only send traffic to Open WebUI's port inside the VPC."
   }
 

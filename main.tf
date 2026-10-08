@@ -147,7 +147,6 @@ resource "aws_security_group" "ai_lab" {
 
 resource "aws_security_group" "alb" {
   #checkov:skip=CKV_AWS_260:Port 80 only redirects to HTTPS, is off by default, and is limited to Cloudflare when origin lockdown is on
-  #checkov:skip=CKV_AWS_382:Egress is tcp on the Open WebUI port to the VPC only; checkov cannot evaluate the variable port
   for_each    = local.domain_resources
   name_prefix = "${var.project_name}-alb-"
   description = "Public HTTPS access to Open WebUI through the application load balancer"

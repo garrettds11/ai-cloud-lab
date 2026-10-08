@@ -14,7 +14,7 @@ The repository has two separate Terraform configurations, each with its own stat
 Order:
 
 - **First time, or after the API stack was destroyed:** the API stack first (section 2A), then the lab (section 2B). The lab needs the API's IDs, which change whenever the API stack is created.
-- **Every other build:** only the stack whose files changed. Lab changes need section 2B only. API code or route changes need section 2A's "Later API changes" only. Page changes need "Deploy the pages" only. If both stacks changed in one pull, do the API stack first.
+- **Every other build:** only the stack whose files changed. Lab changes need section 2B only. Changes to the API stack's inputs (anything in `dashboards\api\terraform`, or `handler.py`, `customer.py`, `admin.py` or `webui-admin.sh` in `dashboards\api`) need section 2A's "Later API changes" only. Page changes need "Deploy the pages" only. If both stacks changed in one pull, do the API stack first.
 - **Destroying:** the lab first, then the API stack if you mean to remove it too (section 4).
 
 Always start from the latest code:
@@ -189,7 +189,7 @@ using another account, domain, zone, certificate, or Cloudflare account.
 
 ## 2A. Control panel API stack
 
-Skip this section on a normal lab build. Do it the first time, after the API stack was destroyed, or when `dashboards\api\handler.py` or anything in `dashboards\api\terraform` changed.
+Skip this section on a normal lab build. Do it the first time, after the API stack was destroyed, or when one of its inputs changed: anything in `dashboards\api\terraform`, or `handler.py`, `customer.py`, `admin.py` or `webui-admin.sh` in `dashboards\api` (the functions are built from the first three, and the Open WebUI admin document embeds the last).
 
 The API stack has no Cloudflare resources, so it runs with plain `terraform`, not the wrapper. It uses the same `TF_VAR_aws_profile` and `TF_VAR_aws_region` set in section 1.
 
@@ -205,7 +205,22 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
    notepad terraform.tfvars
    ```
 
-   Set `lab_project_name` to the root `terraform.tfvars` `project_name`, and `bootstrap_admins` to your address. Keep `adopt_existing_tables = true` so the existing `panel_users`, `instance_entitlements` and `control_panel_events` tables, and their data, are imported instead of created.
+   Set `lab_project_name` to the root `terraform.tfvars` `project_name`, and `bootstrap_admins` to your address.
+
+   Set `adopt_existing_tables` by whether the tables already exist:
+   - **`true`** when `panel_users`, `instance_entitlements` and `control_panel_events` already exist, as on this account (built by hand, or left behind by a destroyed API stack). They are imported, data included.
+   - **`false`** on a new account. Terraform creates them. With `true` and no tables, the plan fails because there is nothing to import.
+
+   Check with:
+
+   ```powershell
+   foreach ($t in 'panel_users', 'instance_entitlements', 'control_panel_events') {
+     aws dynamodb describe-table --table-name $t --query "Table.TableName" --output text 2>$null
+     if ($LASTEXITCODE -ne 0) { "$t does not exist" }
+   }
+   ```
+
+   Use `true` only if all three names print, and `false` only if all three say they do not exist. A mix means a table is missing; stop and ask before building.
 
 2. Plan:
 
@@ -215,7 +230,7 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
    ```
 
    **Read the plan before applying.** Expected:
-   - The three tables: **will be imported**, possibly with in-place updates (deletion protection, point-in-time recovery).
+   - The three tables: **will be imported** (with `adopt_existing_tables = true`), possibly with in-place updates (deletion protection, point-in-time recovery). On a new account, **will be created**.
    - Everything else: **will be created**. That covers the API, the authorizer, 15 routes, the stage, two functions and their roles and log groups, the holding pool, the Open WebUI admin document and the desired-state table.
    - **Nothing** may show **must be replaced** or **will be destroyed**. If a table does, stop: its keys differ from `tables.tf`.
 
@@ -241,7 +256,7 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
 
 ### Later API changes
 
-After a change to `dashboards\api\handler.py` or `dashboards\api\terraform`:
+After a change to any of the stack's inputs (see the start of this section):
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
@@ -305,9 +320,19 @@ Remove-Item ai-lab.tfplan
 
 Needed only when files in `dashboards` (the pages, not `dashboards\api`) changed, and once after the first cutover so the pages include every merged change (for example the Reset button). `config.js` is published by the lab apply and is excluded here:
 
+The bucket and distribution come from the root `terraform.tfvars` (`control_panel_bucket`, `control_panel_distribution_id`), so this works for any deployment. Run from the repository root:
+
 ```powershell
-aws s3 sync C:\GitHub\ai-cloud-lab\dashboards "s3://aiwebdemo-control-panel-394566733278" --exclude "*.md" --exclude "config.example.js" --exclude "config.js" --exclude "api/*" --exclude "_deploy/*" --delete
-aws cloudfront create-invalidation --distribution-id E2799OUDXX2ED3 --paths "/*"
+Set-Location C:\GitHub\ai-cloud-lab
+function Get-TfVar([string]$Name) {
+  $m = Select-String -Path .\terraform.tfvars -Pattern ('^\s*' + $Name + '\s*=\s*"([^"]+)"') | Select-Object -First 1
+  if (-not $m) { throw "$Name is not set in terraform.tfvars" }
+  $m.Matches.Groups[1].Value
+}
+$panelBucket       = Get-TfVar control_panel_bucket
+$panelDistribution = Get-TfVar control_panel_distribution_id
+aws s3 sync .\dashboards "s3://$panelBucket" --exclude "*.md" --exclude "config.example.js" --exclude "config.js" --exclude "api/*" --exclude "_deploy/*" --delete
+aws cloudfront create-invalidation --distribution-id $panelDistribution --paths "/*"
 ```
 
 ## 3. Access and testing system
@@ -1005,7 +1030,7 @@ aws ssm put-parameter --name $param --value 0 --overwrite
 
 ## 4. Stop or destroy the test system
 
-Order: **the lab first, then the API stack** if you are removing it too. Destroying the lab points the panel's sign-in back at the holding pool, which needs the API to still exist. Rebuild the other way round: the API stack (section 2A, with `adopt_existing_tables = true`), copy the new `lab_tfvars` lines into the root `terraform.tfvars`, then the lab.
+Order: **the lab first, then the API stack** if you are removing it too. Destroying the lab points the panel's sign-in back at the holding pool, which needs the API to still exist. Rebuild the other way round: the API stack (section 2A, with `adopt_existing_tables = true` if the tables survived, which they do unless you turned deletion protection off and deleted them), copy the new `lab_tfvars` lines into the root `terraform.tfvars`, then the lab.
 
 ### The lab
 

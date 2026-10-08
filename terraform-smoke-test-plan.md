@@ -2,6 +2,29 @@
 
 This plan deploys the AI Cloud Lab, verifies bootstrap and the selected access path, then safely dismantles the test system.
 
+## Two Terraform stacks, and which to run
+
+The repository has two separate Terraform configurations, each with its own state:
+
+| Stack | Folder | Holds | Applied |
+|---|---|---|---|
+| **Control panel API** | `dashboards\api\terraform` | The panel's API, sign-in authorizer, routes, both functions and roles, the panel's tables, the Open WebUI admin document | Once, then only when the API changes |
+| **Lab** | repository root | The instance, Open WebUI, Ollama, ALB, Cloudflare, Cognito, auto-stop | Often: every build, destroy and rebuild |
+
+Order:
+
+- **First time, or after the API stack was destroyed:** the API stack first (section 2A), then the lab (section 2B). The lab needs the API's IDs, which change whenever the API stack is created; section 2A step 3 puts them in the root example.
+- **Every other build:** only the stack whose files changed. Lab changes need section 2B only. Changes to the API stack's inputs (anything in `dashboards\api\terraform`, or `handler.py`, `customer.py`, `admin.py` or `webui-admin.sh` in `dashboards\api`) need section 2A's "Later API changes" only. Page changes need "Deploy the pages" only. If both stacks changed in one pull, do the API stack first.
+- **Destroying:** the lab first, then the API stack if you mean to remove it too (section 4).
+
+Always start from the latest code:
+
+```powershell
+Set-Location C:\GitHub\ai-cloud-lab
+git switch dev
+git pull origin dev
+```
+
 ## 1. Prepare for infrastructure deployment
 
 Run Terraform from the directory containing `main.tf`, `variables.tf`, and the other configuration files:
@@ -14,13 +37,13 @@ Get-ChildItem *.tf
 
 If `Get-ChildItem *.tf` returns *no files*, `STOP` and *change to the correct repository directory* before continuing.
 
-Create the local variables file once:
+At the start of **every** run, copy the example over the local variables file. `terraform.tfvars.example` is the source of truth and is kept in the repository; `terraform.tfvars` is a git-ignored working copy that each run replaces:
 
 ```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars
+Copy-Item terraform.tfvars.example terraform.tfvars -Force
 ```
 
-Open `terraform.tfvars` in an editor and set your own values, such as the domain name, secret ARNs and the auto-stop timeout.
+Then, only if this run needs a different value, edit the copy explicitly with one of the commands below. A lasting change belongs in `terraform.tfvars.example` (committed); an edit made only in the copy is lost at the next run.
 
 ```VS-Code
 code terraform.tfvars
@@ -81,6 +104,18 @@ After setting the profile and region above, copy this block unchanged:
 $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 ```
+
+**Where the profile really comes from.** A value in a `terraform.tfvars` file beats a `TF_VAR_` environment variable, and both example files set `aws_profile = null`. So with the examples as they are, `TF_VAR_aws_profile` is ignored. `null` means "name no profile", and the AWS provider then uses `$env:AWS_PROFILE` from this window. That works only in a window where `$env:AWS_PROFILE` is set. In a new window without it, Terraform would use your **default** profile, which may be a different account.
+
+Keep `aws_profile = null` in both examples and set `$env:AWS_PROFILE` (your own profile name) at the start of every window. Do not put a profile name in only the working `terraform.tfvars`: the next copy from the example removes it. A profile name in the examples would be committed, and would be wrong for anyone whose profile is named differently.
+
+Confirm the account before any plan, apply or destroy, in either stack:
+
+```powershell
+aws sts get-caller-identity --query Account --output text
+```
+
+It must print the lab's account (`394566733278` for the demo). If it does not, stop and fix the profile.
 
 ### Set Cloudflare tokens if provider is in use.
 
@@ -157,14 +192,96 @@ sends no Cloudflare credentials and fails with
 into the same PowerShell window that runs the later steps; it does not persist
 into a new window.
 
-The complete command sequence is in **Section 2** below. Do not run a separate unsaved `plan` or `apply` here.
+The complete command sequence is in **Section 2B** below (after section 2A the first time). Do not run a separate unsaved `plan` or `apply` here.
 
 Confirm the certificate is `ISSUED`, belongs to the same region as
 `TF_VAR_aws_region`, and covers the exact `domain_name` before applying.
 The current demo values are in `terraform.tfvars`; replace them there when
 using another account, domain, zone, certificate, or Cloudflare account.
 
-## 2. Terraform
+## 2A. Control panel API stack
+
+Skip this section on a normal lab build. Do it the first time, after the API stack was destroyed, or when one of its inputs changed: anything in `dashboards\api\terraform`, or `handler.py`, `customer.py`, `admin.py` or `webui-admin.sh` in `dashboards\api` (the functions are built from the first three, and the Open WebUI admin document embeds the last).
+
+The API stack has no Cloudflare resources, so it runs with plain `terraform`, not the wrapper. It uses the same `TF_VAR_aws_profile` and `TF_VAR_aws_region` set in section 1.
+
+### First time (moving from the hand-built API)
+
+The new API is created next to the hand-built one (`65j334bc19`), which keeps serving the panel until section 2B switches the lab over. There is no outage, and `dashboards\api\terraform\README.md` has the rollback.
+
+1. Settings, once:
+
+   Like the lab, this stack's `terraform.tfvars.example` is the source of truth. Copy it over the working copy at the start of every run, and edit the copy only for a one-off change:
+
+   ```powershell
+   Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
+   Copy-Item terraform.tfvars.example terraform.tfvars -Force
+   notepad terraform.tfvars
+   ```
+
+   Check that `lab_project_name` matches the root example's `project_name` (`aiwebdemo` for the demo), and that `bootstrap_admins` has your address.
+
+   Set `adopt_existing_tables` by whether the tables already exist:
+   - **`true`** when `panel_users`, `instance_entitlements` and `control_panel_events` already exist, as on this account (built by hand, or left behind by a destroyed API stack). They are imported, data included.
+   - **`false`** on a new account. Terraform creates them. With `true` and no tables, the plan fails because there is nothing to import.
+
+   Check with:
+
+   ```powershell
+   foreach ($t in 'panel_users', 'instance_entitlements', 'control_panel_events') {
+     aws dynamodb describe-table --table-name $t --query "Table.TableName" --output text 2>$null
+     if ($LASTEXITCODE -ne 0) { "$t does not exist" }
+   }
+   ```
+
+   Use `true` only if all three names print, and `false` only if all three say they do not exist. A mix means a table is missing; stop and ask before building.
+
+2. Plan:
+
+   ```powershell
+   terraform init
+   terraform plan -out=api.tfplan
+   ```
+
+   **Read the plan before applying.** Expected:
+   - The three tables: **will be imported** (with `adopt_existing_tables = true`), possibly with in-place updates (deletion protection, point-in-time recovery). On a new account, **will be created**.
+   - Everything else: **will be created**. That covers the API, the authorizer, 15 routes, the stage, two functions and their roles and log groups, the holding pool, the Open WebUI admin document and the desired-state table.
+   - **Nothing** may show **must be replaced** or **will be destroyed**. If a table does, stop: its keys differ from `tables.tf`.
+
+3. Apply, then print the lab's new settings:
+
+   ```powershell
+   terraform apply api.tfplan
+   Remove-Item api.tfplan
+   terraform output -raw lab_tfvars
+   ```
+
+   Replace the six matching lines in the **root** `terraform.tfvars.example` with the printed ones (`control_panel_api_url`, `control_panel_api_id`, `control_panel_authorizer_id`, `control_panel_holding_pool_id`, `control_panel_users_table`, `control_panel_entitlements_table`), commit that change, then copy the example over `terraform.tfvars` again before section 2B. Changing only the working copy works for this run but is lost at the next copy, and the lab would then point the panel back at the old API's IDs.
+
+4. Check, before the lab is pointed at it:
+
+   ```powershell
+   $newApi = terraform output -raw api_id
+   aws apigatewayv2 get-routes --api-id $newApi --query "length(Items)"
+   curl.exe -s -o NUL -w "%{http_code}\n" "$((terraform output -raw api_url).TrimEnd('/'))/instances"
+   ```
+
+   The first prints `15`. The second prints `401`: until section 2B, the new authorizer trusts only the empty holding pool, so nobody can sign in to the new API yet.
+
+### Later API changes
+
+After a change to any of the stack's inputs (see the start of this section):
+
+```powershell
+Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
+terraform plan -out=api.tfplan
+terraform apply api.tfplan
+Remove-Item api.tfplan
+```
+
+Code changes update both functions in place. The API address and IDs do not change, so the lab needs nothing. If the plan ever shows the API, the authorizer or a table being **replaced**, stop: that would change the IDs or lose data.
+
+## 2B. Lab
 
 ### Validate and preview
 ```powershell
@@ -187,6 +304,17 @@ the lab's pool. It also shows a Cloudflare Worker script and route for the lab-h
 `control_panel_distribution_id` set the cache-clearing step. Section "Control panel
 config test", has the checks after `apply`.
 
+**First lab apply after section 2A's first-time steps** (the API IDs in `terraform.tfvars` changed). Also expect:
+
+- `terraform_data.control_panel_authorizer["authorizer"]` **must be replaced**. This is the switch-over. Its destroy step points the old hand-built authorizer back at its holding pool, so the old API starts answering 401, and its create step points the new authorizer at the lab's Cognito pool. If the plan does not show it, stop; see cutover step 5 in `dashboards\api\terraform\README.md`.
+- `aws_ssm_parameter.control_panel_open_webui_image` **will be created** (`/<project_name>/control-panel/open-webui-image`).
+- The `config.js` object updates with the new `apiUrl`.
+
+**Any lab apply** may also show:
+
+- `aws_instance.ai_lab` **must be replaced** when the bootstrap or a script it embeds changed (for example `scripts/ai-lab-idle-check.sh`). Chats and pulled models on the instance are lost (issue #13).
+- In-place changes to the ALB, its listeners and security group, and the SNS topic. These come from the hardening in #57: TLS 1.2+ policy, dropping invalid headers, port 80 limited to Cloudflare under lockdown, ALB egress limited to Open WebUI's port, and the encrypted alert topic.
+
 ### Deploy
 
 ```powershell
@@ -200,6 +328,25 @@ completes, remove the local plan file:
 
 ```powershell
 Remove-Item ai-lab.tfplan
+```
+
+### Deploy the pages
+
+Needed only when files in `dashboards` (the pages, not `dashboards\api`) changed, and once after the first cutover so the pages include every merged change (for example the Reset button). `config.js` is published by the lab apply and is excluded here:
+
+The bucket and distribution come from the root `terraform.tfvars` (`control_panel_bucket`, `control_panel_distribution_id`), so this works for any deployment. Run from the repository root:
+
+```powershell
+Set-Location C:\GitHub\ai-cloud-lab
+function Get-TfVar([string]$Name) {
+  $m = Select-String -Path .\terraform.tfvars -Pattern ('^\s*' + $Name + '\s*=\s*"([^"]+)"') | Select-Object -First 1
+  if (-not $m) { throw "$Name is not set in terraform.tfvars" }
+  $m.Matches.Groups[1].Value
+}
+$panelBucket       = Get-TfVar control_panel_bucket
+$panelDistribution = Get-TfVar control_panel_distribution_id
+aws s3 sync .\dashboards "s3://$panelBucket" --exclude "*.md" --exclude "config.example.js" --exclude "config.js" --exclude "api/*" --exclude "_deploy/*" --delete
+aws cloudfront create-invalidation --distribution-id $panelDistribution --paths "/*"
 ```
 
 ## 3. Access and testing system
@@ -421,6 +568,15 @@ Check:
    control panel app client ID. After `destroy`, the same command must show the holding
    pool's issuer and the audience `holding-unused`.
 
+   After the first cutover, `$panelApiId` and `$panelAuthorizerId` are the new IDs from
+   section 2A. Also check that the old hand-built authorizer went back to its holding pool:
+
+   ```powershell
+   aws apigatewayv2 get-authorizer --api-id 65j334bc19 --authorizer-id pnlj78 --query JwtConfiguration
+   ```
+
+   Its issuer must end with `us-east-1_xcTOLNQJM` and its audience must be `holding-unused`.
+
 6. The lab publishes its wiring for the panel. With `control_panel_url` set, `apply`
    creates three SSM parameters and tags the lab instance `control-panel=managed`.
    Check:
@@ -430,9 +586,10 @@ Check:
    aws ec2 describe-instances --instance-ids $env:instance_id --query "Reservations[].Instances[].Tags[?Key=='control-panel']"
    ```
 
-   The parameters are `instance-ids` (the lab instance ID), `target-group-arn` and
-   `service-url` (`https://$domainName`). `target-group-arn` and `service-url` exist
-   only when `enable_domain_access` is also `true`. The tag value is `managed`.
+   The parameters are `instance-ids` (the lab instance ID), `open-webui-image` (the
+   `open_webui_container_image` value), `target-group-arn` and `service-url`
+   (`https://$domainName`). `target-group-arn` and `service-url` exist only when
+   `enable_domain_access` is also `true`. The tag value is `managed`.
 
 7. Sign in at https://cp.aiwebdemo.click as a user in the lab's Cognito pool. The
    panel must list the lab instance with no setting copied into the Lambda functions.
@@ -453,6 +610,85 @@ aws ec2 stop-instances `
 aws ec2 describe-instance-status `
   --instance-ids $env:instance_id
 ```
+
+### Control panel API stack test
+
+Skip this until section 2A has been applied and the lab pointed at it. Run from `dashboards\api\terraform`.
+
+1. **Panel end to end:** sign in at https://cp.aiwebdemo.click. Expected:
+   - The instances are listed.
+   - Start, Reset and Access behave as before.
+   - As an administrator, User management, Changes, Logins and Logs all open.
+
+   All of these now go through the new API (`config.js` has its address, check with `aws s3 cp "s3://$panelBucket/config.js" -`).
+2. **Routes match the spec:**
+
+   ```powershell
+   aws apigatewayv2 get-routes --api-id (terraform output -raw api_id) --query "sort(Items[].RouteKey)" --output text
+   ```
+
+   It must list the same 15 routes as `dashboards\api\openapi.yaml`.
+3. **Access log:** after using the panel for a minute,
+
+   ```powershell
+   aws logs tail "/aws/apigateway/aiwebdemo-control" --since 10m
+   ```
+
+   Each line has the route, the status and the caller's email. No line may contain `Bearer`, `eyJ` (the start of a token) or a request body.
+4. **Tables kept their data:** User management shows the same people, roles and grants as before the cutover.
+5. **The tables are protected:**
+
+   ```powershell
+   foreach ($t in 'panel_users', 'instance_entitlements', 'control_panel_events') {
+     aws dynamodb describe-table --table-name $t --query "Table.DeletionProtectionEnabled"
+   }
+   ```
+
+   All three print `true`.
+
+### Open WebUI admin action test
+
+**Pending manual execution.** Needs the lab running, `READY`, and section 2A applied. The panel pages have no button for this yet (phase 1, #59), so the test calls the document and the API directly.
+
+1. **The document alone**, from `dashboards\api\terraform`:
+
+   ```powershell
+   $doc = terraform output -raw webui_admin_document
+   $cmd = aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=0.11.4" --query Command.CommandId --output text
+   Start-Sleep 15
+   aws ssm get-command-invocation --command-id $cmd --instance-id $env:instance_id --query "[Status, StandardOutputContent]" --output text
+   ```
+
+   Expected: `Success` and one JSON line with `"ok":true`, `"healthy":true`, `"version":"0.11.4"`, `"versionMatches":true`. If `version` is `null` while `healthy` is `true`, Open WebUI v0.11.4 does not serve `/api/version` without sign-in; record that in #59.
+
+2. **The document refuses anything else:**
+
+   ```powershell
+   aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=whoami"
+   aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=1;id"
+   ```
+
+   Both must fail at once with an `InvalidParameters` error. Nothing runs on the instance.
+
+3. **Through the API, as an administrator:** sign in to the panel as an administrator, press F12, open **Console**, and run:
+
+   ```javascript
+   const t = JSON.parse(sessionStorage.getItem('panel.tokens')).idToken;
+   const api = (window.PANEL_CONFIG?.apiUrl || prompt('API address (terraform output api_url)')).replace(/\/+$/, '');
+   const id = 'i-...'; // the lab instance ID
+   const r = await fetch(api + '/admin/webui/actions', {method: 'POST', headers: {authorization: 'Bearer ' + t, 'content-type': 'application/json'}, body: JSON.stringify({action: 'status', instanceId: id})});
+   const started = await r.json(); console.log(r.status, started);
+   setTimeout(async () => console.log(await (await fetch(api + '/admin/webui/actions/' + started.commandId, {headers: {authorization: 'Bearer ' + t}})).json()), 20000);
+   ```
+
+   Expected:
+   - The first log is `200` with a `commandId` and `status: "Pending"`.
+   - Twenty seconds later the second shows `status: "Success"` and the same `result` as step 1.
+   - **Logs** in the panel shows `Requested Open WebUI action 'status' on ...`, then `... done`.
+
+   If `window.PANEL_CONFIG` is undefined, paste the `api_url` output when asked.
+
+4. **Not for operators:** repeat step 3 signed in as an operator (for example `demo2@example.local`). The first request must return `403`.
 
 ### Lab unavailable page test
 
@@ -633,6 +869,24 @@ Resolve-DnsName <domain> -Type A -Server 8.8.8.8
 
 The DS record's key tag must equal the one in the Route 53 DNSSEC keys table, and the A lookup must not return `DNS server failure`. In a browser, `https://dns.google/resolve?name=<domain>&type=A` should show `"AD": true`.
 
+### Load balancer hardening test
+
+Needs `enable_domain_access = true`. These are the #57 changes. `$projectName` comes from the "Control panel config test"; if this is a new window, set it first: `$projectName = '<project_name from terraform.tfvars>'`.
+
+```powershell
+$alb = aws elbv2 describe-load-balancers --names "$projectName-alb" --query "LoadBalancers[0]" | ConvertFrom-Json
+aws elbv2 describe-listeners --load-balancer-arn $alb.LoadBalancerArn --query "Listeners[?Port==``443``].SslPolicy" --output text
+aws elbv2 describe-load-balancer-attributes --load-balancer-arn $alb.LoadBalancerArn --query "Attributes[?Key=='routing.http.drop_invalid_header_fields.enabled'].Value" --output text
+aws ec2 describe-security-groups --group-ids $alb.SecurityGroups --query "SecurityGroups[].IpPermissionsEgress"
+```
+
+Expected, in order:
+1. `ELBSecurityPolicy-TLS13-1-2-2021-06`.
+2. `true`.
+3. One egress rule: TCP on the Open WebUI port (8080) to the VPC's ranges only.
+
+With origin lockdown and the port 80 redirect both on, the port 80 rule allows only Cloudflare ranges. The site still loads through Cloudflare after all of this; run the Cloudflare Access test's chat step again.
+
 ### Grafana telemetry test
 
 Telemetry is on by default; skip this if `enable_grafana_telemetry = false`. In an SSM shell on the instance:
@@ -656,7 +910,7 @@ Confirm no secret appears in a log line, and that the instance still needs no in
 
 Skip this if `vuln_mcp_table_name` is not set. The findings table (`aiwebdemo-vuln-findings`, created by `create_vuln_table.py` in the `sec-data` repository) and the token secret are built by hand, so do the first step before this section.
 
-Before section 2, create the token secret and put its ARN in `vuln_mcp_token_secret_arn` (in `terraform.tfvars.example` first, then `terraform.tfvars`):
+Before section 2B, create the token secret and put its ARN in `vuln_mcp_token_secret_arn` (in `terraform.tfvars.example` first, then `terraform.tfvars`):
 
 ```powershell
 $bytes = New-Object byte[] 32
@@ -696,7 +950,7 @@ Each tool call is one JSON `tool_call` line (tool, arguments, `ok`, size, time).
 
 The lab instance connects Open WebUI to the server by itself at the end of bootstrap; there is no endpoint or token to copy. The connection is added when `vuln_mcp_table_name` is set and removed when it is not. It needs `open_webui_enable_local_login = true` (Terraform warns otherwise). Because this changes the instance's cloud-init, the apply that introduces it, and later turning the feature on or off, replaces the instance.
 
-Linux (SSM shell on the lab instance; open it with `aws ssm start-session --target $env:instance_id` from PowerShell, as in section 2):
+Linux (SSM shell on the lab instance; open it with `aws ssm start-session --target $env:instance_id` from PowerShell, as in section 3):
 
 ```bash
 grep -F '[register-vuln-mcp]' /var/log/ai-lab-bootstrap.log
@@ -726,7 +980,7 @@ Whether a model actually calls the tools is tested by hand in [docs/vuln-mcp-acc
 
 **All steps below are pending manual execution; nothing here has been run against a live lab.** Offline tests cover the logic with mocked AWS (`tests/test_idle_check_timer_reset.py`, `tests/test_auto_stop_watchdog.py`, `dashboards/api/tests/test_handler.py`); they do not prove the live SSM, IAM or API Gateway wiring this section checks.
 
-Before starting, the reset route and IAM change from "Adding the timer reset route to an existing panel" in `dashboards/api/README.md` must be in place, and the lab applied with a short hard limit, for example `auto_stop_max_uptime_minutes = 20` (the minimum is 15) and `auto_stop_idle_minutes = 0`.
+Before starting, the panel must be on the Terraform-built API (section 2A), which has the reset route and its IAM permission. On the old hand-built API, do "Adding the timer reset route to an existing panel" in `dashboards/api/README.md` first. Apply the lab with a short hard limit, for example `auto_stop_max_uptime_minutes = 20` (the minimum is 15) and `auto_stop_idle_minutes = 0`.
 
 Browser (control panel, signed in as an operator with a grant on the running lab):
 
@@ -770,7 +1024,29 @@ Then, with the lab left running past its original 20 minute deadline and not res
 
 Terraform drift check, after a reset: `terraform plan` shows no change to `aws_ssm_parameter.auto_stop_reset`.
 
+**A bad reset value cannot switch the limit off** (#56). With the lab running and past its hard limit's halfway point, write a far-future value by hand, as a mistake or a misused permission would:
+
+```powershell
+aws ssm put-parameter --name $param --value 9999999999 --overwrite
+```
+
+Expected:
+- `sudo AI_LAB_DRY_RUN=1 /usr/local/sbin/ai-lab-idle-check` on the instance shows `hard_limit_minutes` counted from boot (equal to `uptime_minutes`), and the system log has `ignoring an invalid or future timer reset value`.
+- Running the watchdog as above returns no `timer_reset_at`, and `hard_limit_elapsed_minutes` counts from launch.
+- The panel shows no `Timer reset at` line.
+- The lab stops on the original schedule.
+
+Repeat with `99999999999999999999` and with `abc`; the result must be the same, and the watchdog must not error. Afterwards put a sane value back, or press Reset in the panel:
+
+```powershell
+aws ssm put-parameter --name $param --value 0 --overwrite
+```
+
 ## 4. Stop or destroy the test system
+
+Order: **the lab first, then the API stack** if you are removing it too. Destroying the lab points the panel's sign-in back at the holding pool, which needs the API to still exist. Rebuild the other way round: the API stack (section 2A, with `adopt_existing_tables = true` if the tables survived, which they do unless you turned deletion protection off and deleted them), copy the new `lab_tfvars` lines into the root `terraform.tfvars`, then the lab.
+
+### The lab
 
 If you may test again later, stop the instance to avoid ongoing compute charges:
 
@@ -794,11 +1070,25 @@ Remove-Item ai-lab-destroy.tfplan
 ```
 
 After teardown, verify that the instance, ALB, target group, and security groups
-are gone. When Cloudflare is enabled, also confirm the proxied apex CNAME and
+are gone. The panel stays up and lists no instances; the API's sign-in is back on its holding pool (the `get-authorizer` check in "Control panel config test", step 5). When Cloudflare is enabled, also confirm the proxied apex CNAME and
 the Access application are removed in the Cloudflare dashboard. Terraform does
 not manage the ACM certificate, its DNS-only validation CNAME, or the Secrets
 Manager secrets, so those remain. Remove `terraform.tfvars` if it contains a
 real password, but keep `terraform.tfvars.example`.
+
+### The control panel API stack
+
+Usually left in place: the panel should keep working with or without a lab. To remove it, from `dashboards\api\terraform`:
+
+```powershell
+terraform plan -destroy -out=api-destroy.tfplan
+terraform apply api-destroy.tfplan
+Remove-Item api-destroy.tfplan
+```
+
+The three panel tables and the desired-state table have deletion protection, so the destroy stops with an error on them. They stay in AWS with your users and grants. That is intended. To really delete them, set `deletion_protection_enabled = false` in `tables.tf` and `webui_admin.tf`, apply, then destroy. Their data is then gone for good.
+
+Rebuilding the API stack gives the API new IDs and a new address, so the lab must be applied again with the new `lab_tfvars` lines (section 2A step 3, then section 2B).
 
 ## Likely failure points
 
@@ -809,4 +1099,8 @@ real password, but keep `terraform.tfvars.example`.
 > - Bootstrap is still downloading packages, Ollama, the model, or the Open WebUI image.
 > - Local port 8080 is already occupied; use local port 8081 for the tunnel.
 > - Domain access requires an issued ACM certificate in the selected region, plus either a public Route 53 hosted zone or, with Cloudflare, an **Active** Cloudflare zone.
-> - A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set.
+> - A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set. (The API stack in `dashboards\api\terraform` does not need the wrapper.)
+> - The API stack plan shows a table **must be replaced**: the hand-built table's keys differ from `tables.tf`. Stop; do not apply.
+> - After the cutover the panel answers 401 to everyone: the lab apply did not replace `terraform_data.control_panel_authorizer`, so the new authorizer is still on its holding pool. Apply the lab with `-replace='terraform_data.control_panel_authorizer["authorizer"]'`.
+> - The panel still uses the old API: the pages are cached. Reload, or check `config.js` and the CloudFront invalidation.
+> - An Open WebUI action fails with a 409 about Systems Manager: the instance has not registered with SSM yet. Wait a minute after it reaches `READY`.

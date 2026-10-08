@@ -105,6 +105,22 @@ $env:TF_VAR_aws_profile = $env:AWS_PROFILE
 $env:TF_VAR_aws_region = $env:AWS_DEFAULT_REGION
 ```
 
+**Where the profile really comes from.** A value in a `terraform.tfvars` file beats a `TF_VAR_` environment variable, and both example files set `aws_profile = null`. So with the examples as they are, `TF_VAR_aws_profile` is ignored. `null` means "name no profile", and the AWS provider then uses `$env:AWS_PROFILE` from this window. That works only in a window where `$env:AWS_PROFILE` is set. In a new window without it, Terraform would use your **default** profile, which may be a different account.
+
+To make it independent of the window, put the profile name in **both** settings files: the root `terraform.tfvars` and `dashboards\api\terraform\terraform.tfvars`.
+
+```hcl
+aws_profile = "ai-cloud-lab"
+```
+
+Either way, confirm the account before any plan, apply or destroy, in either stack:
+
+```powershell
+aws sts get-caller-identity --query Account --output text
+```
+
+It must print the lab's account (`394566733278` for the demo). If it does not, stop and fix the profile.
+
 ### Set Cloudflare tokens if provider is in use.
 
 When Cloudflare resources are enabled, Terraform retrieves the Cloudflare API

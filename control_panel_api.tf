@@ -31,9 +31,16 @@ resource "terraform_data" "control_panel_authorizer" {
     holding       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.control_panel_holding_pool_id}"
   }
 
+  # Re-run the provisioners whenever the lab's pool or client changes, and also when the
+  # authorizer itself changes (moving to another API, for example the Terraform-built one in
+  # dashboards/api/terraform). Replacing first runs the destroy step with the old values, which
+  # points the old authorizer back at its holding pool, then points the new one at this lab.
   triggers_replace = [
     aws_cognito_user_pool.lab["domain"].id,
     aws_cognito_user_pool_client.control_panel["domain"].id,
+    var.control_panel_api_id,
+    var.control_panel_authorizer_id,
+    var.control_panel_holding_pool_id,
   ]
 
   provisioner "local-exec" {

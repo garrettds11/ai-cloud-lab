@@ -7,7 +7,7 @@ import pathlib
 import unittest
 from unittest import mock
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.update(
@@ -63,7 +63,10 @@ class WatchdogTest(unittest.TestCase):
         ssm = mock.Mock()
         if reset_error or (reset_minutes_ago is None and reset_value is None):
             code = reset_error or "ParameterNotFound"
-            ssm.get_parameter.side_effect = ClientError({"Error": {"Code": code, "Message": "x"}}, "GetParameter")
+            if code == "network":
+                ssm.get_parameter.side_effect = EndpointConnectionError(endpoint_url="https://ssm.example")
+            else:
+                ssm.get_parameter.side_effect = ClientError({"Error": {"Code": code, "Message": "x"}}, "GetParameter")
         else:
             value = reset_value if reset_value is not None else str(int((NOW - datetime.timedelta(minutes=reset_minutes_ago)).timestamp()))
             ssm.get_parameter.return_value = {"Parameter": {"Value": value}}
@@ -205,11 +208,29 @@ class WatchdogTest(unittest.TestCase):
         self.assertFalse(result.get("alerted"))
         sns.publish.assert_not_called()
 
-    def test_a_reset_time_in_the_future_counts_as_now(self):
-        future = str(int((NOW + datetime.timedelta(days=30)).timestamp()))
-        result, ec2, _ = self.run_handler(uptime=200, agent={"idle": 0, "users": 3}, idle=0, cap=90, reset_value=future)
+    def test_a_slightly_future_reset_counts_as_now(self):
+        soon = str(int((NOW + datetime.timedelta(minutes=2)).timestamp()))
+        result, ec2, _ = self.run_handler(uptime=200, agent={"idle": 0, "users": 3}, idle=0, cap=90, reset_value=soon)
         self.assertEqual(result["hard_limit_elapsed_minutes"], 0)
         ec2.stop_instances.assert_not_called()
+
+    def test_a_far_future_reset_is_ignored_and_the_limit_still_applies(self):
+        future = str(int((NOW + datetime.timedelta(days=30)).timestamp()))
+        result, ec2, _ = self.run_handler(uptime=200, agent={"idle": 0, "users": 3}, idle=0, cap=90, reset_value=future)
+        self.assertEqual(result["action"], "stop")
+        ec2.stop_instances.assert_called_once()
+
+    def test_huge_reset_values_do_not_crash_the_watchdog(self):
+        for value in ("253402300800", "99999999999999999999", "9" * 400, "-5", "1e12", "\u0661\u0662"):
+            with self.subTest(value=value):
+                result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, reset_value=value)
+                self.assertEqual(result["action"], "stop")
+                ec2.stop_instances.assert_called_once()
+
+    def test_a_network_error_reading_the_reset_falls_back_to_the_launch_time(self):
+        result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, reset_error="network")
+        self.assertEqual(result["action"], "stop")
+        ec2.stop_instances.assert_called_once()
 
     def test_an_unreadable_reset_falls_back_to_the_launch_time(self):
         result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, reset_error="AccessDeniedException")

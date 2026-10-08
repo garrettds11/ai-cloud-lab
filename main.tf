@@ -146,6 +146,7 @@ resource "aws_security_group" "ai_lab" {
 }
 
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV_AWS_260:Port 80 only redirects to HTTPS, is off by default, and is limited to Cloudflare when origin lockdown is on
   for_each    = local.domain_resources
   name_prefix = "${var.project_name}-alb-"
   description = "Public HTTPS access to Open WebUI through the application load balancer"
@@ -163,20 +164,23 @@ resource "aws_security_group" "alb" {
   dynamic "ingress" {
     for_each = local.http_redirect_resources
     content {
-      description = "HTTP redirect to HTTPS"
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      description      = var.enable_origin_lockdown ? "HTTP redirect to HTTPS, from Cloudflare only" : "HTTP redirect to HTTPS"
+      from_port        = 80
+      to_port          = 80
+      protocol         = "tcp"
+      cidr_blocks      = var.enable_origin_lockdown ? concat(var.cloudflare_ipv4_cidrs, var.origin_lockdown_extra_cidrs) : ["0.0.0.0/0"]
+      ipv6_cidr_blocks = var.enable_origin_lockdown ? var.cloudflare_ipv6_cidrs : []
     }
   }
 
+  # The ALB only forwards to Open WebUI and health-checks it, both on this one port inside the VPC.
+  # Every IPv4 range of the VPC is included, in case the instance's subnet is in a secondary one.
   egress {
-    description = "Allow the ALB to reach its registered targets"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    description = "Open WebUI on the lab instance (traffic and health checks)"
+    from_port   = var.open_webui_host_port
+    to_port     = var.open_webui_host_port
+    protocol    = "tcp"
+    cidr_blocks = distinct(concat([data.aws_vpc.default.cidr_block], [for a in data.aws_vpc.default.cidr_block_associations : a.cidr_block]))
   }
 
   tags = {
@@ -297,6 +301,9 @@ locals {
 }
 
 resource "aws_instance" "ai_lab" {
+  #checkov:skip=CKV_AWS_88:Public IP is used only for outbound bootstrap traffic; no inbound rules allow the Internet. A private-subnet option is tracked in #3
+  #checkov:skip=CKV_AWS_135:Current instance types (the default c7i) are EBS-optimized by default; forcing the flag would break older types
+  #checkov:skip=CKV_AWS_126:Detailed (1-minute) EC2 monitoring costs extra; the lab publishes its own per-minute metrics to the AILab namespace
   ami           = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type = var.instance_type
   key_name      = var.enable_ssh ? var.ssh_key_name : null
@@ -405,12 +412,18 @@ data "aws_acm_certificate" "domain" {
 }
 
 resource "aws_lb" "domain" {
+  #checkov:skip=CKV_AWS_91:Access logs need a dedicated S3 bucket and add cost; Cloudflare logs requests in front of the ALB
+  #checkov:skip=CKV_AWS_150:The lab is destroyed and rebuilt routinely; deletion protection would block terraform destroy
+  #checkov:skip=CKV2_AWS_28:Cloudflare (WAF and Access) fronts the ALB, and origin lockdown limits the ALB to Cloudflare addresses
   for_each           = local.domain_resources
   name               = "${var.project_name}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb[each.key].id]
   subnets            = slice(sort(data.aws_subnets.default.ids), 0, 2)
+
+  # Reject requests with malformed header names instead of passing them to Open WebUI.
+  drop_invalid_header_fields = true
 
   lifecycle {
     precondition {
@@ -473,6 +486,8 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   certificate_arn   = local.domain_certificate_arn
+  # TLS 1.2 and 1.3 with forward-secret ciphers only. Cloudflare and current browsers support both.
+  ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 
   default_action {
     type             = "forward"

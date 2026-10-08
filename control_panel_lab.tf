@@ -15,6 +15,7 @@ locals {
 }
 
 resource "aws_ssm_parameter" "control_panel_instance_ids" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
   for_each = local.control_panel_lab
 
   name        = "${local.control_panel_lab_prefix}/instance-ids"
@@ -24,6 +25,7 @@ resource "aws_ssm_parameter" "control_panel_instance_ids" {
 }
 
 resource "aws_ssm_parameter" "control_panel_target_group_arn" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
   for_each = local.control_panel_lab_domain
 
   name        = "${local.control_panel_lab_prefix}/target-group-arn"
@@ -33,6 +35,7 @@ resource "aws_ssm_parameter" "control_panel_target_group_arn" {
 }
 
 resource "aws_ssm_parameter" "control_panel_service_url" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
   for_each = local.control_panel_lab_domain
 
   name        = "${local.control_panel_lab_prefix}/service-url"

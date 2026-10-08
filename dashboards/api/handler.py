@@ -68,6 +68,7 @@ OPEN_WEBUI_IMAGE = os.environ.get("OPEN_WEBUI_IMAGE", "")  # fallback when no la
 
 SETUP_GRACE_MINUTES = 30  # same as the watchdog: idle rules wait this long after a start
 SILENT_AFTER_MINUTES = 10  # no heartbeat for this long means the idle monitor is silent
+RESET_SKEW_SECONDS = 300  # same allowance as the lab: a reset further in the future is ignored
 
 ec2 = boto3.client("ec2")
 elbv2 = boto3.client("elbv2")
@@ -346,7 +347,8 @@ def _reset_at_ms(launched_ms):
     """When the hard-limit timer was last reset during this run, in ms, or None.
 
     A reset older than this run's launch is left over from an earlier run and does not
-    count. A time in the future is treated as now. If the parameter cannot be read the
+    count. A time slightly in the future is treated as now; one further ahead, or a value
+    that is not a plain number, does not count, matching the lab. If the parameter cannot be read the
     panel simply shows the countdown from launch, which is what the lab falls back to too."""
     if not RESET_PARAMETER:
         return None
@@ -356,9 +358,13 @@ def _reset_at_ms(launched_ms):
         if err.response.get("Error", {}).get("Code") != "ParameterNotFound":
             print(json.dumps({"warning": "timer reset unreadable", "detail": str(err)}))
         return None
-    try:
-        reset_ms = int(str(raw).strip()) * 1000
-    except ValueError:
+    text = str(raw).strip()
+    # Same rule as the instance monitor and the watchdog: a plain decimal of at most 10 digits,
+    # and nothing more than 5 minutes in the future, or the reset does not count.
+    if not (text.isascii() and text.isdigit() and len(text) <= 10):
+        return None
+    reset_ms = int(text) * 1000
+    if reset_ms > now_ms() + RESET_SKEW_SECONDS * 1000:
         return None
     reset_ms = min(reset_ms, now_ms())
     return reset_ms if reset_ms > launched_ms else None

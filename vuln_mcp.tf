@@ -94,6 +94,8 @@ resource "aws_iam_role_policy" "vuln_mcp" {
 }
 
 resource "aws_cloudwatch_log_group" "vuln_mcp" {
+  #checkov:skip=CKV_AWS_338:Short retention is deliberate for a lab: the logs are operational and cost and privacy favour a short window
+  #checkov:skip=CKV_AWS_158:Logs are encrypted at rest by CloudWatch; a customer managed key adds cost for no lab benefit
   for_each = local.vuln_mcp_resources
 
   name              = "/aws/lambda/${var.project_name}-vuln-mcp"
@@ -101,6 +103,12 @@ resource "aws_cloudwatch_log_group" "vuln_mcp" {
 }
 
 resource "aws_lambda_function" "vuln_mcp" {
+  #checkov:skip=CKV_AWS_50:X-Ray adds cost; requests are logged by the function
+  #checkov:skip=CKV_AWS_272:Code is built from this repository by Terraform; code signing adds a signing profile for no lab benefit
+  #checkov:skip=CKV_AWS_117:Reads one DynamoDB table and Secrets Manager only; a VPC would need NAT or endpoints for no gain
+  #checkov:skip=CKV_AWS_116:Invoked synchronously through its function URL; a dead-letter queue applies only to async invokes
+  #checkov:skip=CKV_AWS_115:Reserved concurrency fails on new accounts whose concurrency quota is 10
+  #checkov:skip=CKV_AWS_173:Environment variables hold only names and ARNs; the bearer token is read from Secrets Manager at run time
   for_each = local.vuln_mcp_resources
 
   function_name    = "${var.project_name}-vuln-mcp"
@@ -135,6 +143,7 @@ resource "aws_lambda_function" "vuln_mcp" {
 
 # Public address. The bearer-token check happens inside the function.
 resource "aws_lambda_function_url" "vuln_mcp" {
+  #checkov:skip=CKV_AWS_258:Open WebUI cannot sign requests with SigV4, so the URL uses its own bearer token, checked in constant time by the function (lambda/vuln_mcp/README.md)
   for_each = local.vuln_mcp_resources
 
   function_name      = aws_lambda_function.vuln_mcp[each.key].function_name
@@ -143,6 +152,7 @@ resource "aws_lambda_function_url" "vuln_mcp" {
 
 # A URL with authorization NONE needs both permissions to accept calls.
 resource "aws_lambda_permission" "vuln_mcp_url" {
+  #checkov:skip=CKV_AWS_301:Public by design so Open WebUI can call the function URL; every request needs the bearer token
   for_each = local.vuln_mcp_resources
 
   statement_id           = "AllowPublicFunctionUrl"
@@ -156,6 +166,7 @@ resource "aws_lambda_permission" "vuln_mcp_url" {
 }
 
 resource "aws_lambda_permission" "vuln_mcp_invoke" {
+  #checkov:skip=CKV_AWS_301:Paired with the function URL permission; every request needs the bearer token
   for_each = local.vuln_mcp_resources
 
   statement_id             = "AllowInvokeViaFunctionUrl"

@@ -705,12 +705,22 @@ def test_instance_view_carries_the_reset_for_this_run_only(aws, monkeypatch):
     assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
 
 
-def test_a_future_reset_time_is_shown_as_now(aws, monkeypatch):
+def test_a_slightly_future_reset_time_is_shown_as_now(aws, monkeypatch):
     grant(aws, OP, "i-aaa")
     running(aws)
-    use_reset_ssm(monkeypatch, reset=str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 86400))
+    use_reset_ssm(monkeypatch, reset=str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 120))
     reset_at = call("GET /instances", OP)[1][0]["autoStop"]["resetAt"]
-    assert reset_at <= handler.now_ms()
+    assert reset_at is not None and reset_at <= handler.now_ms()
+
+
+def test_a_far_future_or_oversized_reset_is_not_shown(aws, monkeypatch):
+    # Matches the lab, which ignores these and counts the hard limit from boot.
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    future = str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 86400)
+    for value in (future, "99999999999999999999", "-5", "\u0661\u0662"):
+        use_reset_ssm(monkeypatch, reset=value)
+        assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None, value
 
 
 def test_unreadable_or_garbage_reset_shows_the_launch_countdown(aws, monkeypatch):

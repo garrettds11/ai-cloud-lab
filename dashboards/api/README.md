@@ -44,7 +44,7 @@ All routes need `Authorization: Bearer <ID token>`. Times are milliseconds since
 | `POST /admin/webui/actions` | `admin` only | Body `{action, instanceId}`. Runs one named Open WebUI action (today only `status`) through the panel's SSM document on a running managed instance. Returns `{commandId, status: "Pending", ...}`. 400 unknown action, 404 unknown instance, 409 not running or not yet in Systems Manager, 503 document not configured. Only on the Terraform-built API (`terraform/`) |
 | `GET /admin/webui/actions/{commandId}` | `admin` only | The action's status and, once finished, its JSON `result`. Only actions this panel started, and only if SSM confirms they ran the panel's document. The outcome is logged once |
 
-An instance in `GET /instances` has `phase` (`stopped`, `pending`, `initializing`, `ready`, `stopping`), `checks` (`ec2`, `http`), `launchedAt`, the shared auto-stop `rule`, and `autoStop` while running. `autoStop.resetAt` is the time of the last timer reset during this run (null if none; a reset from an earlier run is ignored), and the hard stop is `max(launchedAt, resetAt) + maxUptimeMinutes`. The Access button turns on at `ready`, which needs both EC2 status checks `ok` and the ALB target `healthy`.
+An instance in `GET /instances` has `phase` (`stopped`, `pending`, `initializing`, `ready`, `stopping`), `checks` (`ec2`, `http`), `launchedAt`, the shared auto-stop `rule`, and `autoStop` while running. `autoStop.resetAt` is the time of the last timer reset during this run (null if none; a reset from an earlier run is ignored, and so is a value that is not a plain number of at most 10 digits or is more than 5 minutes in the future, exactly as the lab ignores it), and the hard stop is `max(launchedAt, resetAt) + maxUptimeMinutes`. The Access button turns on at `ready`, which needs both EC2 status checks `ok` and the ALB target `healthy`.
 
 ## What it reads
 
@@ -165,7 +165,7 @@ The admin role has no EC2 start permission, so it can never start an instance. N
 
 ## Adding the timer reset route to an existing panel
 
-The reset button needs three hand-built changes, because the API's routes and the Lambda roles are outside Terraform. Do them in this order, in PowerShell, in the same window where `AWS_PROFILE` and `AWS_DEFAULT_REGION` are set. Nothing here changes the lab instance.
+The reset button needs two hand-built changes (steps 2 and 3), because the API's routes and the Lambda roles are outside Terraform, with a Terraform apply before them and a code deploy after. Do all four in this order, in PowerShell, in the same window where `AWS_PROFILE` and `AWS_DEFAULT_REGION` are set. Nothing here changes the lab instance.
 
 1. **Apply Terraform first.** It creates the SSM parameter `/<project_name>/auto-stop/reset-at` (value `0`), grants the instance and the watchdog read access, and gives the watchdog its `RESET_PARAMETER` setting. The apply also replaces the lab instance, because the monitor script embedded in cloud-init changed. Do this before the next two steps: if the panel wrote the parameter first, Terraform's create would fail because it already exists. `terraform output auto_stop_reset_parameter` prints its name and ARN.
 2. **Update the customer role's policy** (`ai-lab-control-customer`, whatever name you gave the inline policy) to the JSON above: `ssm:GetParameter` on both auto-stop parameters, and `ssm:PutParameter` on the `reset-at` parameter only. For example, save the full policy as `customer-policy.json` and run:
@@ -183,6 +183,12 @@ The reset button needs three hand-built changes, because the API's routes and th
    ```
 
    If the function's resource policy was created per route rather than for the whole API, also allow the new route: check with `aws lambda get-policy --function-name ai-lab-control-customer`.
+
+   While you are here, compare the gateway with `openapi.yaml`. The gateway was built with ten routes and the code serves thirteen, so `GET /admin/logins` and `GET /admin/logs` may be missing too. List what exists, and add any missing `/admin/*` route the same way, using the admin function's integration (`ai-lab-control-admin`):
+
+   ```powershell
+   aws apigatewayv2 get-routes --api-id $api --query "Items[].RouteKey" --output text
+   ```
 4. **Deploy the new function code and pages** with the commands below and in `../../SETUP.md`.
 
 If step 2 or 3 is missed, the button shows an error toast and nothing changes (the lab keeps its original stop time).

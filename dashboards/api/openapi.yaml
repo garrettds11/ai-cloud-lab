@@ -784,6 +784,8 @@ components:
             When the hard-limit timer was last reset during this run. Null if never, if the hard
             limit is off, or if the only reset is from an earlier run. The hard stop is
             `max(launchedAt, resetAt) + maxUptimeMinutes`.
+            A stored value that is not a plain number of at most 10 digits, or is more than 5
+            minutes in the future, is ignored here and by the lab.
         setupDone:
           type: boolean
           description: False during the first 30 minutes until the idle monitor reports in; idle rules wait until then.

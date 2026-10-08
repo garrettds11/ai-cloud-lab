@@ -7,7 +7,7 @@ Two Lambda functions behind the control panel, sharing `handler.py` (Python 3.12
 | Customer | `customer.lambda_handler` | everything except `/admin/*` | Read roles and grants, start an instance, reset a running instance's auto-stop timer (writes one SSM parameter), write the caller's own sign-in and log rows, create a user row with no roles |
 | Admin | `admin.lambda_handler` | `/admin/*` | Write roles and grants and the change history. It has no route and no IAM permission to start an instance |
 
-Each answers only its own routes (the other's return 404), and each has its own IAM role, so the split holds even if the code is wrong. API Gateway sends `/admin/*` to the admin function and everything else to the customer function. It is built by hand, outside Terraform (see `../SETUP.md`).
+Each answers only its own routes (the other's return 404), and each has its own IAM role, so the split holds even if the code is wrong. API Gateway sends `/admin/*` to the admin function and everything else to the customer function. It is built by hand, outside Terraform (see `../../SETUP.md`).
 
 ## Rules they enforce
 

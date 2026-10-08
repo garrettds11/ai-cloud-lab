@@ -1045,8 +1045,11 @@ components:
           format: int64
         status:
           type: string
-          enum: [Pending, InProgress, Delayed, Success, Failed, Cancelled, TimedOut, Cancelling]
-          description: Systems Manager's state for the command.
+          enum: [Pending, InProgress, Delayed, Success, Failed, Cancelled, TimedOut, Cancelling, Expired]
+          description: |
+            Systems Manager's state for the command. A finished action is answered from the stored
+            result, so it stays readable after Systems Manager drops it (about 30 days). `Expired`
+            means Systems Manager no longer knows the command and its result was never read back.
         result:
           description: The action's JSON output once it has finished, or null.
           oneOf:

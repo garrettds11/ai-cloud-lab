@@ -920,9 +920,14 @@ def _expected_version():
     return match.group(1) if match else ""
 
 
-def _action_record(command_id):
-    rows = events.query(KeyConditionExpression=Key("pk").eq("webui-actions") & Key("sk").eq(command_id)).get("Items", [])
-    return rows[0] if rows else None
+_PENDING_GRACE_MS = 10 * 60000  # SSM may not list a new command for a moment; after this it is gone
+
+
+def _action_records(command_id):
+    """The request row and, once the action has finished, its result row."""
+    rows = events.query(KeyConditionExpression=Key("pk").eq("webui-actions") & Key("sk").begins_with(command_id)).get("Items", [])
+    by_sk = {r["sk"]: r for r in rows}
+    return by_sk.get(command_id), by_sk.get(f"{command_id}#result")
 
 
 def start_webui_action(caller, payload):
@@ -980,44 +985,51 @@ def get_webui_action(caller, command_id):
     _require_admin_role(caller)
     if not _COMMAND_ID.match(command_id or ""):
         raise ApiError(400, "That is not an action ID.")
-    record = _action_record(command_id)
+    record, finished = _action_records(command_id)
     if record is None or not WEBUI_DOCUMENT:
         raise ApiError(404, "No such action.")
     instance_id = record["instanceId"]
-    try:
-        inv = ssm.get_command_invocation(CommandId=command_id, InstanceId=instance_id)
-    except ClientError as err:
-        if err.response.get("Error", {}).get("Code") == "InvocationDoesNotExist":
-            inv = {"Status": "Pending", "DocumentName": WEBUI_DOCUMENT}  # SSM has not registered it yet
-        else:
-            print(json.dumps({"error": "get_command_invocation", "detail": str(err)}))
-            raise ApiError(502, "Could not read the action's result. Try again shortly.")
-    if inv.get("DocumentName") != WEBUI_DOCUMENT:
-        raise ApiError(404, "No such action.")  # never show the output of anything else
-    status = inv.get("Status", "Pending")
-    result = _last_json_line(inv.get("StandardOutputContent")) if status in _TERMINAL else None
-    if status in _TERMINAL:
-        try:
-            events.put_item(
-                Item={"pk": "webui-actions", "sk": f"{command_id}#result", "t": now_ms(),
-                      "expiresAt": int(record["expiresAt"]), "status": status},
-                ConditionExpression="attribute_not_exists(sk)",
-            )
-            ok = status == "Success" and bool((result or {}).get("ok"))
-            _log(caller["id"], "info" if ok else "error",
-                 f"Open WebUI action '{record['action']}' on {instance_id}: {'done' if ok else 'failed (' + status + ')'}", instance_id)
-        except ClientError as err:
-            if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
-                raise
-    return {
+    view = {
         "commandId": command_id,
         "instanceId": instance_id,
         "action": record["action"],
         "requestedBy": record["requestedBy"],
         "requestedAt": _num(record["t"]),
-        "status": status,
-        "result": result,
     }
+    # A finished action is answered from its stored result, so it stays readable after SSM
+    # drops the command from its history (about 30 days; the record lives EVENT_TTL_DAYS).
+    if finished is not None:
+        stored = finished.get("result")
+        return {**view, "status": finished["status"], "result": json.loads(stored) if stored else None}
+    try:
+        inv = ssm.get_command_invocation(CommandId=command_id, InstanceId=instance_id)
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "InvocationDoesNotExist":
+            print(json.dumps({"error": "get_command_invocation", "detail": str(err)}))
+            raise ApiError(502, "Could not read the action's result. Try again shortly.")
+        recent = now_ms() - int(record["t"]) < _PENDING_GRACE_MS
+        # Just started: SSM has not listed it yet. Long ago: SSM no longer knows it, and no
+        # result was ever read back, so the outcome is unknown.
+        return {**view, "status": "Pending" if recent else "Expired", "result": None}
+    if inv.get("DocumentName") != WEBUI_DOCUMENT:
+        raise ApiError(404, "No such action.")  # never show the output of anything else
+    status = inv.get("Status", "Pending")
+    if status not in _TERMINAL:
+        return {**view, "status": status, "result": None}
+    result = _last_json_line(inv.get("StandardOutputContent"))
+    item = {"pk": "webui-actions", "sk": f"{command_id}#result", "t": now_ms(),
+            "expiresAt": int(record["expiresAt"]), "status": status}
+    if result is not None:
+        item["result"] = json.dumps(result)
+    try:
+        events.put_item(Item=item, ConditionExpression="attribute_not_exists(sk)")
+        ok = status == "Success" and bool((result or {}).get("ok"))
+        _log(caller["id"], "info" if ok else "error",
+             f"Open WebUI action '{record['action']}' on {instance_id}: {'done' if ok else 'failed (' + status + ')'}", instance_id)
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+    return {**view, "status": status, "result": result}
 
 
 # ---- routing -------------------------------------------------------------------------

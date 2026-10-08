@@ -5,7 +5,7 @@ Two Lambda functions behind the control panel, sharing `handler.py` (Python 3.12
 | Function | Entry point | Routes | Can do |
 |---|---|---|---|
 | Customer | `customer.lambda_handler` | everything except `/admin/*` | Read roles and grants, start an instance, reset a running instance's auto-stop timer (writes one SSM parameter), write the caller's own sign-in and log rows, create a user row with no roles |
-| Admin | `admin.lambda_handler` | `/admin/*` | Write roles and grants and the change history. It has no route and no IAM permission to start an instance |
+| Admin | `admin.lambda_handler` | `/admin/*` | Write roles and grants and the change history. On the Terraform-built API it can also run the panel's Open WebUI admin document (named actions only, managed instances only). It has no route and no IAM permission to start an instance |
 
 Each answers only its own routes (the other's return 404), and each has its own IAM role, so the split holds even if the code is wrong. API Gateway sends `/admin/*` to the admin function and everything else to the customer function.
 

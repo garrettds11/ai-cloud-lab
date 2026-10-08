@@ -851,3 +851,21 @@ def test_a_failed_action_without_json_output_reports_no_result(aws, webui):
     webui.invocation = {"Status": "Failed", "DocumentName": "panel-webui-admin", "StandardOutputContent": "bash: error"}
     body = call(ACTION, ADM, path={"commandId": CMD})[1]
     assert body["status"] == "Failed" and body["result"] is None
+
+
+def test_a_finished_action_stays_readable_after_ssm_forgets_it(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status", "version": "0.11.4"})}
+    call(ACTION, ADM, path={"commandId": CMD})
+    webui.invocation_error = "InvocationDoesNotExist"  # SSM history has expired
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Success" and body["result"]["version"] == "0.11.4"
+
+
+def test_an_action_ssm_forgot_before_anyone_read_it_is_expired_not_pending(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    aws.events.items[("webui-actions", CMD)]["t"] = handler.now_ms() - 3600 * 1000
+    webui.invocation_error = "InvocationDoesNotExist"
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Expired" and body["result"] is None

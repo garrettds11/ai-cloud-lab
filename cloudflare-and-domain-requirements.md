@@ -56,7 +56,7 @@ The Cloudflare encryption mode is a Cloudflare dashboard setting. Terraform does
 | EC2 | Runs Open WebUI and Ollama | Yes | `aws_instance.ai_lab` |
 | AWS Secrets Manager | Stores the Open WebUI administrator and demo-user passwords and the Cloudflare API token | Yes for the current secure bootstrap flow | Secret ARNs in variables; secrets are pre-created outside Terraform |
 | Amazon Cognito (optional) | User directory and hosted sign-in page for Cloudflare Access and Open WebUI | Only when `enable_cognito = true` | `cognito.tf`, `cloudflare_zero_trust_access_identity_provider` |
-| Control panel hosting (optional) | S3 bucket, CloudFront distribution and the `cp` DNS record that serve the panel's pages | Only for the control panel | Built by hand; see `dashboards/SETUP.md` |
+| Control panel hosting (optional) | S3 bucket, CloudFront distribution and the `cp` DNS record that serve the panel's pages | Only for the control panel | Built by hand; see `SETUP.md` |
 | Control panel API (optional) | API Gateway, two Lambdas, DynamoDB tables and IAM roles behind the panel | Only for the control panel | Built by hand; Terraform adds only the demo rows and the authorizer update (`cognito.tf`, `control_panel_api.tf`) |
 | Control panel sign-in (optional) | Signs people in to the panel through any OpenID Connect provider (Cognito, Okta, Entra ID) | Only for the control panel | Terraform creates the panel's app client in the lab's Cognito pool (`control_panel.tf`) |
 | Auto-stop (on by default) | Stops the instance when nobody is using it and emails alerts through SNS | No; independent of domain access | `auto_stop.tf` (SSM parameter, Lambda watchdog, EventBridge rule, SNS topic) |
@@ -351,7 +351,7 @@ Requirements and cautions:
 
 ## Optional: control panel
 
-The control panel (`dashboards/`) is a separate web app where customers start the instances they are granted, and administrators manage who may start what. It lives on its own address (`https://cp.aiwebdemo.click`) and is built and kept by hand, so it does not depend on the lab being deployed. Without a lab it shows no instances. Without users it shows no users. See `dashboards/SETUP.md` for what exists and `dashboards/api/README.md` for the API.
+The control panel (`dashboards/`) is a separate web app where customers start the instances they are granted, and administrators manage who may start what. It lives on its own address (`https://cp.aiwebdemo.click`) and is built and kept by hand, so it does not depend on the lab being deployed. Without a lab it shows no instances. Without users it shows no users. See `SETUP.md` for what exists and `dashboards/api/README.md` for the API.
 
 ### What an administrator must provide
 
@@ -365,10 +365,11 @@ The control panel (`dashboards/`) is a separate web app where customers start th
 
 | Piece | Owner |
 |---|---|
-| Hosting, DNS record, API, Lambdas, tables, IAM roles, the authorizer and its routes | Built by hand, kept when the lab is destroyed |
+| Hosting, DNS record, API, Lambdas, tables, IAM roles, the authorizer and its routes (including `POST /instances/{instanceId}/reset-timer`, the timer reset route, and the customer role's `ssm:GetParameter` and `ssm:PutParameter` on the reset parameter) | Built by hand, kept when the lab is destroyed |
 | The panel's app client in the lab's Cognito pool | Terraform (`control_panel.tf`) |
 | The demo users' rows in `panel_users` (every demo user as `operators`, plus `user_mgrs` for the odd demo users and `admin` for `admin@example.local`), when `control_panel_users_table` is set | Terraform |
 | The lab's instance, target group and service address, as SSM parameters, and the `control-panel=managed` tag on the instance | Terraform (`control_panel_lab.tf`) |
+| The timer reset parameter `/<project_name>/auto-stop/reset-at` | Terraform creates it with the value `0` and never overwrites the value (`auto_stop.tf`); the panel's reset button writes it, and the instance monitor and watchdog read it |
 | The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
 | Real users, their roles and instance grants | The control panel. Terraform never touches them |
 
@@ -377,6 +378,8 @@ Until a provider is wired, the authorizer trusts an empty holding Cognito pool t
 ### Instance wiring
 
 The panel learns which instance and ALB target group to manage from SSM parameters that Terraform writes under `/<project_name>/control-panel/` (`instance-ids`, `target-group-arn`, `service-url`) when `control_panel_url` is set. The Lambdas read them live, so a new lab is picked up with nothing to copy, and a destroyed lab leaves the panel with no instances. Terraform also tags the instance `control-panel=managed`; the customer role can start only instances with that tag. The Lambdas' roles need read access to that parameter path.
+
+The reset button writes one more parameter, `/<project_name>/auto-stop/reset-at` (epoch seconds of the last timer reset). Terraform creates it with the value `0` and never overwrites its value, and the lab's instance monitor and watchdog read it. The customer Lambda's role needs `ssm:GetParameter` on it and on `/<project_name>/auto-stop`, and `ssm:PutParameter` on `reset-at` only; the new API route is added by hand. Apply Terraform first so the parameter exists before the panel writes it. The exact steps are in "Adding the timer reset route to an existing panel" in `dashboards/api/README.md`.
 
 ## Can the providers be swapped?
 
@@ -435,6 +438,6 @@ Moving the application to another hosting provider would require a separate Terr
 15. Set the Cloudflare SSL/TLS mode to Full (strict) and review the other security settings above.
 16. Verify the ALB target health and the public HTTPS URL.
 
-17. Optional, for the control panel: build it as described in `dashboards/SETUP.md`, add the `cp` CNAME in Cloudflare as DNS only, and set the control panel variables in `terraform.tfvars`. The panel can be built and left in place before the lab exists.
+17. Optional, for the control panel: build it as described in `SETUP.md`, add the `cp` CNAME in Cloudflare as DNS only, and set the control panel variables in `terraform.tfvars`. The panel can be built and left in place before the lab exists.
 
 The lab can remain destroyed while waiting for domain delegation or Cloudflare activation. Those control-plane prerequisites do not require an EC2 instance or load balancer to be running.

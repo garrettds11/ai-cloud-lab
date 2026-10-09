@@ -501,6 +501,12 @@ variable "grafana_credentials_secret_arn" {
     condition     = var.grafana_credentials_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.grafana_credentials_secret_arn))
     error_message = "grafana_credentials_secret_arn must be a valid Secrets Manager ARN."
   }
+
+  # IAM matches the ARN exactly, so a shortened one gives the readers no access at all.
+  validation {
+    condition     = var.grafana_credentials_secret_arn == null || can(regex("-[A-Za-z0-9]{6}$", var.grafana_credentials_secret_arn))
+    error_message = "grafana_credentials_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name. Copy it with: aws secretsmanager describe-secret --secret-id <secret name> --query ARN --output text"
+  }
 }
 
 variable "control_panel_url" {
@@ -587,5 +593,11 @@ variable "vuln_mcp_token_secret_arn" {
   validation {
     condition     = var.vuln_mcp_token_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.vuln_mcp_token_secret_arn))
     error_message = "vuln_mcp_token_secret_arn must be a valid Secrets Manager ARN."
+  }
+
+  # IAM matches the ARN exactly, so a shortened one gives the readers no access at all.
+  validation {
+    condition     = var.vuln_mcp_token_secret_arn == null || can(regex("-[A-Za-z0-9]{6}$", var.vuln_mcp_token_secret_arn))
+    error_message = "vuln_mcp_token_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name. Copy it with: aws secretsmanager describe-secret --secret-id <secret name> --query ARN --output text"
   }
 }

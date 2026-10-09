@@ -974,9 +974,9 @@ Expected, with the feature on:
 - Each of the two plain runs ends with `Connection already correct; nothing to change.` (repeating adds no second connection).
 - The log and the output contain no token or password.
 
-Open WebUI (browser, signed in as the admin): **Admin Settings > External Tools** shows exactly one **Vulnerability Findings** connection (MCP, enabled), and its verify button succeeds.
+Open WebUI (browser, signed in as the admin): **Admin Panel > Settings > Integrations > External Tool Servers** shows exactly one **Vulnerability Findings** connection (MCP, enabled), and its verify button succeeds.
 
-With the feature off (`vuln_mcp_table_name = null`): `--check` ends with `Connection is already correct (feature false)` and **External Tools** has no Vulnerability Findings entry.
+With the feature off (`vuln_mcp_table_name = null`): `--check` ends with `Connection is already correct (feature false)` and **External Tool Servers** has no Vulnerability Findings entry.
 
 If the bootstrap log has `WARNING: Open WebUI vulnerability MCP registration did not finish`, read the lines above it and use the troubleshooting table in `lambda/vuln_mcp/README.md`, then run `sudo ai-lab-register-vuln-mcp` again. Exit code 3 means local login is off and the connection must be added by hand (also in that README).
 

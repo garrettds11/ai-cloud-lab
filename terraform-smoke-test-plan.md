@@ -185,6 +185,10 @@ function Invoke-TerraformWithCloudflareToken {
 }
 ```
 
+In PowerShell, quote any Terraform argument that has a dot after `=`, such as
+`"-out=api.tfplan"`. Unquoted, PowerShell splits it at the dot and Terraform fails with
+"Too many command line arguments". The wrapper's `@("...")` arrays are already quoted.
+
 Run every Terraform command that plans, applies, or destroys through the
 wrapper, including teardown. Plain `terraform plan`, `apply`, or `destroy`
 sends no Cloudflare credentials and fails with
@@ -240,7 +244,7 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
 
    ```powershell
    terraform init
-   terraform plan -out=api.tfplan
+   terraform plan "-out=api.tfplan"
    ```
 
    **Read the plan before applying.** Expected:
@@ -276,7 +280,7 @@ After a change to any of the stack's inputs (see the start of this section):
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
-terraform plan -out=api.tfplan
+terraform plan "-out=api.tfplan"
 terraform apply api.tfplan
 Remove-Item api.tfplan
 ```
@@ -1085,7 +1089,7 @@ real password, but keep `terraform.tfvars.example`.
 Usually left in place: the panel should keep working with or without a lab. To remove it, from `dashboards\api\terraform`:
 
 ```powershell
-terraform plan -destroy -out=api-destroy.tfplan
+terraform plan -destroy "-out=api-destroy.tfplan"
 terraform apply api-destroy.tfplan
 Remove-Item api-destroy.tfplan
 ```
@@ -1106,6 +1110,14 @@ Rebuilding the API stack gives the API new IDs and a new address, and publishes 
 > - A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set. (The API stack in `dashboards\api\terraform` does not need the wrapper.)
 > - The API stack plan shows a table **must be replaced**: the hand-built table's keys differ from `tables.tf`. Stop; do not apply.
 > - The lab plan warns about `check.control_panel_api_settings_found`: the API stack is not applied, or its `lab_project_name` differs from the lab's `project_name`, or `AWS_PROFILE` points at another account. Fix that before applying the lab.
-> - After the cutover the panel answers 401 to everyone: the lab apply did not replace `terraform_data.control_panel_authorizer`, so the new authorizer is still on its holding pool. Apply the lab with `-replace='terraform_data.control_panel_authorizer["authorizer"]'`.
+> - After the cutover the panel answers 401 to everyone: the lab apply did not replace `terraform_data.control_panel_authorizer`, so the new authorizer is still on its holding pool. Force the replacement from the repository root (Windows PowerShell 5.1 drops the inner quotes unless they are escaped, PowerShell 7.3 and later passes them as written):
+
+>   ```powershell
+>   $authorizer = 'terraform_data.control_panel_authorizer["authorizer"]'
+>   if ($PSVersionTable.PSVersion -lt [version]'7.3') { $authorizer = $authorizer.Replace('"', '\"') }
+>   Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-replace=$authorizer", "-out=ai-lab.tfplan")
+>   ```
+>
+>   Check that the plan replaces only that resource, then apply `ai-lab.tfplan` as usual.
 > - The panel still uses the old API: the pages are cached. Reload, or check `config.js` and the CloudFront invalidation.
 > - An Open WebUI action fails with a 409 about Systems Manager: the instance has not registered with SSM yet. Wait a minute after it reaches `READY`.

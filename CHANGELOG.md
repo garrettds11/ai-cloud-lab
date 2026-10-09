@@ -26,6 +26,11 @@ version numbers yet, so everything is listed under Unreleased.
   also falls back to the launch time on network errors instead of failing the run.
 
 ### Added
+- The control panel API stack publishes its address, IDs and table names in the SSM parameter
+  `/<project_name>/control-panel-api/settings`. With the new `control_panel_api_from_ssm = true` (set
+  in the root example) the lab reads them at every plan, so a created or rebuilt API needs no IDs copied
+  into `terraform.tfvars`. Values set in `terraform.tfvars` still win. If the parameter is missing, the
+  lab plan warns instead of failing, so the lab can still be destroyed after the API stack.
 - Open WebUI admin actions, foundations (#55 phase 0, #58): an SSM document in the API stack that accepts only
   named actions (today `status`: health and version against the pinned version), two more administrator-only routes
   (15 in all) to run one and read its result, kept readable after SSM forgets the command, a record and log line per action, and a desired-state table for phase 2. The

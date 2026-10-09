@@ -61,11 +61,11 @@ resource "aws_ssm_parameter" "control_panel_open_webui_image" {
 # shape the panel writes. Needs the lab (this file's instance) and the table name. Without
 # a grant an operator sees nothing, because the panel shows only granted instances.
 resource "aws_dynamodb_table_item" "control_panel_demo_grant" {
-  for_each = var.control_panel_entitlements_table == null ? {} : {
+  for_each = local.panel_api.entitlements_table == null ? {} : {
     for email, user in local.panel_demo_roles : email => user if contains(user.roles, "operators") && var.control_panel_url != null
   }
 
-  table_name = var.control_panel_entitlements_table
+  table_name = local.panel_api.entitlements_table
   hash_key   = "userId"
   range_key  = "instanceId"
 

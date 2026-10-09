@@ -137,15 +137,17 @@ Most failures are one of two kinds, and each looks different. Name the kind in t
 | What it means | The lab did not put the connection into Open WebUI at boot. | The connection exists (registered or added by hand), but asking a question does not produce a correct tool call. |
 | What you see | **No** Vulnerability Findings entry in **Admin Panel > Settings > Integrations > External Tool Servers**, **and** none in the chat's **Integrations** menu (the icon next to **+** in the message box). Nothing is hidden: if it is missing from both, it was never registered, and no tool call can happen. | The entry is there and switched on in the chat, but one of: **Verify** fails; the chat shows a tool-call entry with an error; the model answers without any tool-call entry; or CloudWatch has no `tool_call` row, or a row with `ok` `False` that the question did not expect. |
 | Where to look | S1 output and the boot log: `grep -F '[register-vuln-mcp]' /var/log/ai-lab-bootstrap.log`. Seen so far: `Could not read the MCP token secret` (the instance role cannot read the token; check that `vuln_mcp_token_secret_arn` is the full ARN) and `Local login is off`. | The tool-call entry in the chat, the CloudWatch rows ([How to verify the tool was called](#how-to-verify-the-tool-was-called)) and the Open WebUI log on the instance. |
-| How to tell the cause | It is always the registration. Fix it, and meanwhile test the server with a connection added by hand (S3). | No `tool_call` row and an error in the chat: the connection (address or token) or the server. A row with `ok` `True` but a wrong answer: the model. No tool-call entry at all: the model did not call the tool; try a larger model before blaming the server (P3). |
+| How to tell the cause | Read the S1 line. A secret, sign-in or login message is the registration itself: fix it, and meanwhile test the server with a connection added by hand (S3). `Open WebUI could not connect to the MCP server` means the server is the cause: the registration never saves a connection it cannot verify, so treat it as a function failure and skip S3, which would fail the same way. | No `tool_call` row and an error in the chat: the connection (address or token) or the server. A row with `ok` `True` but a wrong answer: the model. No tool-call entry at all: the model did not call the tool; try a larger model before blaming the server (P3). |
 
 A connection added by hand separates the two: if the questions pass with it, the server and the
 model work and only the registration is broken.
 
 ## Part 1: setup checks
 
-Run these before the questions. If S1 or S2 fail, that is a registration failure: record it, then
-add the connection by hand (S3) so the questions still test the server and the model.
+Run these before the questions. Only a **missing** connection is a registration failure, and only
+then add it by hand (S3) so the questions still test the server and the model. A connection that
+exists but fails Verify, or an S1 message that it `could not connect to the MCP server`, is a
+function failure: record it as one and fix the address, the token or the server instead.
 
 ### S1. The connection exists (no model involved)
 
@@ -178,7 +180,11 @@ Findings** is listed there. **Fail** if there are two entries or it shows only f
 
 **Registration failure:** no entry on the settings page and none in the chat's Integrations menu
 (only built-in tools such as Code Interpreter). Record S1 and S2 as Fail with the boot log line
-from S1, then continue with S3.
+from S1, then continue with S3, unless that line says it could not connect to the MCP server (see
+[Two kinds of failure](#two-kinds-of-failure)).
+
+**Function failure:** the entry is there but its Verify fails. Record S2 as Fail with the kind
+`function`, skip S3, and check the address, the token and the Lambda's log group.
 
 <!-- setup-check -->
 
@@ -186,8 +192,9 @@ from S1, then continue with S3.
 
 PENDING MANUAL EXECUTION
 
-Skip this when S1 and S2 passed. It tests the server and the model without the lab's registration,
-so a registration failure does not hide whether the tool itself works.
+Only when S2 found **no** entry and the S1 line is not `could not connect to the MCP server`.
+It tests the server and the model without the lab's registration, so a registration failure does
+not hide whether the tool itself works.
 
 1. Print the address, and copy the token to the clipboard without showing it (**Local Windows
    PowerShell**, repository root):

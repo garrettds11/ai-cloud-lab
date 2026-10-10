@@ -46,7 +46,7 @@ Build the API stack before the lab; destroy the lab before the API stack.
    command use it:
 
    ```powershell
-   $env:AWS_PROFILE = "garrett_gspear"
+   $env:AWS_PROFILE = "ai-cloud-lab"
    $env:AWS_DEFAULT_REGION = "us-east-1"
    aws sts get-caller-identity --query Account --output text
    ```
@@ -91,7 +91,7 @@ Build the API stack before the lab; destroy the lab before the API stack.
      the API (the `control_panel_api_settings_found` warning).
    - `panel_origin`: the control panel's own address (the root `control_panel_url`).
    - `bootstrap_admins`: the email addresses that get the panel's admin screens.
-   </details>
+   </details> 
 
 4. Load the wrapper. It reads the Cloudflare token from Secrets Manager for each Terraform command
    and removes it afterwards, so the token is never typed or stored. It lasts only for this window:
@@ -181,9 +181,13 @@ Build the API stack before the lab; destroy the lab before the API stack.
 
 ## 2. Control panel API stack
 
-Only when files in `dashboards\api` changed, on the first build, or after the stack was destroyed.
-On another account, first set `lab_project_name`, `panel_origin` and `bootstrap_admins` in this
-stack's example (step 1, "Deploying to another account or domain").
+> SKIP THIS SECTION IF THE API STACK IS ALREADY DEPLOYED AND WAS NEVER DESTROYED UNLESS: 
+>
+> - **There is a code change:** the functions update in place.
+>
+> Only run this step when files in `dashboards\api` change, on the first build, or after the stack is destroyed.
+
+To deploy the API stack, first set `lab_project_name`, `panel_origin` and `bootstrap_admins` (step 1, "Deploying to another account or domain").
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
@@ -194,7 +198,6 @@ terraform plan "-out=api.tfplan"
 
 **Read the plan before applying.**
 
-- **A code change:** the functions update in place.
 - **First build, or after a destroy:** everything **will be created**. The three panel tables
   (`panel_users`, `instance_entitlements`, `control_panel_events`) **will be imported** with
   `adopt_existing_tables = true`, which is right when they already exist, as they do on the demo

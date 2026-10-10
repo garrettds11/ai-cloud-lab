@@ -155,6 +155,8 @@ variables {
   cognito_domain_prefix            = null
   cognito_extra_users              = []
   root_volume_size                 = 80
+  instance_type                    = "c7i.4xlarge"
+  ollama_context_length            = 16384
   open_webui_host_port             = 8080
   auto_stop_idle_minutes           = 60
   auto_stop_max_uptime_minutes     = 0
@@ -315,6 +317,73 @@ run "missing_api_parameter_is_a_warning_not_a_failure" {
     condition     = length(data.aws_ssm_parameter.control_panel_api) == 0 && alltrue([for v in values(local.panel_api) : v == null])
     error_message = "Without the parameter the lab must plan without API settings instead of failing."
   }
+}
+
+# ---- Instance type, image and placement ----
+
+run "cpu_instance_boots_plain_ubuntu" {
+  command = plan
+
+  variables {
+    instance_type = "c7i.4xlarge"
+  }
+
+  assert {
+    condition     = length(data.aws_ssm_parameter.gpu_ami) == 0 && !local.gpu_instance
+    error_message = "A CPU instance type must not look up the GPU AMI."
+  }
+}
+
+run "nvidia_gpu_instance_boots_the_gpu_ami" {
+  command = plan
+
+  variables {
+    instance_type = "g6.xlarge"
+  }
+
+  assert {
+    condition     = length(data.aws_ssm_parameter.gpu_ami) == 1 && local.gpu_instance
+    error_message = "An NVIDIA GPU instance type must boot the Deep Learning Base GPU AMI."
+  }
+}
+
+run "instance_type_no_zone_offers_is_rejected" {
+  command = plan
+
+  override_data {
+    target = data.aws_subnets.lab
+    values = { ids = [] }
+  }
+
+  expect_failures = [aws_instance.ai_lab]
+}
+
+run "root_volume_smaller_than_the_ami_is_rejected" {
+  command = plan
+
+  variables {
+    root_volume_size = 80
+  }
+
+  override_data {
+    target = data.aws_ami.lab
+    values = {
+      root_device_name      = "/dev/sda1"
+      block_device_mappings = [{ device_name = "/dev/sda1", ebs = { volume_size = "100" }, no_device = "", virtual_name = "" }]
+    }
+  }
+
+  expect_failures = [aws_instance.ai_lab]
+}
+
+run "ollama_context_length_out_of_range_is_rejected" {
+  command = plan
+
+  variables {
+    ollama_context_length = 1024
+  }
+
+  expect_failures = [var.ollama_context_length]
 }
 
 # ---- Default network exposure ----

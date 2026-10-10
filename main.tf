@@ -76,6 +76,28 @@ data "aws_ssm_parameter" "ubuntu_ami" {
   name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 
+# NVIDIA GPU instance types boot AWS's Deep Learning Base GPU AMI instead: Ubuntu 24.04 with the
+# NVIDIA driver, CUDA and Docker preinstalled, so bootstrap does not build drivers. Ollama finds the
+# GPU by itself. The pattern lists the families that AMI supports.
+locals {
+  gpu_instance = can(regex("^(g4dn|g5|g6|g6e|gr6|p4d|p4de|p5|p5e|p5en|p6-b200)\\.", var.instance_type))
+  lab_ami_id   = local.gpu_instance ? data.aws_ssm_parameter.gpu_ami[0].value : data.aws_ssm_parameter.ubuntu_ami.value
+}
+
+data "aws_ssm_parameter" "gpu_ami" {
+  count = local.gpu_instance ? 1 : 0
+  name  = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-24.04/latest/ami-id"
+}
+
+# The chosen AMI's root snapshot size, so a too-small root_volume_size fails at plan, not at apply.
+data "aws_ami" "lab" {
+  owners = ["amazon", "099720109477"] # AWS (Deep Learning AMIs) and Canonical (Ubuntu)
+  filter {
+    name   = "image-id"
+    values = [local.lab_ami_id]
+  }
+}
+
 # Keep the first lab version simple by using the account's default VPC.
 data "aws_vpc" "default" {
   default = true
@@ -86,6 +108,35 @@ data "aws_subnets" "default" {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+}
+
+# Not every availability zone offers every instance type (GPU types especially), so the instance
+# goes in a default subnet whose zone offers it (#8).
+data "aws_ec2_instance_type_offerings" "lab" {
+  location_type = "availability-zone"
+  filter {
+    name   = "instance-type"
+    values = [var.instance_type]
+  }
+}
+
+data "aws_subnets" "lab" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "availability-zone"
+    values = data.aws_ec2_instance_type_offerings.lab.locations
+  }
+}
+
+locals {
+  lab_subnet_id = try(sort(data.aws_subnets.lab.ids)[0], null)
+  # The ALB can only send traffic to instances in zones it is enabled in, so its two subnets
+  # always include the instance's.
+  alb_subnet_ids    = slice(distinct(concat(local.lab_subnet_id == null ? [] : [local.lab_subnet_id], sort(data.aws_subnets.default.ids))), 0, 2)
+  lab_ami_root_size = try(tonumber([for b in data.aws_ami.lab.block_device_mappings : b.ebs.volume_size if b.device_name == data.aws_ami.lab.root_device_name][0]), 0)
 }
 
 resource "aws_security_group" "ai_lab" {
@@ -265,6 +316,7 @@ locals {
   ai_lab_user_data = base64gzip(replace(templatefile("${path.module}/cloud-init.sh.tpl", {
     llm_provider                         = var.llm_provider
     llm_model                            = var.llm_model
+    ollama_context_length                = var.ollama_context_length
     open_webui_admin_email               = var.open_webui_admin_email
     open_webui_admin_name                = var.open_webui_admin_name
     open_webui_admin_password_secret_arn = data.aws_secretsmanager_secret.open_webui_admin_password.arn
@@ -287,7 +339,10 @@ locals {
     open_webui_url                       = var.enable_domain_access ? "https://${var.domain_name}" : "http://localhost:${var.open_webui_host_port}"
     aws_region                           = var.aws_region
     auto_stop_parameter_name             = local.auto_stop_parameter_name
-    auto_stop_script_b64                 = base64gzip(replace(file("${path.module}/scripts/ai-lab-idle-check.sh"), "\r\n", "\n"))
+    lab_assets_bucket                    = aws_s3_bucket.lab_assets.bucket
+    asset_sha_idle_check                 = local.lab_asset_sha256["ai-lab-idle-check"]
+    asset_sha_register_vuln_mcp          = local.lab_asset_sha256["ai-lab-register-vuln-mcp"]
+    asset_sha_alloy_config               = local.lab_asset_sha256["alloy-config.alloy"]
     grafana_enabled                      = var.enable_grafana_telemetry ? "true" : "false"
     grafana_otlp_instance_id             = var.grafana_otlp_instance_id == null ? "" : var.grafana_otlp_instance_id
     grafana_otlp_endpoint                = var.grafana_otlp_endpoint == null ? "" : var.grafana_otlp_endpoint
@@ -295,8 +350,6 @@ locals {
     vuln_mcp_enabled                     = length(local.vuln_mcp_resources) > 0 ? "true" : "false"
     vuln_mcp_url                         = local.vuln_mcp_url == null ? "" : local.vuln_mcp_url
     vuln_mcp_token_secret_arn            = var.vuln_mcp_token_secret_arn == null ? "" : var.vuln_mcp_token_secret_arn
-    vuln_mcp_register_script             = replace(file("${path.module}/scripts/ai-lab-register-vuln-mcp.sh"), "\r\n", "\n")
-    alloy_config_b64                     = var.enable_grafana_telemetry ? base64gzip(replace(file("${path.module}/scripts/alloy-config.alloy"), "\r\n", "\n")) : ""
   }), "\r\n", "\n"))
 }
 
@@ -304,11 +357,11 @@ resource "aws_instance" "ai_lab" {
   #checkov:skip=CKV_AWS_88:Public IP is used only for outbound bootstrap traffic; no inbound rules allow the Internet. A private-subnet option is tracked in #3
   #checkov:skip=CKV_AWS_135:Current instance types (the default c7i) are EBS-optimized by default; forcing the flag would break older types
   #checkov:skip=CKV_AWS_126:Detailed (1-minute) EC2 monitoring costs extra; the lab publishes its own per-minute metrics to the AILab namespace
-  ami           = data.aws_ssm_parameter.ubuntu_ami.value
+  ami           = local.lab_ami_id
   instance_type = var.instance_type
   key_name      = var.enable_ssh ? var.ssh_key_name : null
 
-  subnet_id = sort(data.aws_subnets.default.ids)[0]
+  subnet_id = local.lab_subnet_id
 
   vpc_security_group_ids = [
     aws_security_group.ai_lab.id
@@ -341,6 +394,16 @@ resource "aws_instance" "ai_lab" {
   user_data_replace_on_change = true
 
   lifecycle {
+    precondition {
+      condition     = local.lab_subnet_id != null
+      error_message = "No availability zone with a default subnet offers instance_type ${var.instance_type} in this region. Choose another instance type or region."
+    }
+
+    precondition {
+      condition     = var.root_volume_size >= local.lab_ami_root_size
+      error_message = "root_volume_size is ${var.root_volume_size} GiB, smaller than the AMI's ${local.lab_ami_root_size} GiB root snapshot. Raise root_volume_size."
+    }
+
     precondition {
       condition     = length(local.ai_lab_user_data) * 3 / 4 < 16000
       error_message = "The cloud-init user data is within a few hundred bytes of the EC2 limit (16384 bytes after gzip). Shrink cloud-init.sh.tpl or the scripts it embeds before applying; EC2 would refuse the replacement instance after the old one is destroyed."
@@ -391,6 +454,8 @@ resource "aws_instance" "ai_lab" {
   depends_on = [
     aws_iam_role_policy_attachment.ssm,
     aws_iam_role_policy.open_webui_admin_password,
+    aws_iam_role_policy.lab_assets,
+    aws_s3_object.lab_asset,
     aws_iam_role_policy.cognito_client,
     aws_iam_role_policy.auto_stop_agent,
     aws_cognito_user_pool_domain.lab
@@ -420,7 +485,7 @@ resource "aws_lb" "domain" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb[each.key].id]
-  subnets            = slice(sort(data.aws_subnets.default.ids), 0, 2)
+  subnets            = local.alb_subnet_ids
 
   # Reject requests with malformed header names instead of passing them to Open WebUI.
   drop_invalid_header_fields = true

@@ -15,8 +15,11 @@ project_name = "aiwebdemo"
 #   Application = "Open-WebUI"
 # }
 
-instance_type    = "c7i.4xlarge"
-root_volume_size = 80
+# g6.xlarge: one NVIDIA L4 (24 GB) for qwen3:14b, about 13% more per hour than c7i.4xlarge.
+# NVIDIA types boot AWS's GPU-ready Ubuntu AMI, whose root snapshot is larger, hence 100 GiB.
+# Needs an EC2 "Running On-Demand G and VT instances" quota of at least 4 (pre-deployment step 2).
+instance_type    = "g6.xlarge"
+root_volume_size = 100
 
 # https://aws.amazon.com/ec2/pricing/on-demand/
 
@@ -82,7 +85,10 @@ root_volume_size = 80
 
 # Generative AI Language Model Selection
 llm_provider = "ollama"
-llm_model    = "llama3.2:3b"
+# qwen3:14b calls tools reliably (the vulnerability MCP depends on it); llama3.2:3b does not.
+llm_model    = "qwen3:14b"
+# Room for tool definitions, the system prompt and the chat. Ollama's own default (4096) is too small.
+ollama_context_length = 16384
 
 # LLM MODEL OPTIONS — Ollama
 # https\://ollama.com/library

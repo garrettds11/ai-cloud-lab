@@ -15,7 +15,7 @@ Commands are **Local Windows PowerShell**, in a window where `$env:AWS_PROFILE` 
 | # | Item | Needed for | Demo |
 |---|---|---|---|
 | 1 | [Tools on your PC](#1-tools-on-your-pc) | Everything | Installed |
-| 2 | [AWS account, region and permissions](#2-aws-account-region-and-permissions) | Everything | `394566733278`, `us-east-1` |
+| 2 | [AWS account, region and permissions](#2-aws-account-region-and-permissions) | Everything | `394566733278`, `us-east-1`, GPU quota |
 | 3 | [Secrets in Secrets Manager](#3-secrets-in-secrets-manager) | Passwords, Cloudflare, Grafana, the vulnerability tool | Five secrets, all created |
 | 4 | [Domain and DNS](#4-domain-and-dns) | Public access | `aiwebdemo.click`, zone **Active** in Cloudflare |
 | 5 | [TLS certificate](#5-tls-certificate) | Public access | ACM `1163bb42-...`, covers the apex and `*.` |
@@ -46,7 +46,16 @@ Commands are **Local Windows PowerShell**, in a window where `$env:AWS_PROFILE` 
    group, load balancer, SSM parameter, Lambda, SNS and EventBridge resources (and Cognito when
    enabled), to read the ACM certificate and the secrets, and, for the control panel, to manage
    API Gateway, Lambda, DynamoDB and IAM for the API stack.
-5. Quota for the instance type (`c7i.4xlarge` in the demo) in the region.
+5. Quota for the instance type in the region. The demo uses `g6.xlarge`, an NVIDIA GPU type, which
+   needs the EC2 quota **Running On-Demand G and VT instances** to be at least its 4 vCPUs. New
+   accounts often have 0. Check it, and request more if needed (approval can take a day):
+
+   ```powershell
+   aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --query Quota.Value
+   aws service-quotas request-service-quota-increase --service-code ec2 --quota-code L-DB2E81BA --desired-value 8
+   ```
+
+   CPU types such as `c7i.4xlarge` use the **Standard instances** quota instead.
 
 ## 3. Secrets in Secrets Manager
 
@@ -238,7 +247,7 @@ put a password or token in either file.
 
 **Root `terraform.tfvars.example`:**
 
-- `aws_region`, `instance_type`, `root_volume_size`, `llm_model`
+- `aws_region`, `instance_type`, `root_volume_size`, `llm_model`, `ollama_context_length`
 - `open_webui_admin_password_secret_arn`, `open_webui_demo_user_password_secret_arn`
 - `domain_name`, `route53_zone_name`, `acm_certificate_arn`
 - `cloudflare_account_id`, `cloudflare_api_token_secret_arn`, `cloudflare_access_allowed_emails`,

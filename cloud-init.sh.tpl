@@ -55,6 +55,25 @@ wait_for_ollama() {
     return 1
 }
 
+# Download a helper script from the lab's asset bucket (lab_assets.tf) and install it, refusing it
+# unless its SHA-256 matches the value Terraform recorded.
+fetch_asset() {
+    local name=$1 dest=$2 mode=$3 want=$4 tmp attempt
+    tmp="$(mktemp)"
+    for attempt in 1 2 3 4 5; do
+        aws s3 cp "s3://${lab_assets_bucket}/scripts/$name" "$tmp" --region '${aws_region}' --only-show-errors && break
+        echo "Could not download $name (attempt $attempt/5)"
+        sleep 5
+    done
+    if [[ "$(sha256sum "$tmp" | cut -d' ' -f1)" != "$want" ]]; then
+        echo "Refusing $name: missing, or its checksum differs from the one Terraform recorded."
+        rm -f "$tmp"
+        return 1
+    fi
+    install -m "$mode" "$tmp" "$dest"
+    rm -f "$tmp"
+}
+
 ensure_ssm_agent() {
     if systemctl list-unit-files --type=service | grep -q '^amazon-ssm-agent.service'; then
         systemctl enable --now amazon-ssm-agent.service
@@ -211,11 +230,13 @@ apt-get install -y \
     git \
     jq \
     ca-certificates \
-    docker.io \
     iptables \
     snapd \
     sqlite3 \
     unzip
+
+# The GPU AMI ships Docker already; installing Ubuntu's docker.io over it conflicts.
+command -v docker >/dev/null 2>&1 || apt-get install -y docker.io
 
 # Ubuntu 24.04 does not provide the AWS CLI package in every enabled APT
 # source. Install AWS CLI v2 from AWS so bootstrap can retrieve Secrets Manager
@@ -269,6 +290,7 @@ mkdir -p /etc/systemd/system/ollama.service.d
 cat > /etc/systemd/system/ollama.service.d/environment.conf <<'EOF'
 [Service]
 Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_CONTEXT_LENGTH=${ollama_context_length}"
 EOF
 
 systemctl daemon-reload
@@ -382,10 +404,8 @@ LOCAL_LOGIN='${open_webui_local_login_enabled}'
 PORT='${open_webui_host_port}'
 REGION='${aws_region}'
 EOF
-cat > /usr/local/sbin/ai-lab-register-vuln-mcp <<'VULN_MCP_REGISTER_EOF'
-${vuln_mcp_register_script}
-VULN_MCP_REGISTER_EOF
-chmod 0755 /usr/local/sbin/ai-lab-register-vuln-mcp
+fetch_asset ai-lab-register-vuln-mcp /usr/local/sbin/ai-lab-register-vuln-mcp 0755 '${asset_sha_register_vuln_mcp}' || \
+    echo "WARNING: the vulnerability MCP registration script could not be installed."
 
 register_status=0
 /usr/local/sbin/ai-lab-register-vuln-mcp || register_status=$?
@@ -418,7 +438,7 @@ setup_grafana_telemetry() {
     [[ -n "$token" && "$token" != "None" ]] || return 1
 
     install -d -m 0755 /etc/alloy
-    printf '%s' '${alloy_config_b64}' | base64 --decode | gunzip > /etc/alloy/config.alloy || return 1
+    fetch_asset alloy-config.alloy /etc/alloy/config.alloy 0644 '${asset_sha_alloy_config}' || return 1
 
     # Root-only: systemd reads this file and hands the values to Alloy.
     (umask 077 && printf 'GRAFANA_OTLP_ENDPOINT=%s\nGRAFANA_OTLP_INSTANCE_ID=%s\nGRAFANA_OTLP_TOKEN=%s\n' \
@@ -465,8 +485,8 @@ OLLAMA_PORT=11434
 AUTO_STOP_PARAMETER=${auto_stop_parameter_name}
 EOF
 
-printf '%s' '${auto_stop_script_b64}' | base64 --decode | gunzip > /usr/local/sbin/ai-lab-idle-check
-chmod 0755 /usr/local/sbin/ai-lab-idle-check
+# The idle check is a cost guardrail, so a missing or altered copy fails bootstrap.
+fetch_asset ai-lab-idle-check /usr/local/sbin/ai-lab-idle-check 0755 '${asset_sha_idle_check}'
 
 cat > /etc/systemd/system/ai-lab-idle-check.service <<'EOF'
 [Unit]
@@ -511,6 +531,10 @@ curl -s http://127.0.0.1:11434/api/tags | jq . || true
 echo
 echo "--- Installed models ---"
 ollama list || true
+
+echo
+echo "--- GPU ---"
+nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv 2>/dev/null || echo "No NVIDIA GPU"
 
 echo
 echo "--- Open WebUI container ---"

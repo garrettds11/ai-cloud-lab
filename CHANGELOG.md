@@ -33,6 +33,17 @@ version numbers yet, so everything is listed under Unreleased.
   also falls back to the launch time on network errors instead of failing the run.
 
 ### Added
+- NVIDIA GPU instances: GPU instance types boot AWS's Deep Learning Base GPU AMI (Ubuntu 24.04 with the
+  driver, CUDA and Docker preinstalled) and Ollama runs the model on the GPU. The example now deploys
+  `g6.xlarge` (one 24 GB L4, about 13% more per hour than `c7i.4xlarge`) with `qwen3:14b`, which calls
+  tools reliably, and a 100 GiB root volume. `ollama_context_length` (default 16384) leaves room for tool
+  definitions. `ai-lab-status` shows the GPU.
+- The instance is placed in a default subnet whose zone offers its instance type, and the ALB always
+  covers that zone (#8). Plan fails early if no zone offers the type, or if `root_volume_size` is
+  smaller than the AMI.
+- The helper scripts (idle check, MCP registration, Alloy config) are downloaded at boot from a private
+  per-lab S3 bucket and checked against Terraform's SHA-256, instead of being embedded in user data,
+  which had reached its size budget. The user data dropped from about 14.5 KB to about 7 KB.
 - The control panel API stack publishes its address, IDs and table names in the SSM parameter
   `/<project_name>/control-panel-api/settings`. With the new `control_panel_api_from_ssm = true` (set
   in the root example) the lab reads them at every plan, so a created or rebuilt API needs no IDs copied

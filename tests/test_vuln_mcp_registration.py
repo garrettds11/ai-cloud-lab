@@ -510,9 +510,13 @@ class TerraformWiringTest(unittest.TestCase):
         self.assertGreater(self.cloud_init.index(call), self.cloud_init.rindex("\nwait_for_open_webui\n"))
         self.assertLess(self.cloud_init.index(call), self.cloud_init.index('touch "$READY_FILE"'))
 
-    def test_script_is_substituted_as_a_value_inside_a_quoted_heredoc(self):
-        self.assertIn("<<'VULN_MCP_REGISTER_EOF'\n${vuln_mcp_register_script}\nVULN_MCP_REGISTER_EOF", self.cloud_init)
-        self.assertNotIn("VULN_MCP_REGISTER_EOF", self.script)
+    def test_script_is_downloaded_and_checksum_verified_not_embedded(self):
+        # lab_assets.tf uploads it; bootstrap installs it only if its SHA-256 matches Terraform's.
+        self.assertIn("fetch_asset ai-lab-register-vuln-mcp /usr/local/sbin/ai-lab-register-vuln-mcp 0755 "
+                      "'${asset_sha_register_vuln_mcp}'", self.cloud_init)
+        assets = (ROOT / "lab_assets.tf").read_text()
+        self.assertIn('"ai-lab-register-vuln-mcp" = "scripts/ai-lab-register-vuln-mcp.sh"', assets)
+        self.assertIn('!= "$want"', self.cloud_init)
 
 
 class UserDataBudgetTest(unittest.TestCase):
@@ -527,16 +531,13 @@ class UserDataBudgetTest(unittest.TestCase):
 
         template = (ROOT / "cloud-init.sh.tpl").read_text()
         b64 = lambda text: base64.b64encode(text.encode()).decode()  # noqa: E731
-        b64gz = lambda text: base64.b64encode(gzip.compress(text.encode(), 9)).decode()  # noqa: E731
-        read = lambda name: (ROOT / "scripts" / name).read_text()  # noqa: E731
         demo_users = json.dumps([{"email": f"demo{i}@example.local", "name": f"Demo User {i}"} for i in range(1, 26)])
         banner = json.dumps([{"id": "security-notice", "type": "warning", "title": "Security notice",
                               "content": "x" * 800, "dismissible": False, "timestamp": 0}])
         values = {
             "open_webui_demo_users_b64": b64(demo_users), "open_webui_banners_b64": b64(banner),
-            "auto_stop_script_b64": b64gz(read("ai-lab-idle-check.sh")),
-            "alloy_config_b64": b64gz(read("alloy-config.alloy")),
-            "vuln_mcp_register_script": read("ai-lab-register-vuln-mcp.sh"),
+            "lab_assets_bucket": "aiwebdemo-lab-assets-20261010123456789000000001",
+            "asset_sha_idle_check": "f" * 64, "asset_sha_register_vuln_mcp": "f" * 64, "asset_sha_alloy_config": "f" * 64,
             "vuln_mcp_url": "https://abcdefghijklmnopqrstuvwxyz012345.lambda-url.us-east-1.on.aws/mcp",
         }
         text = template.replace("$${", "\0DS{").replace("%%{", "%{")

@@ -27,7 +27,7 @@ variable "tags" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type used by the lab."
+  description = "EC2 instance type used by the lab. NVIDIA GPU families (g4dn, g5, g6, g6e, gr6, p4d, p5, p6) boot AWS's Deep Learning Base GPU AMI with the driver preinstalled, and Ollama uses the GPU; others boot plain Ubuntu 24.04. GPU types need an EC2 'Running On-Demand G and VT instances' quota of at least their vCPU count."
   type        = string
   default     = "c7i.4xlarge"
 }
@@ -51,6 +51,17 @@ variable "llm_provider" {
   validation {
     condition     = contains(["ollama"], var.llm_provider)
     error_message = "llm_provider must currently be ollama."
+  }
+}
+
+variable "ollama_context_length" {
+  description = "Context window Ollama gives each model, in tokens (OLLAMA_CONTEXT_LENGTH). Tool definitions and the system prompt share it with the chat, so tool calling needs room: Ollama's own default of 4096 can crowd tools out. Larger values use more GPU or system memory. Changing it replaces the instance."
+  type        = number
+  default     = 16384
+
+  validation {
+    condition     = var.ollama_context_length >= 2048 && var.ollama_context_length <= 131072
+    error_message = "ollama_context_length must be between 2048 and 131072."
   }
 }
 

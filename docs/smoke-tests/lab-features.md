@@ -42,12 +42,14 @@ $token = [Convert]::ToBase64String($bytes)
 aws secretsmanager create-secret --name vuln-mcp-token-aiwebdemo --secret-string $token --region us-east-1 --query ARN --output text
 ```
 
-After apply, load the token the server uses from the secret (this prints nothing; if the secret is a
-one-key key/value secret, `$token` holds JSON instead and the first call fails with `Unauthorized`),
-then call the function with the token and without it:
+After apply, load the token the server uses from the secret. Like the server, this accepts plain
+text or a one-key key/value secret, and prints nothing. Then call the function with the token and
+without it:
 
 ```powershell
-$token = aws secretsmanager get-secret-value --secret-id (Get-TfVar vuln_mcp_token_secret_arn) --query SecretString --output text
+$raw = aws secretsmanager get-secret-value --secret-id (Get-TfVar vuln_mcp_token_secret_arn) --query SecretString --output text
+try { $parsed = $raw | ConvertFrom-Json -ErrorAction Stop } catch { $parsed = $null }
+$token = if ($parsed -and $parsed -isnot [string]) { [string]@($parsed.PSObject.Properties.Value)[0] } else { $raw.Trim() }
 $url = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")   # local Windows PowerShell
 $body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $body | ConvertTo-Json -Depth 5

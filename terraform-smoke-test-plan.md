@@ -68,30 +68,8 @@ Build the API stack before the lab; destroy the lab before the API stack.
    committed; a change made only in the copy is lost at the next run. Never put a token or
    password in either file.
 
-   <details>
-   <summary>Deploying to another account or domain</summary>
-
-   Replace these in `terraform.tfvars.example` (your fork's copy) rather than editing Terraform
-   files:
-
-   - `aws_region`
-   - `open_webui_admin_password_secret_arn`, `open_webui_demo_user_password_secret_arn`
-   - `domain_name`, `route53_zone_name`, `acm_certificate_arn`
-   - `cloudflare_account_id`, `cloudflare_api_token_secret_arn`, `cloudflare_access_allowed_emails`
-   - `instance_type`, `root_volume_size`, `llm_model`
-
-   The certificate must be `ISSUED`, in the same region, and cover `domain_name` exactly. See
-   [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
-
-   The API stack has its own example, `dashboards\api\terraform\terraform.tfvars.example`. Set
-   these there too:
-
-   - `lab_project_name`: the same value as the root `project_name`. The API publishes its settings
-     under it, and the lab looks for them under `project_name`; a mismatch leaves the lab without
-     the API (the `control_panel_api_settings_found` warning).
-   - `panel_origin`: the control panel's own address (the root `control_panel_url`).
-   - `bootstrap_admins`: the email addresses that get the panel's admin screens.
-   </details> 
+   On another account or domain, first follow
+   [Deploying to another account or domain](#deploying-to-another-account-or-domain).
 
 4. Load the wrapper. It reads the Cloudflare token from Secrets Manager for each Terraform command
    and removes it afterwards, so the token is never typed or stored. It lasts only for this window:
@@ -187,7 +165,7 @@ Build the API stack before the lab; destroy the lab before the API stack.
 >
 > Only run this step when files in `dashboards\api` change, on the first build, or after the stack is destroyed.
 
-To deploy the API stack, first set `lab_project_name`, `panel_origin` and `bootstrap_admins` (step 1, "Deploying to another account or domain").
+To deploy the API stack, first set `lab_project_name`, `panel_origin` and `bootstrap_admins` (see [Deploying to another account or domain](#deploying-to-another-account-or-domain)).
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
@@ -400,5 +378,28 @@ deletion protection, so your users and grants survive. That is intended. To real
 `deletion_protection_enabled = false` in `tables.tf` and `webui_admin.tf`, apply, then destroy;
 their data is then gone for good. Rebuilding the API stack gives it new IDs, which the next lab
 apply picks up by itself (step 3).
+
+## Deploying to another account or domain
+
+Replace these in `terraform.tfvars.example` (your fork's copy) rather than editing Terraform
+files:
+
+- `aws_region`
+- `open_webui_admin_password_secret_arn`, `open_webui_demo_user_password_secret_arn`
+- `domain_name`, `route53_zone_name`, `acm_certificate_arn`
+- `cloudflare_account_id`, `cloudflare_api_token_secret_arn`, `cloudflare_access_allowed_emails`
+- `instance_type`, `root_volume_size`, `llm_model`
+
+The certificate must be `ISSUED`, in the same region, and cover `domain_name` exactly. See
+[cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
+
+The API stack has its own example, `dashboards\api\terraform\terraform.tfvars.example`. Set
+these there too:
+
+- `lab_project_name`: the same value as the root `project_name`. The API publishes its settings
+  under it, and the lab looks for them under `project_name`; a mismatch leaves the lab without
+  the API (the `control_panel_api_settings_found` warning).
+- `panel_origin`: the control panel's own address (the root `control_panel_url`).
+- `bootstrap_admins`: the email addresses that get the panel's admin screens.
 
 If something fails, see [Troubleshooting](docs/troubleshooting.md).

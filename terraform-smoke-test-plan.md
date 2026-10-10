@@ -4,7 +4,7 @@ How to deploy the AI Cloud Lab, check that it works, and take it down. Everythin
 **Local Windows PowerShell** unless a block says **Linux (SSM shell on the lab instance)**.
 
 This page is only what a deploy needs. The detailed tests and fixes live in separate pages,
-linked from [step 5](#5-test-what-changed) and [Troubleshooting](docs/troubleshooting.md):
+linked from [step 5](#step-5-test-what-changed) and [Troubleshooting](docs/troubleshooting.md):
 
 | Page | Holds |
 |---|---|
@@ -193,7 +193,7 @@ repeated.
 > - **There is a code change:** the functions update in place.
 > - Only run this step when files in `dashboards\api` change, on the first build, or after the stack is destroyed.
 
-On a new account or domain, `lab_project_name`, `panel_origin` and `bootstrap_admins` in this stack's example must be set first ([step 0](#0-new-account-or-domain-first-deploy-only)).
+On a new account or domain, `lab_project_name`, `panel_origin` and `bootstrap_admins` in this stack's example must be set first ([step 0](#step-0-new-account-or-domain-first-deploy-only)).
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform

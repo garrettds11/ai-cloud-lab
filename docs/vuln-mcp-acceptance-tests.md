@@ -32,7 +32,7 @@ re-checks them on every CI run, so they cannot drift from the fixture without a 
 ### P1. A deployment with the vulnerability MCP on
 
 `vuln_mcp_table_name` and `vuln_mcp_token_secret_arn` are set, applied, and the lab instance has
-finished bootstrapping. Reaching Open WebUI is described in [the deploy runbook](../terraform-smoke-test-plan.md#4-check-the-deployment)
+finished bootstrapping. Reaching Open WebUI is described in [the deploy runbook](../terraform-smoke-test-plan.md#step-4-check-the-deployment)
 (your domain, or the SSM port forward to `http://localhost:8080` in
 [SSM-only test](smoke-tests/access-and-network.md#ssm-only-test)).
 

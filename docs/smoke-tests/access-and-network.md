@@ -1,7 +1,7 @@
 # Smoke tests: access and network
 
 Tests for how people reach the lab and what the network allows. Run the ones the change touched;
-[the deploy runbook](../../terraform-smoke-test-plan.md#5-test-what-changed) says which.
+[the deploy runbook](../../terraform-smoke-test-plan.md#step-5-test-what-changed) says which.
 
 **Before you start:** use the PowerShell window from the runbook, after its step 1 (profile,
 wrapper, `Get-TfVar`, `$projectName`, `$domainName`) and step 3 (`$env:instance_id`). Commands are

@@ -1,7 +1,7 @@
 # Smoke tests: lab features
 
 Tests for optional lab features. Run the one the change touched;
-[the deploy runbook](../../terraform-smoke-test-plan.md#5-test-what-changed) says which.
+[the deploy runbook](../../terraform-smoke-test-plan.md#step-5-test-what-changed) says which.
 
 **Before you start:** use the PowerShell window from the runbook, after its step 1 (profile and
 wrapper) and step 3 (`$env:instance_id`), from the repository root. Commands are

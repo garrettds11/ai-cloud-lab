@@ -217,7 +217,7 @@ calls fail with `401` for a while.
 
 **Local login must be on.** The admin API needs password sign-in. With `open_webui_enable_local_login = false`
 the script exits with code 3 (`Local login is off ...`), Terraform shows a warning, and the connection is not
-changed. Add it by hand instead: **Admin Settings > External Tools > +**, type **MCP (Streamable HTTP)**,
+changed. Add it by hand instead: **Admin Panel > Settings > Integrations > External Tool Servers > +**, type **MCP (Streamable HTTP)**,
 URL = the `vuln_mcp_url` output, auth **Bearer** with the token, then **Verify** and **Save**. To copy the token
 without displaying it (**Local Windows PowerShell**):
 `aws secretsmanager get-secret-value --secret-id <vuln_mcp_token_secret_arn> --query SecretString --output text | Set-Clipboard`.

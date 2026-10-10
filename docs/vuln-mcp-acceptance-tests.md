@@ -128,9 +128,26 @@ Use at least the first two for every question.
 A different tool, a different `status` or `severity` than the one the question asks for, or an
 answer that does not match the returned data, is a failure.
 
+## Two kinds of failure
+
+Most failures are one of two kinds, and each looks different. Name the kind in the Results notes.
+
+| | Registration failure | Function failure |
+|---|---|---|
+| What it means | The lab did not put the connection into Open WebUI at boot. | The connection exists (registered or added by hand), but asking a question does not produce a correct tool call. |
+| What you see | **No** Vulnerability Findings entry in **Admin Panel > Settings > Integrations > External Tool Servers**, **and** none in the chat's **Integrations** menu (the icon next to **+** in the message box). Nothing is hidden: if it is missing from both, it was never registered, and no tool call can happen. | The entry is there and switched on in the chat, but one of: **Verify** fails; the chat shows a tool-call entry with an error; the model answers without any tool-call entry; or CloudWatch has no `tool_call` row, or a row with `ok` `False` that the question did not expect. |
+| Where to look | S1 output and the boot log: `grep -F '[register-vuln-mcp]' /var/log/ai-lab-bootstrap.log`. Seen so far: `Could not read the MCP token secret` (the instance role cannot read the token; check that `vuln_mcp_token_secret_arn` is the full ARN) and `Local login is off`. | The tool-call entry in the chat, the CloudWatch rows ([How to verify the tool was called](#how-to-verify-the-tool-was-called)) and the Open WebUI log on the instance. |
+| How to tell the cause | Read the S1 line. A secret, sign-in or login message is the registration itself: fix it, and meanwhile test the server with a connection added by hand (S3). `Open WebUI could not connect to the MCP server` means the server is the cause: the registration never saves a connection it cannot verify, so treat it as a function failure and skip S3, which would fail the same way. | No `tool_call` row and an error in the chat: the connection (address or token) or the server. A row with `ok` `True` but a wrong answer: the model. No tool-call entry at all: the model did not call the tool; try a larger model before blaming the server (P3). |
+
+A connection added by hand separates the two: if the questions pass with it, the server and the
+model work and only the registration is broken.
+
 ## Part 1: setup checks
 
-Run these before the questions. If S1 or S2 fail, the questions cannot pass; fix the cause first.
+Run these before the questions. Only a **missing** connection is a registration failure, and only
+then add it by hand (S3) so the questions still test the server and the model. A connection that
+exists but fails Verify, or an S1 message that it `could not connect to the MCP server`, is a
+function failure: record it as one and fix the address, the token or the server instead.
 
 ### S1. The connection exists (no model involved)
 
@@ -155,14 +172,57 @@ would change, which means bootstrap did not finish registering; run the command 
 
 PENDING MANUAL EXECUTION
 
-Sign in to Open WebUI as the admin, open **Admin Settings > External Tools** (wording varies).
+Sign in to Open WebUI as the admin and open **Admin Panel > Settings > Integrations > External Tool Servers**.
 **Pass:** exactly one connection named **Vulnerability Findings**, type MCP, enabled, and its
-verify (plug) button reports success. Sign in as a non-admin demo user: **Pass** if the tool
-appears in the chat's tools menu (S3). **Fail** if there are two entries or it shows only for admins.
+verify (plug) button reports success. Then sign in as a non-admin demo user, start a chat and open
+the **Integrations** menu (the icon next to **+** in the message box): **Pass** if **Vulnerability
+Findings** is listed there. **Fail** if there are two entries or it shows only for admins.
+
+**Registration failure:** no entry on the settings page and none in the chat's Integrations menu
+(only built-in tools such as Code Interpreter). Record S1 and S2 as Fail with the boot log line
+from S1, then continue with S3, unless that line says it could not connect to the MCP server (see
+[Two kinds of failure](#two-kinds-of-failure)).
+
+**Function failure:** the entry is there but its Verify fails. Record S2 as Fail with the kind
+`function`, skip S3, and check the address, the token and the Lambda's log group.
 
 <!-- setup-check -->
 
-### S3. The tool is switched on for the chat
+### S3. Add the connection by hand (only after a registration failure)
+
+PENDING MANUAL EXECUTION
+
+Only when S2 found **no** entry and the S1 line is not `could not connect to the MCP server`.
+It tests the server and the model without the lab's registration, so a registration failure does
+not hide whether the tool itself works.
+
+1. Print the address, and copy the token to the clipboard without showing it (**Local Windows
+   PowerShell**, repository root):
+
+   ```powershell
+   Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")
+   $tokenArn = (Select-String -Path .\terraform.tfvars -Pattern '^\s*vuln_mcp_token_secret_arn\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+   aws secretsmanager get-secret-value --secret-id $tokenArn --query SecretString --output text | Set-Clipboard
+   ```
+
+   If the secret is a key/value secret, paste only the token value, not the JSON.
+2. As the admin, open **Admin Panel > Settings > Integrations > External Tool Servers** and click **+**.
+3. Type **MCP (Streamable HTTP)**; URL: the address from step 1; authentication **Bearer**; key:
+   paste the token. Name it **Vulnerability Findings**.
+4. Set access so all users can use it, click **Verify**, then **Save**.
+
+**Pass:** Verify succeeds and lists the six tools, and the entry is in a demo user's chat
+**Integrations** menu. **Fail:** Verify fails. That is a function failure in the connection or the
+server, not the registration: check the address, the token and the Lambda's log group.
+
+Run the questions with this connection and write `by hand` in the Results table's Connection
+column. Those results count for the server and the model, never for S1 and S2. When the
+registration is fixed, delete this entry and run `sudo ai-lab-register-vuln-mcp` on the instance;
+the managed entry replaces any MCP entry with the same address (A2).
+
+<!-- setup-check -->
+
+### S4. The tool is switched on for the chat
 
 PENDING MANUAL EXECUTION
 
@@ -358,33 +418,37 @@ sudo ai-lab-register-vuln-mcp
 sudo ai-lab-register-vuln-mcp
 ```
 
-**Pass:** both runs end with `Connection already correct; nothing to change.`, and Admin Settings
-still shows one connection. Removal is exercised by deploying with `vuln_mcp_table_name = null`
+**Pass:** both runs end with `Connection already correct; nothing to change.`, and
+**External Tool Servers** still shows one connection. If a connection was added by hand (S3) with
+the same address, the first run replaces it (`Connection registered.`) and the second reports no
+change; there is still exactly one. Removal is exercised by deploying with `vuln_mcp_table_name = null`
 (this replaces the instance, because the instance's configuration file changes): after
-bootstrap, Admin Settings shows **no** Vulnerability Findings connection, and
+bootstrap, **External Tool Servers** shows **no** Vulnerability Findings connection, and
 `sudo ai-lab-register-vuln-mcp --check` reports the connection is already correct (absent).
 
 ## Results
 
 Fill in after running. Leave a cell as `Pending` until it has been run. Record the model name and
-the date.
+the date. **Connection** is `registered` or `by hand` (S3). For a failure, start the notes with its
+kind, `registration` or `function` (see [Two kinds of failure](#two-kinds-of-failure)).
 
-| Test | Result | Model / date | Tool call seen in chat | `tool_call` in CloudWatch | Notes |
-|---|---|---|---|---|---|
-| S1 | Pending | | n/a | n/a | |
-| S2 | Pending | | n/a | n/a | |
-| S3 | Pending | | n/a | n/a | |
-| Q1 | Pending | | | | |
-| Q2 | Pending | | | | |
-| Q3 | Pending | | | | |
-| Q4 | Pending | | | | |
-| Q5 | Pending | | | | |
-| Q6 | Pending | | | | |
-| Q7 | Pending | | | | |
-| Q8 | Pending | | | | |
-| B1 | Pending | | | | |
-| A1 | Pending | | n/a | n/a | |
-| A2 | Pending | | n/a | n/a | |
+| Test | Result | Model / date | Tool call seen in chat | `tool_call` in CloudWatch | Notes | Connection |
+|---|---|---|---|---|---|---|
+| S1 | Pending | | n/a | n/a | | n/a |
+| S2 | Pending | | n/a | n/a | | n/a |
+| S3 | Pending | | n/a | n/a | | by hand |
+| S4 | Pending | | n/a | n/a | | |
+| Q1 | Pending | | | | | |
+| Q2 | Pending | | | | | |
+| Q3 | Pending | | | | | |
+| Q4 | Pending | | | | | |
+| Q5 | Pending | | | | | |
+| Q6 | Pending | | | | | |
+| Q7 | Pending | | | | | |
+| Q8 | Pending | | | | | |
+| B1 | Pending | | | | | |
+| A1 | Pending | | n/a | n/a | | n/a |
+| A2 | Pending | | n/a | n/a | | n/a |
 
 ## Clean up
 

@@ -8,7 +8,7 @@ The repository has two separate Terraform configurations, each with its own stat
 
 | Stack | Folder | Holds | Applied |
 |---|---|---|---|
-| **Control panel API** | `dashboards\api\terraform` | The panel's API, sign-in authorizer, routes, both functions and roles, the panel's tables, the Open WebUI admin document | Once, then only when the API changes |
+| **Control panel API** | dashboards\api\terraform | The panel's API, sign-in authorizer, routes, both functions and roles, the panel's tables, the Open WebUI admin document | Once, then only when the API changes |
 | **Lab** | repository root | The instance, Open WebUI, Ollama, ALB, Cloudflare, Cognito, auto-stop | Often: every build, destroy and rebuild |
 
 Order:

@@ -6,7 +6,9 @@ touched; [the deploy runbook](../../terraform-smoke-test-plan.md#5-test-what-cha
 **Before you start:** use the PowerShell window from the runbook, after its step 1 (profile,
 wrapper, `Get-TfVar`, `$projectName`, `$domainName`, `$panelBucket`) and step 3
 (`$env:instance_id`). Commands are **Local Windows PowerShell** unless marked
-**Linux (SSM shell on the lab instance)**. Load the API stack's settings once:
+**Linux (SSM shell on the lab instance)**; the SSM shell is a plain `sh` shell: paste **one command at a time**. Pasting several lines at once interleaves them (errors such as `er: not found`).
+Commands that read the API stack's outputs use `terraform -chdir=dashboards/api/terraform`, so they
+also run from the repository root. Load the API stack's settings once:
 
 ```powershell
 $panelApi          = aws ssm get-parameter --name "/$projectName/control-panel-api/settings" --query Parameter.Value --output text | ConvertFrom-Json
@@ -86,7 +88,7 @@ Check:
 
 ## Control panel API stack test
 
-After the runbook's step 2 and a lab apply. Run from `dashboards\api\terraform`.
+After the runbook's step 2 and a lab apply. From the repository root.
 
 1. **Panel end to end:** sign in at https://cp.aiwebdemo.click. Expected:
    - The instances are listed.
@@ -98,7 +100,7 @@ After the runbook's step 2 and a lab apply. Run from `dashboards\api\terraform`.
 2. **Routes match the spec:**
 
    ```powershell
-   aws apigatewayv2 get-routes --api-id (terraform output -raw api_id) --query "sort(Items[].RouteKey)" --output text
+   aws apigatewayv2 get-routes --api-id (terraform -chdir=dashboards/api/terraform output -raw api_id) --query "sort(Items[].RouteKey)" --output text
    ```
 
    It must list the same 15 routes as `dashboards\api\openapi.yaml`.
@@ -124,8 +126,8 @@ After the runbook's step 2 and a lab apply. Run from `dashboards\api\terraform`.
    the lab apply:
 
    ```powershell
-   aws apigatewayv2 get-routes --api-id (terraform output -raw api_id) --query "length(Items)"
-   curl.exe -s -o NUL -w "%{http_code}\n" "$((terraform output -raw api_url).TrimEnd('/'))/instances"
+   aws apigatewayv2 get-routes --api-id (terraform -chdir=dashboards/api/terraform output -raw api_id) --query "length(Items)"
+   curl.exe -s -o NUL -w "%{http_code}\n" "$((terraform -chdir=dashboards/api/terraform output -raw api_url).TrimEnd('/'))/instances"
    ```
 
    The first prints `15`. The second prints `401`: the authorizer trusts only the empty holding
@@ -135,10 +137,10 @@ After the runbook's step 2 and a lab apply. Run from `dashboards\api\terraform`.
 
 **Pending manual execution.** Needs the lab running, `READY`, and the API stack applied. The panel pages have no button for this yet (phase 1, #59), so the test calls the document and the API directly.
 
-1. **The document alone**, from `dashboards\api\terraform`:
+1. **The document alone**, from the repository root:
 
    ```powershell
-   $doc = terraform output -raw webui_admin_document
+   $doc = terraform -chdir=dashboards/api/terraform output -raw webui_admin_document
    $cmd = aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=0.11.4" --query Command.CommandId --output text
    Start-Sleep 15
    aws ssm get-command-invocation --command-id $cmd --instance-id $env:instance_id --query "[Status, StandardOutputContent]" --output text
@@ -155,7 +157,9 @@ After the runbook's step 2 and a lab apply. Run from `dashboards\api\terraform`.
 
    Both must fail at once with an `InvalidParameters` error. Nothing runs on the instance.
 
-3. **Through the API, as an administrator:** sign in to the panel as an administrator, press F12, open **Console**, and run:
+3. **Through the API, as an administrator.** This step runs in the **browser**, not PowerShell:
+   sign in to the panel as an administrator, press F12, open the **Console** tab, and paste this
+   JavaScript there:
 
    ```javascript
    const t = JSON.parse(sessionStorage.getItem('panel.tokens')).idToken;

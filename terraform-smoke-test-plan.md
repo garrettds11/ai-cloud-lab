@@ -285,19 +285,21 @@ Every deploy. Each takes a minute or two.
    aws ssm start-session --target $env:instance_id
    ```
 
-   **Linux (SSM shell on the lab instance):**
+   **Linux (SSM shell on the lab instance).** The SSM shell is a plain `sh` shell: paste **one command at a time**. Pasting several lines at once interleaves them (errors such as `er: not found`).
 
    ```bash
-   if test -f /var/lib/ai-lab/ready; then
-     echo READY
-   elif test -f /var/lib/ai-lab/failed; then
-     echo FAILED
-   else
-     echo NOT_READY
-   fi
+   test -f /var/lib/ai-lab/ready && echo READY || (test -f /var/lib/ai-lab/failed && echo FAILED || echo NOT_READY)
+   ```
 
+   ```bash
    tail -n 100 /var/log/ai-lab-bootstrap.log
+   ```
+
+   ```bash
    sudo docker ps
+   ```
+
+   ```bash
    ai-lab-status
    ```
 

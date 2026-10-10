@@ -245,7 +245,7 @@ value does not.
 | Symptom | Likely cause and fix |
 |---|---|
 | `Waiting for Open WebUI...` repeats, then `Gave up` | Open WebUI is slow or down. `sudo docker ps`, `sudo docker logs --tail 100 open-webui`; rerun the script when healthy. |
-| `Open WebUI could not connect to the MCP server and list its tools` | The Function URL is unreachable from the instance (egress is 443/80 only) or the token differs from the secret's. From Windows run the `401` check in `terraform-smoke-test-plan.md`; check the Lambda log group. |
+| `Open WebUI could not connect to the MCP server and list its tools` | The Function URL is unreachable from the instance (egress is 443/80 only) or the token differs from the secret's. From Windows run the `401` check in [Vulnerability MCP server test](../../docs/smoke-tests/lab-features.md#vulnerability-mcp-server-test); check the Lambda log group. |
 | `Open WebUI rejected the admin sign-in` | The admin secret no longer matches the admin password. Fix the secret or the account; the script does not retry this. |
 | `Local login is off` / exit 3 | See "Local login must be on" and "Turning local login off later" above. |
 | `Could not read ... secret` | The instance role cannot read it: confirm `vuln_mcp_token_secret_arn` was applied (the role is updated only when the feature is on). |

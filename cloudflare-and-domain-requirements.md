@@ -262,7 +262,7 @@ The domain is registered in Route 53 and its DNS is hosted at Cloudflare, so the
 1. In Cloudflare, open DNS > Settings and choose **Enable DNSSEC**. Cloudflare shows the DS record details (key tag, algorithm, digest type, digest) and the public key. Do not click **Confirm** yet.
 2. In Route 53, open Registered domains > your domain > **DNSSEC keys** > **Add key**. Set **Key type** to **257 - KSK** (matching Cloudflare's flags of 257), **Algorithm** to **13 - ECDSAP256SHA256**, and paste the **public key** from Cloudflare. Route 53 takes the public key, not the DS digest.
 3. Compare the key tag and digest that Route 53 then lists with the ones Cloudflare shows. They must match exactly. Then click **Confirm** in Cloudflare.
-4. Wait for the registry to publish the DS record (resolvers may cache the old value for up to 15 minutes), then run the DNSSEC check in the smoke test.
+4. Wait for the registry to publish the DS record (resolvers may cache the old value for up to 15 minutes), then run the DNSSEC check in [Edge protections test](docs/smoke-tests/access-and-network.md#edge-protections-test).
 
 **Do not add the key as 256 - ZSK.** The flags are part of the DS calculation, so the registered DS will not match Cloudflare's key. Once the zone is signed, validating resolvers such as 8.8.8.8 and 1.1.1.1 return `SERVFAIL` and the site is unreachable for most visitors. To recover, remove the wrong key at Route 53 and add the correct one.
 
@@ -279,7 +279,7 @@ The ranges are the `cloudflare_ipv4_cidrs` and `cloudflare_ipv6_cidrs` variables
 1. Confirm the site works through Cloudflare: `nslookup <domain>` returns Cloudflare addresses, the Access sign-in works, and Open WebUI loads.
 2. Run the direct-origin check once and note that it still connects (the "before" result).
 3. Set `enable_origin_lockdown = true`, then plan and apply.
-4. Re-run the public check and the direct-origin check (see the smoke test). The public site must still work and the direct request must time out.
+4. Re-run the public check and the direct-origin check (see [Origin lockdown test](docs/smoke-tests/access-and-network.md#origin-lockdown-test)). The public site must still work and the direct request must time out.
 
 **Recovery**
 
@@ -433,7 +433,7 @@ Moving the application to another hosting provider would require a separate Terr
 10. Create a scoped Cloudflare API token, with the Identity Providers permission if you will use Cognito, and store it in Secrets Manager.
 11. Choose the email address for auto-stop alerts.
 12. Copy `terraform.tfvars.example` to `terraform.tfvars` and replace every value that belongs to the author's account, such as the account ID, secret and certificate ARNs, domain, and team domain.
-13. Run the smoke test plan from initialization through apply.
+13. Follow [the deploy runbook](terraform-smoke-test-plan.md) from step 1 through step 4.
 14. After the apply: run `scripts/set-cognito-passwords.ps1` if Cognito is on, and click the SNS confirmation link in the alert mailbox.
 15. Set the Cloudflare SSL/TLS mode to Full (strict) and review the other security settings above.
 16. Verify the ALB target health and the public HTTPS URL.

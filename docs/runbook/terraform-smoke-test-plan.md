@@ -4,14 +4,14 @@ How to deploy the AI Cloud Lab, check that it works, and take it down. Everythin
 **Local Windows PowerShell** unless a block says **Linux (SSM shell on the lab instance)**.
 
 This page is only what a deploy needs. The detailed tests and fixes live in separate pages,
-linked from [step 5](#step-5-test-what-changed) and [Troubleshooting](docs/troubleshooting.md):
+linked from [step 5](#step-5-test-what-changed) and [Troubleshooting](troubleshooting.md):
 
 | Page | Holds |
 |---|---|
-| [docs/smoke-tests/access-and-network.md](docs/smoke-tests/access-and-network.md) | Accounts and passwords, domain access, Cloudflare Access, Cognito sign-in, SSM-only access, origin lockdown, outbound and edge checks, load balancer hardening, the lab unavailable page |
-| [docs/smoke-tests/control-panel.md](docs/smoke-tests/control-panel.md) | The full control panel config test, the API stack test, the Open WebUI admin action test, the auto-stop timer reset test |
-| [docs/smoke-tests/lab-features.md](docs/smoke-tests/lab-features.md) | Grafana telemetry, the vulnerability findings MCP server |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Likely failure points and their fixes |
+| [docs/smoke-tests/access-and-network.md](smoke-tests/access-and-network.md) | Accounts and passwords, domain access, Cloudflare Access, Cognito sign-in, SSM-only access, origin lockdown, outbound and edge checks, load balancer hardening, the lab unavailable page |
+| [docs/smoke-tests/control-panel.md](smoke-tests/control-panel.md) | The full control panel config test, the API stack test, the Open WebUI admin action test, the auto-stop timer reset test |
+| [docs/smoke-tests/lab-features.md](smoke-tests/lab-features.md) | Grafana telemetry, the vulnerability findings MCP server |
+| [docs/troubleshooting.md](troubleshooting.md) | Likely failure points and their fixes |
 
 ## Which steps to run
 
@@ -35,33 +35,10 @@ Build the API stack before the lab; destroy the lab before the API stack.
 
 ## Step 0. New account or domain (first deploy only)
 
-Skip this on an environment that is already set up, such as the demo account: its example files
-already hold the right values. Do it once before the first deploy anywhere else, then continue with
-step 1.
-
-Replace these in `terraform.tfvars.example` (your fork's copy) rather than editing Terraform
-files:
-
-- `aws_region`
-- `open_webui_admin_password_secret_arn`, `open_webui_demo_user_password_secret_arn`
-- `domain_name`, `route53_zone_name`, `acm_certificate_arn`
-- `cloudflare_account_id`, `cloudflare_api_token_secret_arn`, `cloudflare_access_allowed_emails`
-- `instance_type`, `root_volume_size`, `llm_model`
-
-The certificate must be `ISSUED`, in the same region, and cover `domain_name` exactly. See
-[cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
-
-The API stack has its own example, `dashboards\api\terraform\terraform.tfvars.example`. Set
-these there too:
-
-- `lab_project_name`: the same value as the root `project_name`. The API publishes its settings
-  under it, and the lab looks for them under `project_name`; a mismatch leaves the lab without
-  the API (the `control_panel_api_settings_found` warning).
-- `panel_origin`: the control panel's own address (the root `control_panel_url`).
-- `bootstrap_admins`: the email addresses that get the panel's admin screens.
-
-Commit both examples. Every later run copies them over the working settings (step 1), so this is not
-repeated.
+Skip this on an environment that is already set up, such as the demo account. Before the first
+deploy anywhere else, complete [pre-deployment.md](pre-deployment.md): the tools, AWS account,
+secrets, domain, certificate, Cloudflare, Grafana Cloud, control panel hosting and the two settings
+files that Terraform needs but does not create. Then continue with step 1.
 
 ## Step 1. Prepare (every new PowerShell window)
 
@@ -257,7 +234,7 @@ Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-out=ai-lab.tfplan")
 - **After step 2 created or rebuilt the API stack**, expect
   `terraform_data.control_panel_authorizer["authorizer"]` **must be replaced**, and the `config.js`
   object updated with the new address. That points the API's sign-in at this lab. If it is
-  missing, see [Troubleshooting](docs/troubleshooting.md).
+  missing, see [Troubleshooting](troubleshooting.md).
 - `aws_instance.ai_lab` **must be replaced** when the bootstrap or a script it embeds changed.
   Chats and pulled models on the instance are lost.
 - On a normal rebuild with nothing changed, the plan matches what the last apply created.
@@ -333,8 +310,32 @@ Every deploy. Each takes a minute or two.
 3. **The site is reachable.** Open ==[https://aiwebdemo.click]== in a private window. With Cloudflare
    Access on, you land on the Cognito sign-in page, not Open WebUI. Sign in as a demo user and send
    a chat message; the reply streams in. Accounts and passwords:
-   [access-and-network.md](docs/smoke-tests/access-and-network.md#accounts-and-passwords).
-   Without domain access, use the [SSM-only test](docs/smoke-tests/access-and-network.md#ssm-only-test).
+   [access-and-network.md](smoke-tests/access-and-network.md#accounts-and-passwords).
+   Without domain access, use the [SSM-only test](smoke-tests/access-and-network.md#ssm-only-test).
+
+   **"This site can't be reached ... server IP address could not be found"** right after a rebuild
+   is DNS caching, not a fault: destroying the lab removed the record, and resolvers keep that
+   "no such name" answer for up to 30 minutes. The control panel still loads because its record is
+   never removed. Check that the record exists by asking Cloudflare's nameserver, which has no
+   cache:
+
+   ```powershell
+   Resolve-DnsName aiwebdemo.click -Server albert.ns.cloudflare.com
+   ```
+
+   - **Cloudflare addresses (`104.x` or `172.x`):** the record is fine. Clear your caches and retry:
+
+     ```powershell
+     Clear-DnsClientCache
+     Resolve-DnsName aiwebdemo.click -Server 1.1.1.1
+     ```
+
+     In Chrome, also open `chrome://net-internals/#dns` and choose **Clear host cache**. If your
+     router or ISP still has the old answer, wait up to 30 minutes, or set your PC's DNS to
+     `1.1.1.1`.
+   - **No answer:** the record was not created. In Cloudflare → DNS, look for a proxied CNAME
+     `aiwebdemo.click` pointing at the `open_webui_alb_dns_name` output, and check the apply output
+     for `cloudflare_dns_record.domain`.
 
 4. **The control panel is wired to this lab** (when `control_panel_url` is set):
 
@@ -350,7 +351,7 @@ Every deploy. Each takes a minute or two.
    - Open ==[https://cp.aiwebdemo.click]==, sign in, and the lab instance is listed.
 
    The full set of panel checks is in
-   [control-panel.md](docs/smoke-tests/control-panel.md#control-panel-config-test).
+   [control-panel.md](smoke-tests/control-panel.md#control-panel-config-test).
 
 ## Step 5. Test what changed
 
@@ -358,12 +359,12 @@ Run only the tests for what this deploy changed:
 
 | What changed | Tests |
 |---|---|
-| Domain, Cloudflare or network settings | [Domain access](docs/smoke-tests/access-and-network.md#domain-access-test), [Cloudflare Access](docs/smoke-tests/access-and-network.md#cloudflare-access-test), [Origin lockdown](docs/smoke-tests/access-and-network.md#origin-lockdown-test), [Edge protections](docs/smoke-tests/access-and-network.md#edge-protections-test), [Load balancer hardening](docs/smoke-tests/access-and-network.md#load-balancer-hardening-test), [Outbound restriction](docs/smoke-tests/access-and-network.md#outbound-restriction-test) |
-| Cognito or the accounts | [Cognito sign-in](docs/smoke-tests/access-and-network.md#cognito-sign-in-test), [Accounts and passwords](docs/smoke-tests/access-and-network.md#accounts-and-passwords) |
-| The control panel pages or its API | [Control panel config](docs/smoke-tests/control-panel.md#control-panel-config-test), [API stack](docs/smoke-tests/control-panel.md#control-panel-api-stack-test), [Open WebUI admin action](docs/smoke-tests/control-panel.md#open-webui-admin-action-test), [Lab unavailable page](docs/smoke-tests/access-and-network.md#lab-unavailable-page-test) |
-| Auto-stop or the timer reset | [Auto-stop timer reset](docs/smoke-tests/control-panel.md#auto-stop-timer-reset-test) |
-| Grafana telemetry | [Grafana telemetry](docs/smoke-tests/lab-features.md#grafana-telemetry-test) |
-| The vulnerability findings tool | [Vulnerability MCP server](docs/smoke-tests/lab-features.md#vulnerability-mcp-server-test), then the [acceptance tests](docs/vuln-mcp-acceptance-tests.md) |
+| Domain, Cloudflare or network settings | [Domain access](smoke-tests/access-and-network.md#domain-access-test), [Cloudflare Access](smoke-tests/access-and-network.md#cloudflare-access-test), [Origin lockdown](smoke-tests/access-and-network.md#origin-lockdown-test), [Edge protections](smoke-tests/access-and-network.md#edge-protections-test), [Load balancer hardening](smoke-tests/access-and-network.md#load-balancer-hardening-test), [Outbound restriction](smoke-tests/access-and-network.md#outbound-restriction-test) |
+| Cognito or the accounts | [Cognito sign-in](smoke-tests/access-and-network.md#cognito-sign-in-test), [Accounts and passwords](smoke-tests/access-and-network.md#accounts-and-passwords) |
+| The control panel pages or its API | [Control panel config](smoke-tests/control-panel.md#control-panel-config-test), [API stack](smoke-tests/control-panel.md#control-panel-api-stack-test), [Open WebUI admin action](smoke-tests/control-panel.md#open-webui-admin-action-test), [Lab unavailable page](smoke-tests/access-and-network.md#lab-unavailable-page-test) |
+| Auto-stop or the timer reset | [Auto-stop timer reset](smoke-tests/control-panel.md#auto-stop-timer-reset-test) |
+| Grafana telemetry | [Grafana telemetry](smoke-tests/lab-features.md#grafana-telemetry-test) |
+| The vulnerability findings tool | [Vulnerability MCP server](smoke-tests/lab-features.md#vulnerability-mcp-server-test), then the [acceptance tests](../vuln-mcp-acceptance-tests.md) |
 
 The test pages expect this window's `$env:AWS_PROFILE`, the wrapper, `Get-TfVar`, `$projectName`,
 `$domainName`, `$panelBucket` and `$env:instance_id` from steps 1 and 3.
@@ -414,4 +415,4 @@ deletion protection, so your users and grants survive. That is intended. To real
 their data is then gone for good. Rebuilding the API stack gives it new IDs, which the next lab
 apply picks up by itself (step 3).
 
-If something fails, see [Troubleshooting](docs/troubleshooting.md).
+If something fails, see [Troubleshooting](troubleshooting.md).

@@ -94,7 +94,7 @@ certificate. When cloning for another account, replace it or set it to `null`.
 
 When Cloudflare is enabled, `terraform plan`, `apply`, and `destroy` need the
 Cloudflare API token in `CLOUDFLARE_API_TOKEN`. Run them through the wrapper in
-[terraform-smoke-test-plan.md](terraform-smoke-test-plan.md) rather than plain
+[terraform-smoke-test-plan.md](docs/runbook/terraform-smoke-test-plan.md) rather than plain
 `terraform`, or they fail with `403 Missing X-Auth-Email header`.
 
 Set `enable_cognito = true` to use an Amazon Cognito user pool as the sign-in for
@@ -198,12 +198,10 @@ What to know:
 
 ## Prerequisites
 
-- Terraform installed
-- AWS CLI installed and configured
-- AWS Session Manager plugin installed
-- An AWS profile with permission to create EC2, IAM, security group, and EBS resources
-- A default VPC in the selected AWS region, or a Terraform change to use a custom VPC/subnet
-- For public access through Cloudflare: a Cloudflare account with the domain added and **Active**, the domain's nameservers set to Cloudflare at the registrar, an issued ACM certificate, and a scoped Cloudflare API token stored in Secrets Manager (see `cloudflare-and-domain-requirements.md`)
+Everything to set up before the first deploy (tools, AWS account, secrets, domain, certificate,
+Cloudflare, Grafana Cloud, control panel hosting and the settings files) is in
+[docs/runbook/pre-deployment.md](docs/runbook/pre-deployment.md). The deploy itself is
+[docs/runbook/terraform-smoke-test-plan.md](docs/runbook/terraform-smoke-test-plan.md).
 
 ## Secure Admin Password
 

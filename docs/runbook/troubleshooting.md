@@ -1,6 +1,6 @@
 # Troubleshooting a deploy
 
-Likely failure points when following [the deploy runbook](../terraform-smoke-test-plan.md), with
+Likely failure points when following [the deploy runbook](terraform-smoke-test-plan.md), with
 the fix for each. Commands are **Local Windows PowerShell**, in the runbook's window.
 
 ## Before or during plan
@@ -28,7 +28,7 @@ the fix for each. Commands are **Local Windows PowerShell**, in the runbook's wi
 - **Domain access fails:** it needs an issued ACM certificate in the selected region that covers
   `domain_name` exactly, plus either a public Route 53 hosted zone or, with Cloudflare, an
   **Active** Cloudflare zone. See
-  [cloudflare-and-domain-requirements.md](../cloudflare-and-domain-requirements.md).
+  [cloudflare-and-domain-requirements.md](../../cloudflare-and-domain-requirements.md).
 
 ## During apply or boot
 
@@ -64,5 +64,5 @@ the fix for each. Commands are **Local Windows PowerShell**, in the runbook's wi
   is.
 - **Local port 8080 is already occupied:** use local port 8081 for the tunnel (SSM-only test).
 - **The vulnerability findings tool is missing from Open WebUI:** see the "Two kinds of failure"
-  table in [vuln-mcp-acceptance-tests.md](vuln-mcp-acceptance-tests.md#two-kinds-of-failure), and
-  the troubleshooting table in [lambda/vuln_mcp/README.md](../lambda/vuln_mcp/README.md).
+  table in [vuln-mcp-acceptance-tests.md](../vuln-mcp-acceptance-tests.md#two-kinds-of-failure), and
+  the troubleshooting table in [lambda/vuln_mcp/README.md](../../lambda/vuln_mcp/README.md).

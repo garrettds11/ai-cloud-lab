@@ -12,7 +12,7 @@
   sign-in.
 
   Run it from the repository directory in the same PowerShell window where
-  AWS_PROFILE and AWS_DEFAULT_REGION are set (see terraform-smoke-test-plan.md).
+  AWS_PROFILE and AWS_DEFAULT_REGION are set (see docs/runbook/terraform-smoke-test-plan.md).
 
 .PARAMETER DemoPasswordSecretArn
   Secrets Manager ARN holding the demo-user password. Defaults to

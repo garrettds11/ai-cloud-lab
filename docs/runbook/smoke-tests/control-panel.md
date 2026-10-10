@@ -1,7 +1,7 @@
 # Smoke tests: control panel
 
 Tests for the control panel, its API stack and the auto-stop timer. Run the ones the change
-touched; [the deploy runbook](../../terraform-smoke-test-plan.md#step-5-test-what-changed) says which.
+touched; [the deploy runbook](../terraform-smoke-test-plan.md#step-5-test-what-changed) says which.
 
 **Before you start:** use the PowerShell window from the runbook, after its step 1 (profile,
 wrapper, `Get-TfVar`, `$projectName`, `$domainName`, `$panelBucket`) and step 3

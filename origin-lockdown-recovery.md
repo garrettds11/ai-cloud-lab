@@ -40,7 +40,7 @@ Then check the public site in a browser at your domain:
 | --- | --- |
 | Loads and shows the Cloudflare Access login | Healthy. |
 | 520, 521, 522 or 524 from Cloudflare | Cloudflare cannot reach the ALB. Go to scenario 2. |
-| Cloudflare Access error or login loop | Not a lockdown problem. See [Cloudflare Access test](docs/smoke-tests/access-and-network.md#cloudflare-access-test). |
+| Cloudflare Access error or login loop | Not a lockdown problem. See [Cloudflare Access test](docs/runbook/smoke-tests/access-and-network.md#cloudflare-access-test). |
 
 ## Scenario 1: Get into Open WebUI right now, without touching Terraform
 
@@ -92,7 +92,7 @@ turned on before the site worked through Cloudflare.
    ```
 
 4. Reload the public site. If it still fails, use scenario 1 to confirm Open WebUI itself
-   is healthy, then check [Domain-access test](docs/smoke-tests/access-and-network.md#domain-access-test).
+   is healthy, then check [Domain-access test](docs/runbook/smoke-tests/access-and-network.md#domain-access-test).
 
 ## Scenario 3: You need to reach the ALB directly for a short time
 

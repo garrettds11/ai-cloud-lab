@@ -33,7 +33,7 @@ There are two Terraform stacks, each with its own state:
 
 Build the API stack before the lab; destroy the lab before the API stack.
 
-## 0. New account or domain (first deploy only)
+## Step 0. New account or domain (first deploy only)
 
 Skip this on an environment that is already set up, such as the demo account: its example files
 already hold the right values. Do it once before the first deploy anywhere else, then continue with
@@ -63,7 +63,7 @@ these there too:
 Commit both examples. Every later run copies them over the working settings (step 1), so this is not
 repeated.
 
-## 1. Prepare (every new PowerShell window)
+## Step 1. Prepare (every new PowerShell window)
 
 1. Get the latest code:
 
@@ -185,13 +185,13 @@ repeated.
    $panelDistribution = Get-TfVar control_panel_distribution_id
    ```
 
-## 2. Control panel API stack
+## Step 2. Control panel API stack
 
-> SKIP THIS SECTION IF THE API STACK IS ALREADY DEPLOYED AND WAS NEVER DESTROYED UNLESS: 
+> SKIP THIS SECTION IF THE API STACK ALREADY EXISTS **UNCHANGED**--SKIP TO STEP 3.
 >
+> Do NOT SKIP this section if:
 > - **There is a code change:** the functions update in place.
->
-> Only run this step when files in `dashboards\api` change, on the first build, or after the stack is destroyed.
+> - Only run this step when files in `dashboards\api` change, on the first build, or after the stack is destroyed.
 
 On a new account or domain, `lab_project_name`, `panel_origin` and `bootstrap_admins` in this stack's example must be set first ([step 0](#0-new-account-or-domain-first-deploy-only)).
 
@@ -236,7 +236,7 @@ The parameter command prints one line of JSON with `api_url`, `api_id`, `authori
 (`control_panel_api_from_ssm = true`), so nothing is copied. Do not set those six values in the
 root tfvars: a value set there wins over the parameter.
 
-## 3. Lab
+## Step 3. Lab
 
 From the repository root:
 
@@ -284,7 +284,7 @@ aws cloudfront create-invalidation --distribution-id $panelDistribution --paths 
 
 Reload the panel with Ctrl+F5 after about a minute.
 
-## 4. Check the deployment
+## Step 4. Check the deployment
 
 Every deploy. Each takes a minute or two.
 
@@ -345,7 +345,7 @@ Every deploy. Each takes a minute or two.
    The full set of panel checks is in
    [control-panel.md](docs/smoke-tests/control-panel.md#control-panel-config-test).
 
-## 5. Test what changed
+## Step 5. Test what changed
 
 Run only the tests for what this deploy changed:
 
@@ -361,7 +361,7 @@ Run only the tests for what this deploy changed:
 The test pages expect this window's `$env:AWS_PROFILE`, the wrapper, `Get-TfVar`, `$projectName`,
 `$domainName`, `$panelBucket` and `$env:instance_id` from steps 1 and 3.
 
-## 6. Stop or destroy
+## Step 6. Stop or destroy
 
 **Pause** (keeps everything, stops compute charges):
 

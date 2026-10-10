@@ -6,7 +6,7 @@ Tests for how people reach the lab and what the network allows. Run the ones the
 **Before you start:** use the PowerShell window from the runbook, after its step 1 (profile,
 wrapper, `Get-TfVar`, `$projectName`, `$domainName`) and step 3 (`$env:instance_id`). Commands are
 **Local Windows PowerShell** unless marked **Linux (SSM shell on the lab instance)**. Open that
-shell with `aws ssm start-session --target $env:instance_id`.
+shell with `aws ssm start-session --target $env:instance_id`. The SSM shell is a plain `sh` shell: paste **one command at a time**. Pasting several lines at once interleaves them (errors such as `er: not found`).
 
 ## Accounts and passwords
 

@@ -6,7 +6,7 @@ Tests for optional lab features. Run the one the change touched;
 **Before you start:** use the PowerShell window from the runbook, after its step 1 (profile and
 wrapper) and step 3 (`$env:instance_id`), from the repository root. Commands are
 **Local Windows PowerShell** unless marked **Linux (SSM shell on the lab instance)**. Open that
-shell with `aws ssm start-session --target $env:instance_id`.
+shell with `aws ssm start-session --target $env:instance_id`. The SSM shell is a plain `sh` shell: paste **one command at a time**. Pasting several lines at once interleaves them (errors such as `er: not found`).
 
 ## Grafana telemetry test
 
@@ -31,7 +31,7 @@ Confirm no secret appears in a log line, and that the instance still needs no in
 
 Skip this if `vuln_mcp_table_name` is not set. The findings table (`aiwebdemo-vuln-findings`, created by `create_vuln_table.py` in the `sec-data` repository) and the token secret are built by hand, so do the first step before deploying.
 
-**Once, before the first deploy with this feature:** create the token secret and put its **full** ARN (ending in a hyphen and six characters) in `vuln_mcp_token_secret_arn` in `terraform.tfvars.example`, then commit it:
+**Once, before the first deploy with this feature:** create the token secret and put its **full** ARN (ending in a hyphen and six characters) in `vuln_mcp_token_secret_arn` in `terraform.tfvars.example`, then commit it. Skip this when the secret already exists (`create-secret` then fails with `ResourceExistsException`, which is harmless):
 
 ```powershell
 $bytes = New-Object byte[] 32
@@ -42,9 +42,14 @@ $token = [Convert]::ToBase64String($bytes)
 aws secretsmanager create-secret --name vuln-mcp-token-aiwebdemo --secret-string $token --region us-east-1 --query ARN --output text
 ```
 
-After apply, call the function with the token (the `$token` variable above, if it is still set in this window) and without it:
+After apply, load the token the server uses from the secret. Like the server, this accepts plain
+text or a one-key key/value secret, and prints nothing. Then call the function with the token and
+without it:
 
 ```powershell
+$raw = aws secretsmanager get-secret-value --secret-id (Get-TfVar vuln_mcp_token_secret_arn) --query SecretString --output text
+try { $parsed = $raw | ConvertFrom-Json -ErrorAction Stop } catch { $parsed = $null }
+$token = if ($parsed -and $parsed -isnot [string]) { [string]@($parsed.PSObject.Properties.Value)[0] } else { $raw.Trim() }
 $url = Invoke-TerraformWithCloudflareToken -Arguments @("output", "-raw", "vuln_mcp_url")   # local Windows PowerShell
 $body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json' -Headers @{ Authorization = "Bearer $token" } -Body $body | ConvertTo-Json -Depth 5

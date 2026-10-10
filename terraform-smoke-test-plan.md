@@ -82,6 +82,15 @@ Build the API stack before the lab; destroy the lab before the API stack.
 
    The certificate must be `ISSUED`, in the same region, and cover `domain_name` exactly. See
    [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
+
+   The API stack has its own example, `dashboards\api\terraform\terraform.tfvars.example`. Set
+   these there too:
+
+   - `lab_project_name`: the same value as the root `project_name`. The API publishes its settings
+     under it, and the lab looks for them under `project_name`; a mismatch leaves the lab without
+     the API (the `control_panel_api_settings_found` warning).
+   - `panel_origin`: the control panel's own address (the root `control_panel_url`).
+   - `bootstrap_admins`: the email addresses that get the panel's admin screens.
    </details>
 
 4. Load the wrapper. It reads the Cloudflare token from Secrets Manager for each Terraform command
@@ -173,6 +182,8 @@ Build the API stack before the lab; destroy the lab before the API stack.
 ## 2. Control panel API stack
 
 Only when files in `dashboards\api` changed, on the first build, or after the stack was destroyed.
+On another account, first set `lab_project_name`, `panel_origin` and `bootstrap_admins` in this
+stack's example (step 1, "Deploying to another account or domain").
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform

@@ -94,7 +94,7 @@ certificate. When cloning for another account, replace it or set it to `null`.
 
 When Cloudflare is enabled, `terraform plan`, `apply`, and `destroy` need the
 Cloudflare API token in `CLOUDFLARE_API_TOKEN`. Run them through the wrapper in
-[terraform-smoke-test-plan.md](terraform-smoke-test-plan.md) rather than plain
+[terraform-smoke-test-plan.md](docs/runbook/terraform-smoke-test-plan.md) rather than plain
 `terraform`, or they fail with `403 Missing X-Auth-Email header`.
 
 Set `enable_cognito = true` to use an Amazon Cognito user pool as the sign-in for
@@ -114,7 +114,7 @@ access is enabled, use `https://<domain_name>` instead of SSM port forwarding.
 
 ## Optional Control Panel
 
-A separate web app (`dashboards/`, at `https://cp.aiwebdemo.click`) lets customers start the instances they have been granted and open the service once it is ready. Administrators manage roles and grants on its User management page. It is built by hand and does not depend on the lab being deployed. See [dashboards/README.md](dashboards/README.md), [dashboards/SETUP.md](dashboards/SETUP.md) and [dashboards/api/README.md](dashboards/api/README.md). The panel's requirements are in "Optional: control panel" in [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
+A separate web app (`dashboards/`, at `https://cp.aiwebdemo.click`) lets customers start the instances they have been granted and open the service once it is ready. Administrators manage roles and grants on its User management page. It is built by hand and does not depend on the lab being deployed. See [dashboards/README.md](dashboards/README.md), [SETUP.md](SETUP.md) and [dashboards/api/README.md](dashboards/api/README.md). The panel's requirements are in "Optional: control panel" in [cloudflare-and-domain-requirements.md](cloudflare-and-domain-requirements.md).
 
 ## Cost Guardrail: Auto-Stop
 
@@ -154,11 +154,29 @@ an hour) and stops the instance a few minutes after it if the monitor has not.
 
 What to know:
 
-- **The hard time limit counts from boot** and includes first-boot setup. At the
-  limit the instance stops even if people are still chatting, so a demo lab is never
-  left running after the event. Start it again to continue; it gets a fresh limit.
+- **The hard time limit counts from boot** (or from the last timer reset, below) and
+  includes first-boot setup. At the limit the instance stops even if people are still
+  chatting, so a demo lab is never left running after the event. Start it again to
+  continue; it gets a fresh limit.
   For production, set `auto_stop_max_uptime_minutes = 0` so active users are never
   stopped, and use the idle shutdown instead.
+- **Reset timer button.** When a hard limit is set, the control panel shows a reset
+  icon between Start and Access on a running lab. Pressing it (after a confirmation)
+  gives the lab another full `auto_stop_max_uptime_minutes` from that moment, without
+  stopping or restarting the instance and without touching the idle timer. The panel
+  logs the reset under the person who pressed it and shows "Timer reset at ..." under
+  the status. It writes the time (epoch seconds) to the SSM parameter
+  `/<project_name>/auto-stop/reset-at`. Both the on-instance monitor and the watchdog
+  count the limit from `max(boot or launch time, last reset)`, so a reset left over
+  from an earlier run is ignored after the next start. Terraform creates that parameter
+  but never overwrites its value, so a normal `terraform apply` does not undo a reset.
+  If the monitor cannot read it, it skips the hard limit for that minute and the
+  watchdog, which falls back to the launch time, enforces the original deadline.
+  The reset is one value for the whole lab, so the panel refuses it if the lab has more
+  than one managed instance. Anyone who may start the instance may reset it, with no cap on how often, so
+  `auto_stop_max_uptime_minutes` is a limit per reset, not an absolute ceiling. Setting
+  it up on an existing panel takes a few hand-built steps; see
+  `dashboards/api/README.md`.
 - With both settings at `0` auto-stop is off: nothing stops the instance, and the
   watchdog, SNS topic and alert email are not needed.
 - The idle monitor publishes `ActiveUsers`, `IdleMinutes`, `UptimeMinutes` and
@@ -180,12 +198,10 @@ What to know:
 
 ## Prerequisites
 
-- Terraform installed
-- AWS CLI installed and configured
-- AWS Session Manager plugin installed
-- An AWS profile with permission to create EC2, IAM, security group, and EBS resources
-- A default VPC in the selected AWS region, or a Terraform change to use a custom VPC/subnet
-- For public access through Cloudflare: a Cloudflare account with the domain added and **Active**, the domain's nameservers set to Cloudflare at the registrar, an issued ACM certificate, and a scoped Cloudflare API token stored in Secrets Manager (see `cloudflare-and-domain-requirements.md`)
+Everything to set up before the first deploy (tools, AWS account, secrets, domain, certificate,
+Cloudflare, Grafana Cloud, control panel hosting and the settings files) is in
+[docs/runbook/pre-deployment.md](docs/runbook/pre-deployment.md). The deploy itself is
+[docs/runbook/terraform-smoke-test-plan.md](docs/runbook/terraform-smoke-test-plan.md).
 
 ## Secure Admin Password
 
@@ -439,6 +455,44 @@ ollama list
 ```
 
 This lab runs Open WebUI with host networking so the Docker container can reach the localhost-bound Ollama service at `http://127.0.0.1:11434`. Do not change Ollama to `0.0.0.0` unless you also understand the exposure risk and add compensating controls.
+
+## Terraform State
+
+By default Terraform keeps state in a local `terraform.tfstate` file. That file holds sensitive values (for example the admin password), is not encrypted or locked, and is easy to lose. It is git-ignored, but for anything beyond a throwaway lab, use an encrypted, versioned S3 backend. This is optional and changes nothing about the lab itself.
+
+`backend.tf.example` has the backend block. S3-native locking (`use_lockfile`) needs Terraform 1.10 or newer; on older versions use a DynamoDB lock table instead.
+
+One-time bucket setup, in Local Windows PowerShell. The bucket name must be globally unique. Do this once, outside Terraform, so the state bucket is not destroyed with the lab:
+
+```powershell
+$Bucket  = "<your-unique-state-bucket-name>"
+$Region  = "us-east-1"
+$Profile = "<your-profile>"
+
+# In us-east-1 do not pass a location constraint; in other regions add:
+#   --create-bucket-configuration LocationConstraint=$Region
+aws s3api create-bucket --bucket $Bucket --region $Region --profile $Profile
+
+aws s3api put-public-access-block --bucket $Bucket --profile $Profile `
+  --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+aws s3api put-bucket-versioning --bucket $Bucket --profile $Profile `
+  --versioning-configuration Status=Enabled
+```
+
+S3 encrypts every new object with SSE-S3 by default, and `encrypt = true` in the backend block requests it explicitly. To use your own KMS key instead, add `kms_key_id` to the backend block.
+
+Then switch to the backend:
+
+```powershell
+Copy-Item backend.tf.example backend.tf
+# Edit backend.tf: bucket, region and profile.
+terraform init -migrate-state
+```
+
+Terraform asks to copy the existing local state to S3; answer `yes`. Afterwards, keep the old local `terraform.tfstate` somewhere safe until you have run `terraform plan` once and seen no unexpected changes, then delete it (it contains secrets). Your IAM user or role needs `s3:ListBucket` on the bucket and `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on the state key (the lock file is `<key>.tflock`).
+
+Versioning lets you recover an earlier state file if one is damaged or overwritten.
 
 ## Stop Or Destroy
 

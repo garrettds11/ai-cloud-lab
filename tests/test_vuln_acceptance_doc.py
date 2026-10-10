@@ -142,7 +142,7 @@ class AcceptanceDocTest(unittest.TestCase):
     def test_document_marks_every_live_test_as_pending_and_forbids_answer_only_passes(self):
         text = DOC.read_text(encoding="utf-8")
         sections = [x for x in re.split(r"^### ", text, flags=re.M)[1:] if re.match(r"[SQBA]\d+\.", x)]
-        self.assertEqual(len(sections), 14)
+        self.assertEqual(len(sections), 15)
         for section in sections:
             title = section.splitlines()[0]
             self.assertIn("PENDING MANUAL EXECUTION", section, f"{title} is not marked pending")

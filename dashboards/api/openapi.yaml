@@ -1,0 +1,1083 @@
+openapi: 3.1.0
+
+info:
+  title: AI Cloud Lab Control API
+  version: 1.0.0
+  summary: The API behind the AI Cloud Lab control panel.
+  description: |
+    Starts a lab instance, resets its auto-stop timer, and manages who may do either.
+
+    This file describes what `handler.py` does today; `tests/test_openapi.py` fails if a route is
+    added to or removed from one and not the other. Human-readable rules, IAM policies and setup
+    steps are in `README.md` and `../../SETUP.md`.
+
+    **Two Lambda functions, one API.** API Gateway sends `/admin/*` to the admin function and every
+    other route to the customer function. Each answers only its own routes (the other returns 404),
+    and each has its own IAM role. The `x-lambda` field on every operation says which one.
+
+    **Roles are not in the token.** The JWT only proves who the caller is (a verified email). Roles
+    (`operators`, `user_mgrs`, `admin`) are read from the panel's own `panel_users` table on every
+    call, so removing a role takes effect at once. The `x-required-roles` field on every operation
+    lists which roles may call it.
+
+    **Nobody can stop an instance through this API.** There is no stop route. Auto-stop is done by
+    the instance and by a watchdog, not by the panel.
+
+    Times are milliseconds since the epoch unless a field says otherwise.
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com
+    description: API Gateway HTTP API, `$default` stage
+    variables:
+      apiId:
+        default: 65j334bc19
+        description: The HTTP API's id.
+      region:
+        default: us-east-1
+
+security:
+  - cognitoJwt: []
+
+tags:
+  - name: Session
+    description: Signing in to the panel.
+  - name: Instances
+    description: Seeing, starting, and extending the lab.
+  - name: Activity
+    description: The caller's own sign-ins and log lines.
+  - name: Admin
+    description: Users, grants, roles, and everyone's activity. Served by the admin function.
+
+paths:
+  /session:
+    post:
+      tags: [Session]
+      operationId: recordSession
+      summary: Record this sign-in
+      description: |
+        Called once when the page loads after sign-in. Adds the caller to `panel_users` the first
+        time (with no roles) and records one sign-in per token. Calling it again with the same token
+        records nothing new.
+      x-lambda: customer
+      x-required-roles: [any signed-in user]
+      responses:
+        "200":
+          description: The caller, with their current roles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /instances:
+    get:
+      tags: [Instances]
+      operationId: listInstances
+      summary: List the instances the caller may use
+      description: |
+        Returns the managed instances the caller holds an active grant for. An administrator gets
+        every managed instance without needing grants. A caller who is not an operator or
+        administrator gets an empty list.
+      x-lambda: customer
+      x-required-roles: [any signed-in user]
+      responses:
+        "200":
+          description: Zero or more instances.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Instance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /instances/{instanceId}/start:
+    post:
+      tags: [Instances]
+      operationId: startInstance
+      summary: Start a stopped instance
+      description: |
+        Starts the instance. Only a stopped instance can be started. Writes one log line for the
+        caller. Does nothing else; there is no stop route.
+      x-lambda: customer
+      x-required-roles: [operators, admin]
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "200":
+          description: The start was requested. The instance is `pending` shortly afterwards.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The instance is not stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          description: AWS has no capacity for this instance type right now, or a dependency could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /instances/{instanceId}/reset-timer:
+    post:
+      tags: [Instances]
+      operationId: resetAutoStopTimer
+      summary: Give the running lab another full hard-limit period
+      description: |
+        Restarts the hard uptime countdown from now, like putting another quarter in the machine.
+        Records the time in one SSM parameter (`<auto-stop parameter>/reset-at`), which the
+        instance's idle monitor and the watchdog both read. Writes one log line for the caller.
+        Does not start, stop or restart anything, and does not touch the idle timer.
+
+        The reset time is one value for the whole lab, so the call is refused (409) unless the lab
+        has exactly one managed instance. There is no cap on how often it can be called, so
+        `auto_stop_max_uptime_minutes` limits one reset, not total uptime.
+      x-lambda: customer
+      x-required-roles: [operators, admin]
+      parameters:
+        - $ref: "#/components/parameters/InstanceId"
+      responses:
+        "200":
+          description: The timer was reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResetResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            The instance is not running, no hard time limit is set, or the lab has more than one
+            managed instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          description: The reset parameter is not configured on this panel, or a dependency could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /logins:
+    get:
+      tags: [Activity]
+      operationId: listMyLogins
+      summary: The caller's last 10 panel sign-ins
+      x-lambda: customer
+      x-required-roles: [any signed-in user]
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items:
+                  $ref: "#/components/schemas/Login"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /logs:
+    get:
+      tags: [Activity]
+      operationId: listMyLogs
+      summary: The caller's own log lines
+      description: |
+        The caller's control-panel log lines, plus EC2 start and stop activity (from CloudTrail,
+        without user names) for the instances they may use. At most 200 lines, newest first.
+      x-lambda: customer
+      x-required-roles: [any signed-in user]
+      parameters:
+        - $ref: "#/components/parameters/LogSource"
+        - $ref: "#/components/parameters/LogSeverity"
+        - $ref: "#/components/parameters/WindowMinutes"
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 200
+                items:
+                  $ref: "#/components/schemas/LogLine"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: listUsers
+      summary: Every person in the panel
+      x-lambda: admin
+      x-required-roles: [user_mgrs, admin]
+      responses:
+        "200":
+          description: Sorted by name. Includes people named in `BOOTSTRAP_ADMINS` even if they have never signed in.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PanelUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/instances:
+    get:
+      tags: [Admin]
+      operationId: listManagedInstances
+      summary: The instances the panel manages
+      x-lambda: admin
+      x-required-roles: [user_mgrs, admin]
+      responses:
+        "200":
+          description: Only id, name and type. No state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManagedInstance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/users/{userId}/grants:
+    get:
+      tags: [Admin]
+      operationId: getUserGrants
+      summary: The instances a person currently holds
+      x-lambda: admin
+      x-required-roles: [user_mgrs, admin]
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Instance ids with an applied grant. Revoked grants are not listed.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                  examples: [i-0abc123def4567890]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/changes:
+    get:
+      tags: [Admin]
+      operationId: listAccessChanges
+      summary: The last 12 access changes
+      x-lambda: admin
+      x-required-roles: [user_mgrs, admin]
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 12
+                items:
+                  $ref: "#/components/schemas/Change"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/logins:
+    get:
+      tags: [Admin]
+      operationId: listAllLogins
+      summary: Everyone's last 200 panel sign-ins
+      x-lambda: admin
+      x-required-roles: [admin]
+      responses:
+        "200":
+          description: Newest first, with the person's name.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 200
+                items:
+                  $ref: "#/components/schemas/AdminLogin"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/logs:
+    get:
+      tags: [Admin]
+      operationId: listAllLogs
+      summary: Everyone's log lines
+      description: |
+        Every person's control-panel log lines, plus EC2 start and stop activity for every managed
+        instance. At most 200 lines, newest first.
+      x-lambda: admin
+      x-required-roles: [admin]
+      parameters:
+        - $ref: "#/components/parameters/LogSource"
+        - $ref: "#/components/parameters/LogSeverity"
+        - $ref: "#/components/parameters/WindowMinutes"
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 200
+                items:
+                  $ref: "#/components/schemas/AdminLogLine"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/users/{userId}:
+    put:
+      tags: [Admin]
+      operationId: saveUser
+      summary: Change a person's roles and instance grants
+      description: |
+        Role changes are applied first, then grants, so one save can make someone an operator and
+        grant them an instance. Everything is validated before anything is written. Writes
+        `panel_users`, `instance_entitlements` and the change history only; it never changes IAM,
+        tags, Cognito or instances.
+
+        Rules: only an administrator may send role changes (a user manager who tries gets 403).
+        Nobody can remove their own `admin` role, and a `BOOTSTRAP_ADMINS` address cannot be
+        demoted. Removing `operators` revokes all of the person's grants. A person who is not an
+        operator cannot be granted an instance. Revoking something never granted writes no row.
+
+        Role changes that are already in effect are skipped and not counted. Every grant or revoke in
+        the request is processed and counted, even a repeat: a repeated grant is rewritten with a new
+        `grantedAt` and a new history line.
+      x-lambda: admin
+      x-required-roles: [user_mgrs, admin]
+      x-required-roles-note: Sending a non-empty `roles` list needs `admin`.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveUserRequest"
+            examples:
+              makeOperatorAndGrant:
+                summary: Make someone an operator and grant them an instance
+                value:
+                  roles: [{role: operators, member: true}]
+                  grants: [{instanceId: i-0abc123def4567890, grant: true}]
+      responses:
+        "200":
+          description: How many changes were applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveUserResult"
+        "400":
+          description: The body is not a JSON object, or a role is not one of the three known roles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The person or an instance in the request does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            The change breaks a rule: removing your own administrator role, demoting a settings
+            administrator, or granting an instance to someone who is not an operator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/webui/actions:
+    post:
+      tags: [Admin]
+      operationId: startWebuiAction
+      summary: Run one named Open WebUI admin action on the lab instance
+      description: |
+        Asks Systems Manager to run the panel's own document on the managed instance. The document
+        accepts only the action names listed here; it runs on the instance, reads nothing secret
+        for these actions, and prints one JSON result. Neither this API nor the browser ever talks
+        to Open WebUI or holds an Open WebUI credential.
+
+        The action runs asynchronously: poll `GET /admin/webui/actions/{commandId}` for the
+        result. Each request is recorded with who asked, and as a log line for that person.
+      x-lambda: admin
+      x-required-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebuiActionRequest"
+      responses:
+        "200":
+          description: The action was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebuiActionStarted"
+        "400":
+          description: Unknown action.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The instance is not running, or not yet connected to Systems Manager.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          description: The panel has no Open WebUI document configured, or a dependency could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/webui/actions/{commandId}:
+    get:
+      tags: [Admin]
+      operationId: getWebuiAction
+      summary: The status and result of an Open WebUI admin action
+      description: |
+        Only actions this panel started are shown, and only when Systems Manager reports that they
+        ran the panel's document. `result` is the action's JSON output once it has finished. The
+        first time a finished action is read, its outcome is recorded and logged.
+      x-lambda: admin
+      x-required-roles: [admin]
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          description: The ID returned when the action was started.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The action's state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebuiAction"
+        "400":
+          description: The ID is not a command ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No action with this ID was started by the panel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+components:
+  securitySchemes:
+    cognitoJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        The **ID token** (not the access token) from the lab's Cognito pool, because it carries the
+        name and verified email. API Gateway's JWT authorizer checks the issuer and audience and
+        answers 401 itself for a missing, expired or foreign token. The function then needs the
+        `email` claim, and refuses (401) an address the provider has not verified.
+
+  parameters:
+    InstanceId:
+      name: instanceId
+      in: path
+      required: true
+      description: An EC2 instance id the lab manages.
+      schema:
+        type: string
+        pattern: "^i-[0-9a-f]+$"
+        examples: [i-0abc123def4567890]
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: The person's email address. Matched case-insensitively.
+      schema:
+        type: string
+        format: email
+    LogSource:
+      name: source
+      in: query
+      description: Only lines from this source.
+      schema:
+        type: string
+        enum: [all, Control panel, EC2]
+        default: all
+    LogSeverity:
+      name: severity
+      in: query
+      description: Only lines of this severity.
+      schema:
+        type: string
+        enum: [all, info, warning, error]
+        default: all
+    WindowMinutes:
+      name: windowMinutes
+      in: query
+      description: How far back to look. Values outside the range are clamped, and a non-number means 60.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1440
+        default: 60
+
+  responses:
+    Unauthorized:
+      description: |
+        No valid token (answered by API Gateway with `{"message": "Unauthorized"}`), or the token has
+        no verified email address.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: The caller lacks the role or the grant the route needs.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such instance, or the route belongs to the other function.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UpstreamFailed:
+      description: AWS could not do what was asked. Safe to try again.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unavailable:
+      description: |
+        The panel could not read what it needs (the users table, or which instances the lab
+        provides), so it refuses rather than guess. Safe to try again shortly.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      description: Never includes internal detail.
+      required: [message]
+      properties:
+        message:
+          type: string
+          examples: [You do not have permission to do that.]
+
+    Role:
+      type: string
+      enum: [operators, user_mgrs, admin]
+      description: |
+        `operators` may start and reset instances they hold a grant for. `user_mgrs` may change
+        grants. `admin` holds every right and is the only role that changes roles.
+
+    Session:
+      type: object
+      required: [userId, name, email, roles, signedInAt]
+      properties:
+        userId:
+          type: string
+          description: The caller's email address.
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        signedInAt:
+          type: integer
+          format: int64
+          description: When this token was issued.
+
+    Instance:
+      type: object
+      required: [id, name, type, region, url, phase, message, launchedAt, checks, rule, autoStop]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: The instance's `Name` tag, or its id if untagged.
+        type:
+          type: string
+          examples: [c7i.4xlarge]
+        region:
+          type: string
+        url:
+          type: string
+          description: Where the Access button goes. Empty when the lab has no domain access.
+        phase:
+          type: string
+          enum: [stopped, pending, initializing, ready, stopping]
+          description: |
+            `ready` needs both EC2 status checks `ok` and the load balancer target `healthy` (or only
+            the status checks when there is no target group).
+        message:
+          type: [string, "null"]
+          description: Reserved. Always null today.
+        launchedAt:
+          type: [integer, "null"]
+          format: int64
+          description: Null while stopped.
+        checks:
+          type: object
+          required: [ec2, http]
+          properties:
+            ec2:
+              type: boolean
+            http:
+              type: boolean
+        rule:
+          type: object
+          description: The lab's auto-stop setting, shared by every instance.
+          required: [enabled, idleMinutes, maxUptimeMinutes]
+          properties:
+            enabled:
+              type: boolean
+            idleMinutes:
+              type: integer
+              minimum: 0
+              description: Idle shutdown. 0 means off.
+            maxUptimeMinutes:
+              type: integer
+              minimum: 0
+              description: Hard limit. 0 means off.
+        autoStop:
+          oneOf:
+            - $ref: "#/components/schemas/AutoStop"
+            - type: "null"
+          description: Present while the instance is running or stopping.
+
+    AutoStop:
+      type: object
+      required: [enabled, idleLimitMinutes, maxUptimeMinutes, launchedAt, resetAt, setupDone, idleMinutes, activeUsers, heartbeatAgeMinutes]
+      properties:
+        enabled:
+          type: boolean
+          description: True when auto-stop is on and at least one of the two limits is above 0.
+        idleLimitMinutes:
+          type: integer
+          minimum: 0
+        maxUptimeMinutes:
+          type: integer
+          minimum: 0
+        launchedAt:
+          type: integer
+          format: int64
+        resetAt:
+          type: [integer, "null"]
+          format: int64
+          description: |
+            When the hard-limit timer was last reset during this run. Null if never, if the hard
+            limit is off, or if the only reset is from an earlier run. The hard stop is
+            `max(launchedAt, resetAt) + maxUptimeMinutes`.
+            A stored value that is not a plain number of at most 10 digits, or is more than 5
+            minutes in the future, is ignored here and by the lab.
+        setupDone:
+          type: boolean
+          description: False during the first 30 minutes until the idle monitor reports in; idle rules wait until then.
+        idleMinutes:
+          type: integer
+          minimum: 0
+        activeUsers:
+          type: integer
+          minimum: -1
+          description: -1 means unknown.
+        heartbeatAgeMinutes:
+          type: number
+          minimum: 0
+          description: Minutes since the idle monitor last reported. About 10 or more means it is silent.
+
+    StartResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          const: true
+
+    ResetResult:
+      type: object
+      required: [ok, resetAt, stopAt, maxUptimeMinutes, message]
+      properties:
+        ok:
+          const: true
+        resetAt:
+          type: integer
+          format: int64
+          description: The time recorded, in milliseconds.
+        stopAt:
+          type: integer
+          format: int64
+          description: When the hard limit will now stop the lab, in milliseconds. Idle shutdown can still stop it sooner.
+        maxUptimeMinutes:
+          type: integer
+          minimum: 1
+        message:
+          type: string
+          examples: [Auto-stop timer reset. The lab has another 240 minutes.]
+
+    Login:
+      type: object
+      required: [id, t, result, detail, ip, browser, current]
+      properties:
+        id:
+          type: string
+        t:
+          type: integer
+          format: int64
+        result:
+          type: string
+          examples: [success]
+        detail:
+          type: string
+        ip:
+          type: string
+        browser:
+          type: string
+          examples: [Chrome on Windows]
+        current:
+          type: boolean
+          description: True for the sign-in this token belongs to.
+
+    AdminLogin:
+      allOf:
+        - $ref: "#/components/schemas/Login"
+        - type: object
+          required: [userId, userName]
+          properties:
+            userId:
+              type: string
+            userName:
+              type: string
+
+    LogLine:
+      type: object
+      required: [id, t, source, severity, event, instanceId]
+      properties:
+        id:
+          type: string
+        t:
+          type: integer
+          format: int64
+        source:
+          type: string
+          enum: [Control panel, EC2]
+        severity:
+          type: string
+          enum: [info, warning, error]
+        event:
+          type: string
+          examples: [Start requested for ai-lab]
+        userId:
+          type: string
+          description: The person the line belongs to. Absent on EC2 activity, which carries no user names.
+        instanceId:
+          type: [string, "null"]
+
+    AdminLogLine:
+      allOf:
+        - $ref: "#/components/schemas/LogLine"
+        - type: object
+          properties:
+            userName:
+              type: string
+              description: Present on control-panel lines, absent on EC2 activity.
+
+    PanelUser:
+      type: object
+      required: [id, name, email, roles, source, lastSeenAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        source:
+          type: string
+          description: |
+            Where the row came from: `panel` (created when they first signed in), `settings` (a
+            `BOOTSTRAP_ADMINS` address with no row yet), or `lab` (seeded by Terraform, for example the
+            demo users). Treat unknown values as opaque text.
+        lastSeenAt:
+          type: [integer, "null"]
+          format: int64
+
+    ManagedInstance:
+      type: object
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+
+    Change:
+      type: object
+      required: [t, adminId, userId, instanceId, role, action, result]
+      properties:
+        t:
+          type: integer
+          format: int64
+        adminId:
+          type: string
+        userId:
+          type: string
+        instanceId:
+          type: [string, "null"]
+        role:
+          type: [string, "null"]
+          description: The role's display label, for example `Operator role`.
+        action:
+          type: string
+          enum: [Added, Removed, Granted, Revoked]
+        result:
+          type: string
+          examples: [Applied]
+
+    SaveUserRequest:
+      type: object
+      description: Either list may be omitted or empty.
+      properties:
+        roles:
+          type: array
+          items:
+            type: object
+            required: [role, member]
+            properties:
+              role:
+                $ref: "#/components/schemas/Role"
+              member:
+                type: boolean
+                description: True to add the role, false to remove it.
+        grants:
+          type: array
+          items:
+            type: object
+            required: [instanceId, grant]
+            properties:
+              instanceId:
+                type: string
+              grant:
+                type: boolean
+                description: True to grant, false to revoke.
+
+    SaveUserResult:
+      type: object
+      required: [applied]
+      properties:
+        applied:
+          type: integer
+          minimum: 0
+          description: |
+            Role changes actually made, plus every grant or revoke processed. A repeated grant or a
+            revoke of something never granted still counts as one.
+
+    WebuiActionName:
+      type: string
+      enum: [status]
+      description: |
+        `status`: Open WebUI health and version, compared with the version the lab pins. More
+        actions arrive with phases 1 and 2 of issue #55; each one is added to the SSM document,
+        the instance script and this list together.
+
+    WebuiActionRequest:
+      type: object
+      required: [action, instanceId]
+      properties:
+        action:
+          $ref: "#/components/schemas/WebuiActionName"
+        instanceId:
+          type: string
+          pattern: "^i-[0-9a-f]+$"
+
+    WebuiActionStarted:
+      type: object
+      required: [commandId, instanceId, action, status, requestedAt]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+        action:
+          $ref: "#/components/schemas/WebuiActionName"
+        status:
+          const: Pending
+        requestedAt:
+          type: integer
+          format: int64
+
+    WebuiAction:
+      type: object
+      required: [commandId, instanceId, action, requestedBy, requestedAt, status, result]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+        action:
+          $ref: "#/components/schemas/WebuiActionName"
+        requestedBy:
+          type: string
+          description: The administrator who started it.
+        requestedAt:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [Pending, InProgress, Delayed, Success, Failed, Cancelled, TimedOut, Cancelling, Expired]
+          description: |
+            Systems Manager's state for the command. A finished action is answered from the stored
+            result, so it stays readable after Systems Manager drops it (about 30 days). `Expired`
+            means Systems Manager no longer knows the command and its result was never read back.
+        result:
+          description: The action's JSON output once it has finished, or null.
+          oneOf:
+            - $ref: "#/components/schemas/WebuiStatusResult"
+            - type: "null"
+
+    WebuiStatusResult:
+      type: object
+      required: [ok, action]
+      description: Output of the `status` action, or an error from any action (`ok` false with `error`).
+      properties:
+        ok:
+          type: boolean
+        action:
+          type: string
+        error:
+          type: string
+        healthy:
+          type: boolean
+          description: Open WebUI's /health answered.
+        version:
+          type: [string, "null"]
+          description: The version Open WebUI reports.
+        expectedVersion:
+          type: [string, "null"]
+          description: The version the lab's image tag pins, or null when the tag is not a version.
+        versionMatches:
+          type: [boolean, "null"]
+          description: Null when either version is unknown.

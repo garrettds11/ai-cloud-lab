@@ -40,6 +40,14 @@ jobs:
       - name: Test
         run: terraform test
 
+      # The control panel API is its own stack (its own state), so it is validated separately.
+      - name: Control API stack - init, validate, test
+        working-directory: dashboards/api/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
   scripts:
     name: Shell scripts and Lambda
     runs-on: ubuntu-latest
@@ -75,12 +83,19 @@ jobs:
           pip install boto3 mcp==1.27.2
           python -m unittest discover -s tests -v
 
-  # Advisory for now: findings show in the log but do not fail the build.
-  # Review the first clean run, fix or suppress what is real, then remove continue-on-error.
+      - name: Control panel API tests (handler, OpenAPI spec)
+        working-directory: dashboards/api
+        run: |
+          pip install pytest pyyaml openapi-spec-validator
+          python -m pytest -q
+
+  # Blocking. Every checkov finding is either fixed or skipped inline, next to the resource,
+  # with the reason (search for "checkov:skip"). A new finding fails the build: fix it, or add
+  # a skip with a reason a reviewer can check. checkov is pinned so a release with new checks
+  # cannot turn the build red on its own; raise the pin deliberately.
   lint-and-scan:
-    name: tflint and checkov (advisory)
+    name: tflint and checkov
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
 
@@ -100,5 +115,5 @@ jobs:
       - name: checkov
         if: ${{ !cancelled() }}
         run: |
-          pip install checkov
+          pip install checkov==3.3.26
           checkov -d . --framework terraform --compact --quiet

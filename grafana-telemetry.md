@@ -11,46 +11,18 @@ The lab sends host metrics, logs and Open WebUI traces to Grafana Cloud through 
 
 Everything leaves the instance over HTTPS (outbound TCP 443, already allowed). No inbound port is opened.
 
-## What you need from Grafana Cloud
+## Set it up
 
-1. The **OTLP endpoint**, for example `https://otlp-gateway-prod-us-east-3.grafana.net/otlp`. It is not a secret.
-2. The **OTLP instance ID** (a number).
-3. An **access policy token** for your stack. The "Create an API token" dialog on the OTLP Endpoint page creates one from a predefined policy (`stack-<id>-otlp-write`). That policy carries more scopes than the lab uses (`metrics:write`, `logs:write` and `traces:write` are the ones it needs). Keep two things in mind: the token is a write credential for your Grafana stack, and the instance can read it, so treat it like the other secrets. Choose an expiry and note the date, because telemetry stops when the token expires.
-
-## Store the token in Secrets Manager
-
-The instance reads the token from a secret at boot, so it never appears in Terraform state, user-data, or the repository. The secret holds **only the token**, as plain text or as a one-key key/value secret. If you already created one (for example `grafana-api-token-aiwebdemo`), use its ARN.
-
-To create one in PowerShell, which prompts for the token without echoing it (use your own region and secret name):
-
-```powershell
-$sec   = Read-Host "Grafana token" -AsSecureString
-$token = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
-$file  = New-TemporaryFile
-[IO.File]::WriteAllText($file.FullName, $token)
-aws secretsmanager create-secret --name aiwebdemo/grafana-otlp --secret-string "file://$($file.FullName)" --region us-east-1 --query ARN --output text
-Remove-Item $file.FullName
-Remove-Variable token, sec
-```
-
-The OTLP **instance ID** is not secret, so it goes in `terraform.tfvars` instead.
-
-## Configure it
-
-In `terraform.tfvars`:
-
-```hcl
-enable_grafana_telemetry       = true
-grafana_otlp_endpoint          = "https://otlp-gateway-prod-us-east-3.grafana.net/otlp"
-grafana_otlp_instance_id       = "<your OTLP instance ID>"
-grafana_credentials_secret_arn = "<the secret's ARN>"
-```
-
-Because telemetry is on by default, `plan` fails with a clear message until those three values are set. Then run `plan` and `apply` as usual, through `Invoke-TerraformWithCloudflareToken`. The instance is replaced (about 3 minutes). The instance role gets read access to that one secret and nothing else is widened. To run without telemetry, set `enable_grafana_telemetry = false` instead.
+The endpoint, instance ID and access token, and the secret that holds the token, are set up before
+the first deploy: [pre-deployment.md, step 7](docs/runbook/pre-deployment.md#7-grafana-cloud). Because
+telemetry is on by default, `plan` fails with a clear message until `grafana_otlp_endpoint`,
+`grafana_otlp_instance_id` and `grafana_credentials_secret_arn` are set. Turning it on or off replaces
+the instance (about 3 minutes). The instance role gets read access to that one secret and nothing
+else is widened.
 
 ## Check that it works
 
-See "Grafana telemetry test" in the smoke test plan.
+See [Grafana telemetry test](docs/runbook/smoke-tests/lab-features.md#grafana-telemetry-test).
 
 ## Cost and data volume
 

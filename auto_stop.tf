@@ -7,6 +7,13 @@
 #   auto_stop_max_uptime_minutes: a hard time limit. The instance stops that many
 #   minutes after it boots even if people are using it, after an email warning.
 #
+# The hard limit counts from boot, or from the last timer reset if that is later. The
+# control panel's reset button writes the time to the SSM parameter below
+# (aws_ssm_parameter.auto_stop_reset). Terraform creates that parameter but never
+# overwrites its value, so a normal apply does not undo a reset. Both layers use
+# max(boot or launch time, reset time), so a reset left over from an earlier run is
+# ignored after the next start.
+#
 # Layer 1 runs on the instance (scripts/ai-lab-idle-check.sh, installed by cloud-init)
 # and does both. Layer 2 is this independent watchdog (lambda/auto_stop_watchdog.py),
 # run by EventBridge every few minutes. It enforces the hard limit a few minutes late if
@@ -16,6 +23,8 @@
 locals {
   auto_stop_check_minutes  = 5
   auto_stop_parameter_name = "/${var.project_name}/auto-stop"
+  # Runtime state, written by the control panel's reset button: epoch seconds, "0" = never.
+  auto_stop_reset_parameter_name = "${local.auto_stop_parameter_name}/reset-at"
 }
 
 check "auto_stop_alert_email" {
@@ -29,6 +38,7 @@ check "auto_stop_alert_email" {
 # user-data, means changing the toggle or the timeout updates in place and never
 # replaces the instance.
 resource "aws_ssm_parameter" "auto_stop" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
   name = local.auto_stop_parameter_name
   type = "String"
   value = jsonencode({
@@ -38,7 +48,22 @@ resource "aws_ssm_parameter" "auto_stop" {
   })
 }
 
-# Lets the agent read its settings and publish its idle state for the watchdog.
+# When the hard-limit timer was last reset from the control panel (epoch seconds). Only the
+# parameter's existence is managed here; its value is runtime state, so Terraform never
+# reverts it. "0" means never reset.
+resource "aws_ssm_parameter" "auto_stop_reset" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
+  name        = local.auto_stop_reset_parameter_name
+  description = "Epoch seconds of the last auto-stop timer reset from the control panel. Runtime state; Terraform does not overwrite it."
+  type        = "String"
+  value       = "0"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# Lets the agent read its settings and the last reset, and publish its idle state for the watchdog.
 resource "aws_iam_role_policy" "auto_stop_agent" {
   name = "${var.project_name}-auto-stop-agent"
   role = aws_iam_role.ssm.id
@@ -49,7 +74,7 @@ resource "aws_iam_role_policy" "auto_stop_agent" {
       {
         Effect   = "Allow"
         Action   = "ssm:GetParameter"
-        Resource = aws_ssm_parameter.auto_stop.arn
+        Resource = [aws_ssm_parameter.auto_stop.arn, aws_ssm_parameter.auto_stop_reset.arn]
       },
       {
         Effect    = "Allow"
@@ -65,6 +90,9 @@ resource "aws_sns_topic" "auto_stop" {
   for_each = local.auto_stop_resources
 
   name = "${var.project_name}-auto-stop-alerts"
+  # Encrypt stored messages with the AWS managed SNS key. The watchdog publishes with its own
+  # IAM role through the SNS API, which that key's policy allows; no key permissions are needed.
+  kms_master_key_id = "alias/aws/sns"
 }
 
 # Email subscriptions stay "pending" until the recipient clicks the confirmation link.
@@ -136,6 +164,11 @@ resource "aws_iam_role_policy" "auto_stop_watchdog" {
       },
       {
         Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = aws_ssm_parameter.auto_stop_reset.arn
+      },
+      {
+        Effect   = "Allow"
         Action   = "sns:Publish"
         Resource = aws_sns_topic.auto_stop[each.key].arn
       }
@@ -144,6 +177,8 @@ resource "aws_iam_role_policy" "auto_stop_watchdog" {
 }
 
 resource "aws_cloudwatch_log_group" "auto_stop_watchdog" {
+  #checkov:skip=CKV_AWS_338:Short retention is deliberate for a lab: the logs are operational and cost and privacy favour 14 days
+  #checkov:skip=CKV_AWS_158:Logs are encrypted at rest by CloudWatch; a customer managed key adds cost for no lab benefit
   for_each = local.auto_stop_resources
 
   name              = "/aws/lambda/${var.project_name}-auto-stop-watchdog"
@@ -151,6 +186,12 @@ resource "aws_cloudwatch_log_group" "auto_stop_watchdog" {
 }
 
 resource "aws_lambda_function" "auto_stop_watchdog" {
+  #checkov:skip=CKV_AWS_50:X-Ray adds cost and nothing for a five-minute scheduled check; results are logged as JSON
+  #checkov:skip=CKV_AWS_272:Code is built from this repository by Terraform; code signing adds a signing profile for no lab benefit
+  #checkov:skip=CKV_AWS_117:The watchdog calls only AWS APIs; putting it in a VPC would need NAT or endpoints for no gain
+  #checkov:skip=CKV_AWS_116:EventBridge retries failed runs and the next run is five minutes later; a failed run has nothing to replay
+  #checkov:skip=CKV_AWS_115:Reserved concurrency fails on new accounts whose concurrency quota is 10; EventBridge invokes it once per five minutes
+  #checkov:skip=CKV_AWS_173:Environment variables hold only names and ARNs, no secrets; Lambda encrypts them at rest with an AWS managed key
   for_each = local.auto_stop_resources
 
   function_name    = "${var.project_name}-auto-stop-watchdog"
@@ -169,6 +210,7 @@ resource "aws_lambda_function" "auto_stop_watchdog" {
       CHECK_MINUTES      = tostring(local.auto_stop_check_minutes)
       SNS_TOPIC_ARN      = aws_sns_topic.auto_stop[each.key].arn
       ALB_DIMENSION      = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
+      RESET_PARAMETER    = aws_ssm_parameter.auto_stop_reset.name
     }
   }
 

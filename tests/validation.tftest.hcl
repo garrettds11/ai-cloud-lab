@@ -12,7 +12,12 @@
 mock_provider "aws" {
   mock_data "aws_vpc" {
     defaults = {
-      id = "vpc-0123456789abcdef0"
+      id         = "vpc-0123456789abcdef0"
+      cidr_block = "172.31.0.0/16"
+      cidr_block_associations = [
+        { association_id = "vpc-cidr-assoc-0aaa", cidr_block = "172.31.0.0/16", state = "associated" },
+        { association_id = "vpc-cidr-assoc-0bbb", cidr_block = "100.64.0.0/16", state = "associated" },
+      ]
     }
   }
 
@@ -48,6 +53,18 @@ mock_provider "aws" {
 
   # Resources that other resources reference by ARN. The provider validates ARN
   # arguments, so the mock must return well-formed ARNs, not random strings.
+  mock_resource "aws_lb" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/test-alb/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/0123456789abcdef"
+    }
+  }
+
   mock_resource "aws_iam_role" {
     defaults = {
       arn = "arn:aws:iam::123456789012:role/test-role"
@@ -108,33 +125,41 @@ variables {
   auto_stop_alert_email                    = "test@example.com"
 
   # Everything that can change which resources exist, pinned to the plain defaults
-  enable_domain_access            = false
-  enable_cloudflare_access        = false
-  enable_alb_http_redirect        = false
-  enable_cognito                  = false
-  enable_origin_lockdown          = false
-  enable_ssh                      = false
-  open_webui_enable_local_login   = true
-  allowed_ssh_cidr                = null
-  ssh_key_name                    = null
-  extra_egress_cidrs              = []
-  enable_grafana_telemetry        = false
-  grafana_otlp_endpoint           = null
-  grafana_otlp_instance_id        = null
-  grafana_credentials_secret_arn  = null
-  origin_lockdown_extra_cidrs     = []
-  cloudflare_account_id           = null
-  cloudflare_api_token_secret_arn = null
-  cloudflare_access_team_domain   = null
-  control_panel_url               = null
-  cognito_domain_prefix           = null
-  cognito_extra_users             = []
-  root_volume_size                = 80
-  open_webui_host_port            = 8080
-  auto_stop_idle_minutes          = 60
-  auto_stop_max_uptime_minutes    = 0
-  vuln_mcp_table_name             = null
-  vuln_mcp_token_secret_arn       = null
+  enable_domain_access             = false
+  enable_cloudflare_access         = false
+  enable_alb_http_redirect         = false
+  enable_cognito                   = false
+  enable_origin_lockdown           = false
+  enable_ssh                       = false
+  open_webui_enable_local_login    = true
+  allowed_ssh_cidr                 = null
+  ssh_key_name                     = null
+  extra_egress_cidrs               = []
+  enable_grafana_telemetry         = false
+  grafana_otlp_endpoint            = null
+  grafana_otlp_instance_id         = null
+  grafana_credentials_secret_arn   = null
+  origin_lockdown_extra_cidrs      = []
+  cloudflare_account_id            = null
+  cloudflare_api_token_secret_arn  = null
+  cloudflare_access_team_domain    = null
+  control_panel_url                = null
+  control_panel_api_from_ssm       = false
+  control_panel_api_url            = null
+  control_panel_api_id             = null
+  control_panel_authorizer_id      = null
+  control_panel_holding_pool_id    = null
+  control_panel_users_table        = null
+  control_panel_entitlements_table = null
+  control_panel_bucket             = null
+  cognito_domain_prefix            = null
+  cognito_extra_users              = []
+  root_volume_size                 = 80
+  open_webui_host_port             = 8080
+  auto_stop_idle_minutes           = 60
+  auto_stop_max_uptime_minutes     = 0
+  vuln_mcp_table_name              = null
+  vuln_mcp_token_secret_arn        = null
 }
 
 run "baseline_plan_succeeds" {
@@ -186,6 +211,109 @@ run "fallback_enabled_with_cloudflare_and_panel_url" {
   assert {
     condition     = strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "export default {") && strcontains(cloudflare_workers_script.lab_unavailable_page["domain"].content, "fetch(request)")
     error_message = "The module Worker must export a fetch handler."
+  }
+}
+
+# ---- Control panel API settings from SSM ----
+# The API stack (dashboards/api/terraform) publishes /<project_name>/control-panel-api/settings.
+
+run "api_settings_are_not_read_unless_asked" {
+  command = plan
+
+  assert {
+    condition     = length(data.aws_ssm_parameters_by_path.control_panel_api) == 0 && length(data.aws_ssm_parameter.control_panel_api) == 0
+    error_message = "With control_panel_api_from_ssm = false the lab must not read the API's parameter."
+  }
+
+  assert {
+    condition     = alltrue([for v in values(local.panel_api) : v == null])
+    error_message = "Without the parameter or tfvars values, the lab must have no API settings."
+  }
+}
+
+run "api_settings_come_from_the_published_parameter" {
+  command = plan
+
+  variables {
+    project_name               = "aiwebdemo"
+    control_panel_api_from_ssm = true
+  }
+
+  override_data {
+    target = data.aws_ssm_parameters_by_path.control_panel_api
+    values = { names = ["/aiwebdemo/control-panel-api/settings"] }
+  }
+
+  override_data {
+    target = data.aws_ssm_parameter.control_panel_api
+    values = {
+      insecure_value = "{\"api_url\":\"https://abc123defg.execute-api.us-east-1.amazonaws.com/\",\"api_id\":\"abc123defg\",\"authorizer_id\":\"auth01\",\"holding_pool_id\":\"us-east-1_HOLDING01\",\"users_table\":\"panel_users\",\"entitlements_table\":\"instance_entitlements\"}"
+    }
+  }
+
+  assert {
+    condition = local.panel_api == {
+      url                = "https://abc123defg.execute-api.us-east-1.amazonaws.com/"
+      api_id             = "abc123defg"
+      authorizer_id      = "auth01"
+      holding_pool_id    = "us-east-1_HOLDING01"
+      users_table        = "panel_users"
+      entitlements_table = "instance_entitlements"
+    }
+    error_message = "All six API settings must come from the parameter when tfvars leaves them null."
+  }
+
+  assert {
+    condition     = length(aws_dynamodb_table_item.panel_demo_user) > 0
+    error_message = "The users table name from the parameter must seed the demo users."
+  }
+}
+
+run "api_settings_in_tfvars_win_over_the_parameter" {
+  command = plan
+
+  variables {
+    project_name               = "aiwebdemo"
+    control_panel_api_from_ssm = true
+    control_panel_api_url      = "https://override.example.com/"
+  }
+
+  override_data {
+    target = data.aws_ssm_parameters_by_path.control_panel_api
+    values = { names = ["/aiwebdemo/control-panel-api/settings"] }
+  }
+
+  override_data {
+    target = data.aws_ssm_parameter.control_panel_api
+    values = {
+      insecure_value = "{\"api_url\":\"https://abc123defg.execute-api.us-east-1.amazonaws.com/\",\"api_id\":\"abc123defg\",\"authorizer_id\":\"auth01\",\"holding_pool_id\":\"us-east-1_HOLDING01\",\"users_table\":\"panel_users\",\"entitlements_table\":\"instance_entitlements\"}"
+    }
+  }
+
+  assert {
+    condition     = local.panel_api.url == "https://override.example.com/" && local.panel_api.api_id == "abc123defg"
+    error_message = "A value set in tfvars must win; the rest must still come from the parameter."
+  }
+}
+
+run "missing_api_parameter_is_a_warning_not_a_failure" {
+  command = plan
+
+  variables {
+    project_name               = "aiwebdemo"
+    control_panel_api_from_ssm = true
+  }
+
+  override_data {
+    target = data.aws_ssm_parameters_by_path.control_panel_api
+    values = { names = [] }
+  }
+
+  expect_failures = [check.control_panel_api_settings_found]
+
+  assert {
+    condition     = length(data.aws_ssm_parameter.control_panel_api) == 0 && alltrue([for v in values(local.panel_api) : v == null])
+    error_message = "Without the parameter the lab must plan without API settings instead of failing."
   }
 }
 
@@ -338,6 +466,42 @@ run "local_login_off_requires_cognito" {
 
 # ---- Origin lockdown ----
 
+# The ALB answers only Cloudflare when locked down (on 443 and on the optional port 80
+# redirect), forwards only to Open WebUI inside the VPC, and offers TLS 1.2 or later.
+run "alb_is_locked_down_and_forwards_only_to_open_webui" {
+  command = apply
+
+  plan_options {
+    target = [aws_security_group.alb, aws_lb_listener.https, aws_lb_listener.http_redirect]
+  }
+
+  variables {
+    enable_domain_access          = true
+    enable_alb_http_redirect      = true
+    enable_origin_lockdown        = true
+    enable_cloudflare_access      = true
+    cloudflare_account_id         = "0123456789abcdef0123456789abcdef"
+    cloudflare_access_team_domain = "example.cloudflareaccess.com"
+    acm_certificate_arn           = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  }
+
+  assert {
+    condition     = alltrue([for rule in aws_security_group.alb["domain"].ingress : !contains(rule.cidr_blocks, "0.0.0.0/0")])
+    error_message = "With origin lockdown, neither port 443 nor the port 80 redirect may be open to the whole Internet."
+  }
+
+  assert {
+    condition = alltrue([for rule in aws_security_group.alb["domain"].egress :
+    rule.protocol == "tcp" && rule.from_port == 8080 && rule.to_port == 8080 && toset(rule.cidr_blocks) == toset(["172.31.0.0/16", "100.64.0.0/16"])])
+    error_message = "The ALB may only send traffic to Open WebUI's port, to every IPv4 range of the VPC and nothing else."
+  }
+
+  assert {
+    condition     = aws_lb_listener.https["domain"].ssl_policy == "ELBSecurityPolicy-TLS13-1-2-2021-06"
+    error_message = "The HTTPS listener must use a TLS 1.2+ policy with strong ciphers."
+  }
+}
+
 run "origin_lockdown_requires_cloudflare_access" {
   command = plan
 
@@ -393,6 +557,35 @@ run "auto_stop_off_creates_no_watchdog" {
   assert {
     condition     = length(aws_lambda_function.auto_stop_watchdog) == 0
     error_message = "With both auto-stop controls at 0, no watchdog Lambda may be created."
+  }
+}
+
+run "auto_stop_reset_parameter_is_created_and_scoped_to_the_readers" {
+  command = apply
+
+  variables {
+    auto_stop_idle_minutes       = 60
+    auto_stop_max_uptime_minutes = 120
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.auto_stop_reset.name == "/${var.project_name}/auto-stop/reset-at"
+    error_message = "The timer reset parameter must be /<project>/auto-stop/reset-at."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.auto_stop_agent.policy, aws_ssm_parameter.auto_stop_reset.arn) && !strcontains(aws_iam_role_policy.auto_stop_agent.policy, "PutParameter")
+    error_message = "The instance may read the reset parameter and must never write it."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.auto_stop_watchdog["auto_stop"].policy, aws_ssm_parameter.auto_stop_reset.arn) && !strcontains(aws_iam_role_policy.auto_stop_watchdog["auto_stop"].policy, "PutParameter")
+    error_message = "The watchdog may read the reset parameter and must never write it."
+  }
+
+  assert {
+    condition     = aws_lambda_function.auto_stop_watchdog["auto_stop"].environment[0].variables["RESET_PARAMETER"] == aws_ssm_parameter.auto_stop_reset.name
+    error_message = "The watchdog must be told which parameter holds the timer reset."
   }
 }
 
@@ -544,6 +737,27 @@ run "vuln_mcp_token_secret_arn_must_be_valid" {
   }
 
   expect_failures = [var.vuln_mcp_token_secret_arn]
+}
+
+run "vuln_mcp_token_secret_arn_must_be_the_full_arn" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdE"
+  }
+
+  expect_failures = [var.vuln_mcp_token_secret_arn]
+}
+
+run "grafana_secret_arn_must_be_the_full_arn" {
+  command = plan
+
+  variables {
+    grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana"
+  }
+
+  expect_failures = [var.grafana_credentials_secret_arn]
 }
 
 run "vuln_mcp_table_name_must_be_valid" {

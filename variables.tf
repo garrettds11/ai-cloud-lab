@@ -501,6 +501,12 @@ variable "grafana_credentials_secret_arn" {
     condition     = var.grafana_credentials_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.grafana_credentials_secret_arn))
     error_message = "grafana_credentials_secret_arn must be a valid Secrets Manager ARN."
   }
+
+  # IAM matches the ARN exactly, so a shortened one gives the readers no access at all.
+  validation {
+    condition     = var.grafana_credentials_secret_arn == null || can(regex("-[A-Za-z0-9]{6}$", var.grafana_credentials_secret_arn))
+    error_message = "grafana_credentials_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name. Copy it with: aws secretsmanager describe-secret --secret-id <secret name> --query ARN --output text"
+  }
 }
 
 variable "control_panel_url" {
@@ -514,8 +520,14 @@ variable "control_panel_url" {
   }
 }
 
+variable "control_panel_api_from_ssm" {
+  description = "Read the control panel API's address, IDs and table names from the SSM parameter /<project_name>/control-panel-api/settings, which the API stack (dashboards/api/terraform) publishes. Then control_panel_api_url, control_panel_api_id, control_panel_authorizer_id, control_panel_holding_pool_id, control_panel_users_table and control_panel_entitlements_table can stay null; any of them that is set wins over the parameter. If the parameter does not exist, plan shows a warning and the lab is built without the API."
+  type        = bool
+  default     = false
+}
+
 variable "control_panel_api_url" {
-  description = "Address of the control panel's Control API, built by hand ahead of Terraform. Terraform copies it into the config.js it publishes to the panel's bucket. Leave null until the API exists."
+  description = "Address of the control panel's Control API. Terraform copies it into the config.js it publishes to the panel's bucket. Leave null until the API exists, or when control_panel_api_from_ssm is true."
   type        = string
   default     = null
 }
@@ -533,7 +545,7 @@ variable "control_panel_entitlements_table" {
 }
 
 variable "control_panel_api_id" {
-  description = "ID of the control panel's HTTP API in API Gateway (built by hand). Together with control_panel_authorizer_id and control_panel_holding_pool_id, it lets apply point the API's sign-in authorizer at this lab's Cognito pool, and point it back at the holding pool on destroy. Leave null to leave the authorizer alone."
+  description = "ID of the control panel's HTTP API in API Gateway. Not needed when control_panel_api_from_ssm is true. Together with control_panel_authorizer_id and control_panel_holding_pool_id, it lets apply point the API's sign-in authorizer at this lab's Cognito pool, and point it back at the holding pool on destroy. Leave null to leave the authorizer alone."
   type        = string
   default     = null
 }
@@ -581,5 +593,11 @@ variable "vuln_mcp_token_secret_arn" {
   validation {
     condition     = var.vuln_mcp_token_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$", var.vuln_mcp_token_secret_arn))
     error_message = "vuln_mcp_token_secret_arn must be a valid Secrets Manager ARN."
+  }
+
+  # IAM matches the ARN exactly, so a shortened one gives the readers no access at all.
+  validation {
+    condition     = var.vuln_mcp_token_secret_arn == null || can(regex("-[A-Za-z0-9]{6}$", var.vuln_mcp_token_secret_arn))
+    error_message = "vuln_mcp_token_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name. Copy it with: aws secretsmanager describe-secret --secret-id <secret name> --query ARN --output text"
   }
 }

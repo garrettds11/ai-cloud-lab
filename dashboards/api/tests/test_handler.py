@@ -532,3 +532,360 @@ def test_only_admin_sees_everyones_logins_and_logs(aws):
     status, logs = call("GET /admin/logs", ADM)
     assert status == 200
     assert {OP, ADM} <= {r["userId"] for r in logs if r["source"] == "Control panel"}
+
+
+# ---- auto-stop timer reset ---------------------------------------------------------------
+
+RESET = "POST /instances/{instanceId}/reset-timer"
+RESET_NAME = "/lab/auto-stop/reset-at"
+
+
+class FakeResetSSM:
+    """The auto-stop rule plus the reset parameter, which can be read, written or made to fail."""
+
+    def __init__(self, max_minutes=90, reset=None, read_error=None, write_error=None):
+        self.rule = {"enabled": True, "idle_minutes": 60, "max_uptime_minutes": max_minutes}
+        self.value = reset  # epoch seconds as a string, or None when the parameter does not exist
+        self.read_error, self.write_error, self.writes = read_error, write_error, []
+
+    def get_parameter(self, Name):
+        if Name == RESET_NAME:
+            if self.read_error:
+                raise client_error(self.read_error)
+            if self.value is None:
+                raise client_error("ParameterNotFound")
+            return {"Parameter": {"Value": self.value}}
+        return {"Parameter": {"Value": json.dumps(self.rule)}}
+
+    def put_parameter(self, **kwargs):
+        if self.write_error:
+            raise client_error(self.write_error)
+        self.writes.append(kwargs)
+        self.value = kwargs["Value"]
+
+
+def running(aws, minutes_up=40):
+    aws.ec2.state["i-aaa"] = "running"
+    aws.ec2.launched["i-aaa"] = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes_up)
+
+
+def use_reset_ssm(monkeypatch, **kwargs):
+    fake = FakeResetSSM(**kwargs)
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "RESET_PARAMETER", RESET_NAME)
+    monkeypatch.setattr(handler, "INSTANCE_IDS", ["i-aaa"])  # a reset is only allowed for a single-instance lab
+    return fake
+
+
+def ago_s(minutes):
+    return str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) - minutes * 60)
+
+
+def test_reset_gives_another_full_period_and_is_logged(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    before = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 200 and body["ok"] is True
+    assert len(ssm.writes) == 1
+    write = ssm.writes[0]
+    assert write["Name"] == RESET_NAME and write["Overwrite"] is True and write["Type"] == "String"
+    assert before <= int(write["Value"]) <= before + 5
+    assert body["resetAt"] == int(write["Value"]) * 1000
+    assert body["stopAt"] == body["resetAt"] + 90 * 60000
+    assert body["maxUptimeMinutes"] == 90
+    assert body["message"] == "Auto-stop timer reset. The lab has another 90 minutes."
+    # One log line for the person who pressed it, visible in their own log.
+    status, logs = call("GET /logs", OP)
+    lines = [r for r in logs if "Reset the auto-stop timer" in r["event"]]
+    assert len(lines) == 1
+    assert lines[0]["severity"] == "info" and lines[0]["instanceId"] == "i-aaa" and "another 90 minutes" in lines[0]["event"]
+    assert lines[0]["userId"] == OP
+    # The administrator sees it, with the name of the person.
+    admin_lines = [r for r in call("GET /admin/logs", ADM)[1] if "Reset the auto-stop timer" in r["event"]]
+    assert [r["userName"] for r in admin_lines] == ["Olive Operator"]
+
+
+def test_reset_changes_nothing_else(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch)
+    call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert aws.ec2.started == [] and aws.ec2.state["i-aaa"] == "running"
+
+
+def test_reset_needs_a_grant(aws, monkeypatch):
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, OP, path={"instanceId": "i-aaa"})[0] == 403
+    grant(aws, OP, "i-aaa", status="revoked")
+    assert call(RESET, OP, path={"instanceId": "i-aaa"})[0] == 403
+    assert ssm.writes == []
+    assert any("refused" in r["event"] for r in call("GET /logs", OP)[1])
+
+
+def test_reset_needs_the_operator_role_even_with_a_grant(aws, monkeypatch):
+    grant(aws, NONE, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, NONE, path={"instanceId": "i-aaa"})[0] == 403
+    assert ssm.writes == []
+
+
+def test_administrator_may_reset_without_a_grant(aws, monkeypatch):
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, ADM, path={"instanceId": "i-aaa"})[0] == 200
+    assert len(ssm.writes) == 1
+
+
+def test_reset_is_refused_when_the_lab_has_several_instances(aws, monkeypatch):
+    # One reset value is shared by the whole lab, so a reset for A would extend B too.
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch)
+    monkeypatch.setattr(handler, "INSTANCE_IDS", ["i-aaa", "i-bbb"])
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 409 and "single instance" in body["message"]
+    assert ssm.writes == []
+
+
+def test_reset_rejects_unmanaged_and_stopped_instances(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    ssm = use_reset_ssm(monkeypatch)
+    assert call(RESET, OP, path={"instanceId": "i-zzz"})[0] == 404
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})  # stopped
+    assert status == 409 and "not running" in body["message"]
+    assert ssm.writes == []
+
+
+def test_reset_with_no_hard_limit_has_nothing_to_reset(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch, max_minutes=0)
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 409 and "no hard time limit" in body["message"].lower()
+    assert ssm.writes == []
+
+
+def test_failed_write_is_reported_and_logged_not_claimed(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch, write_error="AccessDeniedException")
+    status, body = call(RESET, OP, path={"instanceId": "i-aaa"})
+    assert status == 502 and "Could not reset the timer" in body["message"] and "AccessDenied" not in body["message"]
+    lines = call("GET /logs", OP)[1]
+    assert any(r["severity"] == "error" and "reset failed" in r["event"] for r in lines)
+    assert not any("Reset the auto-stop timer" in r["event"] for r in lines)
+
+
+def test_reset_without_a_configured_parameter_is_a_clear_503(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch)
+    monkeypatch.setattr(handler, "RESET_PARAMETER", "")
+    assert call(RESET, OP, path={"instanceId": "i-aaa"})[0] == 503
+
+
+def test_the_admin_lambda_has_no_reset_route(aws):
+    assert _raw(handler.admin_handler, RESET, BOTH, {"instanceId": "i-aaa"}) == 404
+
+
+def test_instance_view_carries_the_reset_for_this_run_only(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws, minutes_up=120)
+    use_reset_ssm(monkeypatch)
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None  # never reset
+    ssm = use_reset_ssm(monkeypatch, reset=ago_s(10))
+    view = call("GET /instances", OP)[1][0]["autoStop"]
+    assert abs(view["resetAt"] - (int(ago_s(10)) * 1000)) < 5000
+    assert view["launchedAt"] < view["resetAt"]
+    ssm.value = ago_s(500)  # left over from an earlier run: older than this launch
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+
+
+def test_a_slightly_future_reset_time_is_shown_as_now(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch, reset=str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 120))
+    reset_at = call("GET /instances", OP)[1][0]["autoStop"]["resetAt"]
+    assert reset_at is not None and reset_at <= handler.now_ms()
+
+
+def test_a_far_future_or_oversized_reset_is_not_shown(aws, monkeypatch):
+    # Matches the lab, which ignores these and counts the hard limit from boot.
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    future = str(int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 86400)
+    for value in (future, "99999999999999999999", "-5", "\u0661\u0662"):
+        use_reset_ssm(monkeypatch, reset=value)
+        assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None, value
+
+
+def test_unreadable_or_garbage_reset_shows_the_launch_countdown(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    use_reset_ssm(monkeypatch, read_error="AccessDeniedException")
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+    use_reset_ssm(monkeypatch, reset="soon")
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+
+
+def test_no_hard_limit_means_the_reset_is_not_read(aws, monkeypatch):
+    grant(aws, OP, "i-aaa")
+    running(aws)
+    ssm = use_reset_ssm(monkeypatch, max_minutes=0, reset=ago_s(1))
+    ssm.get_parameter = lambda Name: (_ for _ in ()).throw(AssertionError("read")) if Name == RESET_NAME else {"Parameter": {"Value": json.dumps(ssm.rule)}}
+    assert call("GET /instances", OP)[1][0]["autoStop"]["resetAt"] is None
+
+
+# ---- Open WebUI admin actions ----------------------------------------------------------
+
+ACTIONS = "POST /admin/webui/actions"
+ACTION = "GET /admin/webui/actions/{commandId}"
+CMD = "0123abcd-4567-89ab-cdef-0123456789ab"
+
+
+class FakeSSMCommands:
+    def __init__(self, rule):
+        self.rule = rule
+        self.sent = []
+        self.send_error = None
+        self.invocation = {"Status": "InProgress", "DocumentName": "panel-webui-admin", "StandardOutputContent": ""}
+        self.invocation_error = None
+
+    def get_parameter(self, Name):
+        return {"Parameter": {"Value": json.dumps(self.rule)}}
+
+    def send_command(self, **kwargs):
+        if self.send_error:
+            raise client_error(self.send_error)
+        self.sent.append(kwargs)
+        return {"Command": {"CommandId": CMD}}
+
+    def get_command_invocation(self, CommandId, InstanceId):
+        if self.invocation_error:
+            raise client_error(self.invocation_error)
+        return dict(self.invocation)
+
+
+@pytest.fixture
+def webui(aws, monkeypatch):
+    fake = FakeSSMCommands({"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 90})
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "WEBUI_DOCUMENT", "panel-webui-admin")
+    monkeypatch.setattr(handler, "OPEN_WEBUI_IMAGE", "ghcr.io/open-webui/open-webui:v0.11.4")
+    aws.ec2.state["i-aaa"] = "running"
+    return fake
+
+
+def test_only_administrators_can_run_open_webui_actions(aws, webui):
+    for user in (OP, BOTH, NONE):
+        assert call(ACTIONS, user, body={"action": "status", "instanceId": "i-aaa"})[0] == 403
+        assert call(ACTION, user, path={"commandId": CMD})[0] == 403
+    assert webui.sent == []
+
+
+def test_the_customer_function_has_no_open_webui_routes(aws, webui):
+    assert _raw(handler.customer_handler, ACTIONS, ADM) == 404
+
+
+def test_an_action_runs_the_panel_document_with_the_pinned_version(aws, webui):
+    status, body = call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    assert status == 200 and body["commandId"] == CMD and body["status"] == "Pending"
+    sent = webui.sent[0]
+    assert sent["DocumentName"] == "panel-webui-admin" and sent["InstanceIds"] == ["i-aaa"]
+    assert sent["Parameters"] == {"action": ["status"], "expectedVersion": ["0.11.4"]}
+    record = aws.events.items[("webui-actions", CMD)]
+    assert record["requestedBy"] == ADM and record["action"] == "status"
+    assert any("Requested Open WebUI action 'status'" in r.get("event", "") for r in aws.events.items.values())
+
+
+def test_unknown_actions_unmanaged_instances_and_stopped_instances_are_refused(aws, webui):
+    assert call(ACTIONS, ADM, body={"action": "rm -rf /", "instanceId": "i-aaa"})[0] == 400
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-zzz"})[0] == 404
+    aws.ec2.state["i-aaa"] = "stopped"
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})[0] == 409
+    assert webui.sent == []
+
+
+def test_an_unpinned_image_sends_no_expected_version(aws, webui, monkeypatch):
+    monkeypatch.setattr(handler, "OPEN_WEBUI_IMAGE", "ghcr.io/open-webui/open-webui:main")
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    assert webui.sent[0]["Parameters"]["expectedVersion"] == [""]
+
+
+def test_without_the_document_setting_actions_are_unavailable(aws, webui, monkeypatch):
+    monkeypatch.setattr(handler, "WEBUI_DOCUMENT", "")
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})[0] == 503
+
+
+def test_an_instance_not_yet_in_ssm_is_a_clear_conflict(aws, webui):
+    webui.send_error = "InvalidInstanceId"
+    assert call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})[0] == 409
+
+
+def test_the_result_is_read_back_and_recorded_once(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    assert call(ACTION, ADM, path={"commandId": CMD})[1]["status"] == "InProgress"
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": "noise\n" + json.dumps({"ok": True, "action": "status", "healthy": True, "version": "0.11.4"})}
+    status, body = call(ACTION, ADM, path={"commandId": CMD})
+    assert status == 200 and body["status"] == "Success" and body["result"]["version"] == "0.11.4"
+    call(ACTION, ADM, path={"commandId": CMD})
+    done = [r for r in aws.events.items.values() if "Open WebUI action 'status' on i-aaa: done" in r.get("event", "")]
+    assert len(done) == 1
+    assert ("webui-actions", CMD + "#result") in aws.events.items
+
+
+def test_a_command_from_another_document_is_never_shown(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "AWS-RunShellScript", "StandardOutputContent": "secret"}
+    assert call(ACTION, ADM, path={"commandId": CMD})[0] == 404
+
+
+def test_unknown_or_malformed_action_ids_are_refused(aws, webui):
+    assert call(ACTION, ADM, path={"commandId": "not-an-id"})[0] == 400
+    assert call(ACTION, ADM, path={"commandId": "ffffffff-ffff-ffff-ffff-ffffffffffff"})[0] == 404
+
+
+def test_an_invocation_ssm_has_not_registered_yet_reads_as_pending(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation_error = "InvocationDoesNotExist"
+    assert call(ACTION, ADM, path={"commandId": CMD})[1]["status"] == "Pending"
+
+
+def test_a_failed_action_without_json_output_reports_no_result(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Failed", "DocumentName": "panel-webui-admin", "StandardOutputContent": "bash: error"}
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Failed" and body["result"] is None
+
+
+def test_a_finished_action_stays_readable_after_ssm_forgets_it(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status", "version": "0.11.4"})}
+    call(ACTION, ADM, path={"commandId": CMD})
+    webui.invocation_error = "InvocationDoesNotExist"  # SSM history has expired
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Success" and body["result"]["version"] == "0.11.4"
+
+
+def test_an_action_ssm_forgot_before_anyone_read_it_is_expired_not_pending(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    aws.events.items[("webui-actions", CMD)]["t"] = handler.now_ms() - 3600 * 1000
+    webui.invocation_error = "InvocationDoesNotExist"
+    body = call(ACTION, ADM, path={"commandId": CMD})[1]
+    assert body["status"] == "Expired" and body["result"] is None
+
+
+def test_the_outcome_is_logged_for_the_administrator_who_asked(aws, webui):
+    aws.users.items[(BOOT,)] = {"email": BOOT, "name": "Boot", "roles": ["admin"], "source": "panel"}
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status"})}
+    call(ACTION, BOOT, path={"commandId": CMD})  # another administrator reads it first
+    done = [r for r in aws.events.items.values() if ": done" in r.get("event", "")]
+    assert len(done) == 1 and done[0]["pk"] == f"user#{ADM}"

@@ -1,6 +1,6 @@
 # Control panel setup (built by hand, outside Terraform)
 
-The control panel at `https://cp.aiwebdemo.click` is built and kept by hand, so it does not depend on the lab being deployed. Terraform supplies only three things when the variables are set: the panel's Cognito app client, the demo users' rows in `panel_users`, and the authorizer's issuer and audience on apply and destroy. This page is the record of what exists, so nothing is a surprise later.
+The control panel at `https://cp.aiwebdemo.click` is built and kept separately from the lab, so it does not depend on the lab being deployed. Its API (functions, roles, tables, holding pool and authorizer) now has its own Terraform stack in `dashboards/api/terraform`; follow its README to move from the hand-built pieces listed below. The hosting (bucket, CloudFront, certificate, DNS) is still built by hand. Terraform supplies only three things when the variables are set: the panel's Cognito app client, the demo users' rows in `panel_users`, and the authorizer's issuer and audience on apply and destroy. This page is the record of what exists, so nothing is a surprise later.
 
 Run every command in PowerShell, in the same window where `AWS_PROFILE` and `AWS_DEFAULT_REGION` are set. Account 394566733278, region us-east-1.
 
@@ -11,12 +11,12 @@ The panel depends on these Terraform-owned things when you use the lab's Cognito
 | Needed by the panel | Where it comes from |
 |---|---|
 | Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform writes `config.js` into the panel's bucket on apply and clears it from CloudFront's cache (`control_panel_site.tf`, needs `control_panel_bucket`; `control_panel_distribution_id` for the cache). For another provider: written by hand from `config.example.js` and uploaded |
-| Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set. Until then the authorizer trusts the empty holding pool and every route answers 401 |
-| Demo users and their roles in `panel_users` | `cognito.tf`, when `control_panel_users_table` is set |
+| Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), once the lab knows the API's IDs: from the parameter `/<project_name>/control-panel-api/settings` that the API stack publishes (with `control_panel_api_from_ssm = true`), or from `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id`. Until then the authorizer trusts the empty holding pool and every route answers 401 |
+| Demo users and their roles in `panel_users` | `cognito.tf`, when the lab knows the users table (from the API's settings parameter or `control_panel_users_table`) |
 | Instance ID, ALB target group and service address | SSM parameters under `/<project_name>/control-panel/` that Terraform writes when `control_panel_url` is set (`control_panel_lab.tf`). The Lambdas read them live, so the panel follows the lab with nothing to copy. Terraform also tags the instance `control-panel=managed`, the only instances the customer role may start |
-| Auto-stop setting `/<project_name>/auto-stop` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init |
+| Auto-stop setting `/<project_name>/auto-stop`, the timer reset parameter `/<project_name>/auto-stop/reset-at` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init. Terraform creates the reset parameter (value `0`) and never overwrites it; the panel's reset button writes it |
 
-Terraform needs `control_panel_url`, `control_panel_bucket` and `control_panel_distribution_id` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. Apply publishes `config.js`; there is nothing to write or upload by hand for the lab's own pool.
+Terraform needs `control_panel_url`, `control_panel_bucket` and `control_panel_distribution_id` set in `terraform.tfvars`, plus `control_panel_api_from_ssm = true` once the API stack exists (or `control_panel_api_url` set by hand). Apply publishes `config.js`; there is nothing to write or upload by hand for the lab's own pool.
 
 Read other outputs through the repo's wrapper, not bare terraform:
 
@@ -47,7 +47,7 @@ Fill in the "Created" column as each piece is built.
 | CloudFront distribution | Origin access control `E155I4E0R9TNMQ` to the bucket, alias `cp.aiwebdemo.click`, TLS 1.2 minimum, HTTPS only, headers policy `aiwebdemo-control-panel-headers` (CSP, HSTS, no framing). The bucket policy lets only this distribution read it. WAF not added. | 2026-10-04: `E2799OUDXX2ED3`, `d11guvgb5r6hlh.cloudfront.net` |
 | DNS record `cp.aiwebdemo.click` | CNAME to the CloudFront domain, in the Cloudflare zone for aiwebdemo.click. | |
 | DynamoDB tables `instance_entitlements` and `control_panel_events` | Keys and TTL in `api/README.md`. | 2026-10-04 (TTL on `expiresAt` set) |
-| Control API (two Lambdas and an HTTP API) | Source in `api/`. Steps, settings and routes in `api/README.md`. Lambdas `ai-lab-control-customer` and `ai-lab-control-admin`, API `65j334bc19` (`https://65j334bc19.execute-api.us-east-1.amazonaws.com`) with all ten routes. | 2026-10-04 |
+| Control API (two Lambdas and an HTTP API) | Source in `api/`. Steps, settings and routes in `api/README.md`. Lambdas `ai-lab-control-customer` and `ai-lab-control-admin`, API `65j334bc19` (`https://65j334bc19.execute-api.us-east-1.amazonaws.com`) built with ten routes. The code now serves thirteen (listed in `dashboards/api/openapi.yaml`): `POST /instances/{instanceId}/reset-timer` and possibly `GET /admin/logins` and `GET /admin/logs` are added by hand; see "Adding the timer reset route to an existing panel" in `dashboards/api/README.md`. | 2026-10-04 |
 | Roles for the API | `ai-lab-control-customer` (can start tagged instances, cannot write roles) and `ai-lab-control-admin` (cannot start). Policies in `api/README.md`. | 2026-10-04 |
 | Table `panel_users` | Key `email`. Roles live here. | 2026-10-04 |
 | Holding pool and authorizer | Empty Cognito pool `us-east-1_xcTOLNQJM` (no users, no app clients) and JWT authorizer `pnlj78` on the API. Every route answers 401 until the authorizer is pointed at a real provider. Terraform does that on apply (`control_panel_api.tf`); for Okta or Entra, update the authorizer's issuer and audience by hand. | 2026-10-04 |

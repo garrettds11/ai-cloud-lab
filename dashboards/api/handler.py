@@ -11,7 +11,9 @@ Rules, checked on every call (see README.md):
     table, read on every call, so a role change takes effect at once.
   * Customers see and start only the instances they hold an active grant for, and only
     while they hold the operators role. Administrators hold every right: they see and start
-    every managed instance without grants. Nobody here can stop an instance.
+    every managed instance without grants. Nobody here can stop an instance. Anyone who
+    may start a running instance may also reset its auto-stop timer (extend the hard
+    uptime limit by one full period); that writes one SSM parameter and a log line.
   * Admin routes need the user_mgrs or the admin role. User managers and administrators
     change who may start which instance (grants). Only an administrator changes anyone's
     roles, including who else is an administrator. Saving changes writes the panel's users
@@ -53,10 +55,20 @@ INSTANCE_IDS = [i.strip() for i in os.environ.get("INSTANCE_IDS", "").split(",")
 TARGET_GROUP_ARN = os.environ.get("TARGET_GROUP_ARN", "")  # the ALB health check is the "HTTP" check
 SERVICE_URL = os.environ.get("SERVICE_URL", "")  # where the Access button goes
 AUTO_STOP_PARAMETER = os.environ.get("AUTO_STOP_PARAMETER", "")
+# Where the last auto-stop timer reset is kept (epoch seconds). The lab's instance monitor and
+# watchdog read it. Defaults to the auto-stop parameter's "reset-at" child, which is what
+# Terraform creates (auto_stop.tf), so there is no extra setting to copy by hand.
+RESET_PARAMETER = os.environ.get("RESET_PARAMETER", f"{AUTO_STOP_PARAMETER}/reset-at" if AUTO_STOP_PARAMETER else "")
 EVENT_TTL_DAYS = int(os.environ.get("EVENT_TTL_DAYS", "90"))
+# The SSM document that runs Open WebUI admin actions on the lab instance (admin function only).
+# It accepts only the action names below; the API stack's webui_admin.tf defines both lists.
+WEBUI_DOCUMENT = os.environ.get("WEBUI_DOCUMENT", "")
+WEBUI_ACTIONS = {"status": "Open WebUI health and version"}
+OPEN_WEBUI_IMAGE = os.environ.get("OPEN_WEBUI_IMAGE", "")  # fallback when no lab prefix is set
 
 SETUP_GRACE_MINUTES = 30  # same as the watchdog: idle rules wait this long after a start
 SILENT_AFTER_MINUTES = 10  # no heartbeat for this long means the idle monitor is silent
+RESET_SKEW_SECONDS = 300  # same allowance as the lab: a reset further in the future is ignored
 
 ec2 = boto3.client("ec2")
 elbv2 = boto3.client("elbv2")
@@ -232,7 +244,7 @@ def _lab():
     service-url. With no lab deployed they do not exist, so the panel manages nothing.
     Cached for a minute. If they cannot be read the call fails closed."""
     if not LAB_PARAMETER_PREFIX:
-        return {"instance_ids": INSTANCE_IDS, "target_group_arn": TARGET_GROUP_ARN, "service_url": SERVICE_URL}
+        return {"instance_ids": INSTANCE_IDS, "target_group_arn": TARGET_GROUP_ARN, "service_url": SERVICE_URL, "open_webui_image": OPEN_WEBUI_IMAGE}
     now = time.time()
     if _lab_cache["value"] is not None and now - _lab_cache["at"] < LAB_CACHE_SECONDS:
         return _lab_cache["value"]
@@ -252,6 +264,7 @@ def _lab():
         "instance_ids": [i.strip() for i in found.get("instance-ids", "").split(",") if i.strip()],
         "target_group_arn": found.get("target-group-arn", ""),
         "service_url": found.get("service-url", ""),
+        "open_webui_image": found.get("open-webui-image", ""),
     }
     _lab_cache.update(at=now, value=value)
     return value
@@ -330,6 +343,33 @@ def _points(metric, statistic, instance_id, minutes):
     return sorted(out.get("Datapoints", []), key=lambda p: p["Timestamp"])
 
 
+def _reset_at_ms(launched_ms):
+    """When the hard-limit timer was last reset during this run, in ms, or None.
+
+    A reset older than this run's launch is left over from an earlier run and does not
+    count. A time slightly in the future is treated as now; one further ahead, or a value
+    that is not a plain number, does not count, matching the lab. If the parameter cannot be read the
+    panel simply shows the countdown from launch, which is what the lab falls back to too."""
+    if not RESET_PARAMETER:
+        return None
+    try:
+        raw = ssm.get_parameter(Name=RESET_PARAMETER)["Parameter"]["Value"]
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "ParameterNotFound":
+            print(json.dumps({"warning": "timer reset unreadable", "detail": str(err)}))
+        return None
+    text = str(raw).strip()
+    # Same rule as the instance monitor and the watchdog: a plain decimal of at most 10 digits,
+    # and nothing more than 5 minutes in the future, or the reset does not count.
+    if not (text.isascii() and text.isdigit() and len(text) <= 10):
+        return None
+    reset_ms = int(text) * 1000
+    if reset_ms > now_ms() + RESET_SKEW_SECONDS * 1000:
+        return None
+    reset_ms = min(reset_ms, now_ms())
+    return reset_ms if reset_ms > launched_ms else None
+
+
 def _auto_stop(instance_id, launched_ms, rule):
     uptime = (now_ms() - launched_ms) / 60000
     heartbeat_age = None
@@ -356,6 +396,7 @@ def _auto_stop(instance_id, launched_ms, rule):
         "idleLimitMinutes": rule["idle"],
         "maxUptimeMinutes": rule["max"],
         "launchedAt": launched_ms,
+        "resetAt": _reset_at_ms(launched_ms) if rule["max"] > 0 else None,
         "setupDone": setup_done,
         "idleMinutes": idle if idle is not None else 0,
         "activeUsers": active,
@@ -427,6 +468,55 @@ def start_instance(caller, instance_id):
         raise ApiError(502, "AWS could not start the instance. Try again, and tell your administrator if it keeps failing.")
     _log(caller["id"], "info", f"Start requested for {name}", instance_id)
     return {"ok": True}
+
+
+def reset_timer(caller, instance_id):
+    """Give a running lab another full hard-limit period, counted from now.
+
+    Does not start, stop or restart anything and does not touch the idle timer. It only
+    records the time in the reset parameter, which the instance monitor and the watchdog
+    both read. Allowed for exactly the people who may start this instance."""
+    if not _can_operate(caller):
+        raise ApiError(403, "You do not have permission to do that.")
+    if instance_id not in _instance_ids():
+        raise ApiError(404, "Instance not found.")
+    if instance_id not in _usable_ids(caller):
+        _log(caller["id"], "warning", f"Timer reset refused for {instance_id}: no active grant", instance_id)
+        raise ApiError(403, "You do not have access to this instance.")
+    if len(_instance_ids()) != 1:
+        # The reset time is one value for the whole lab and every instance monitor reads it,
+        # so with several managed instances a reset for one would extend all of them.
+        raise ApiError(409, "Timer reset only works while the lab has a single instance, because the reset applies to the whole lab.")
+    raws = _describe([instance_id])
+    if instance_id not in raws:
+        raise ApiError(404, "Instance not found.")
+    name = _tag(raws[instance_id]["instance"], "Name") or instance_id
+    if raws[instance_id]["instance"]["State"]["Name"] != "running":
+        raise ApiError(409, "This instance is not running, so there is no auto-stop timer to reset.")
+    rule = _rule()
+    if not (rule["enabled"] and rule["max"] > 0):
+        raise ApiError(409, "No hard time limit is set for this lab, so there is nothing to reset.")
+    if not RESET_PARAMETER:
+        print(json.dumps({"error": "timer reset parameter not configured"}))
+        raise ApiError(503, "Timer reset is not set up on this control panel yet. Tell your administrator.")
+    reset_s = int(time.time())
+    try:
+        ssm.put_parameter(Name=RESET_PARAMETER, Value=str(reset_s), Type="String", Overwrite=True)
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "")
+        _log(caller["id"], "error", f"{name}: auto-stop timer reset failed, {code}", instance_id)
+        print(json.dumps({"error": "put_parameter", "detail": str(err)}))
+        raise ApiError(502, "Could not reset the timer. Try again, and tell your administrator if it keeps failing.")
+    stop_ms = reset_s * 1000 + rule["max"] * 60000
+    stop_text = datetime.datetime.fromtimestamp(stop_ms / 1000, datetime.timezone.utc).strftime("%H:%M UTC")
+    _log(caller["id"], "info", f"Reset the auto-stop timer for {name}: another {rule['max']} minutes, stopping at about {stop_text}", instance_id)
+    return {
+        "ok": True,
+        "resetAt": reset_s * 1000,
+        "stopAt": stop_ms,
+        "maxUptimeMinutes": rule["max"],
+        "message": f"Auto-stop timer reset. The lab has another {rule['max']} minutes.",
+    }
 
 
 # ---- session, logins, logs ------------------------------------------------------------
@@ -814,6 +904,141 @@ def _set_grant(caller, user_id, instance_id, grant, user_name, roles, names):
     _log(caller["id"], "info", f"{'Granted' if grant else 'Revoked'} {user_name} access to {instance_name}")
 
 
+# ---- admin: Open WebUI actions --------------------------------------------------------
+#
+# The panel never talks to Open WebUI itself. An administrator asks for one named action, the
+# admin function asks SSM to run the panel's document on the managed instance, and the result
+# is read back later (SSM runs commands asynchronously). Each request and each result is
+# recorded under pk "webui-actions" in the events table, and as a log line for the person.
+
+_TERMINAL = {"Success", "Failed", "Cancelled", "TimedOut"}
+_COMMAND_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _require_admin_role(caller):
+    if ROLE_ADMIN not in caller["roles"]:
+        raise ApiError(403, "Only an administrator can run Open WebUI actions.")
+
+
+def _expected_version():
+    """The Open WebUI version the lab pins, from its image tag, or "" when it is not a version."""
+    match = re.search(r":v?(\d{1,4}\.\d{1,4}\.\d{1,4})$", _lab().get("open_webui_image", ""))
+    return match.group(1) if match else ""
+
+
+_PENDING_GRACE_MS = 10 * 60000  # SSM may not list a new command for a moment; after this it is gone
+
+
+def _action_records(command_id):
+    """The request row and, once the action has finished, its result row."""
+    rows = events.query(KeyConditionExpression=Key("pk").eq("webui-actions") & Key("sk").begins_with(command_id)).get("Items", [])
+    by_sk = {r["sk"]: r for r in rows}
+    return by_sk.get(command_id), by_sk.get(f"{command_id}#result")
+
+
+def start_webui_action(caller, payload):
+    _require_admin_role(caller)
+    action = payload.get("action")
+    if action not in WEBUI_ACTIONS:
+        raise ApiError(400, "Unknown action.")
+    instance_id = payload.get("instanceId")
+    if instance_id not in _instance_ids():
+        raise ApiError(404, "Instance not found.")
+    if not WEBUI_DOCUMENT:
+        raise ApiError(503, "Open WebUI actions are not set up on this control panel yet.")
+    raws = _describe([instance_id])
+    if instance_id not in raws:
+        raise ApiError(404, "Instance not found.")
+    name = _tag(raws[instance_id]["instance"], "Name") or instance_id
+    if raws[instance_id]["instance"]["State"]["Name"] != "running":
+        raise ApiError(409, "The instance is not running, so Open WebUI cannot be reached.")
+    try:
+        out = ssm.send_command(
+            DocumentName=WEBUI_DOCUMENT,
+            InstanceIds=[instance_id],
+            Parameters={"action": [action], "expectedVersion": [_expected_version()]},
+            TimeoutSeconds=120,
+            Comment=f"control panel: {action} by {caller['id']}"[:100],
+        )
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "")
+        _log(caller["id"], "error", f"{name}: Open WebUI action '{action}' could not start, {code}", instance_id)
+        print(json.dumps({"error": "send_command", "detail": str(err)}))
+        if code in ("InvalidInstanceId", "InvalidInstanceInformationFilterValue"):
+            raise ApiError(409, "The instance is not connected to Systems Manager yet. Try again in a minute.")
+        raise ApiError(502, "Could not start the action. Try again shortly.")
+    command_id = out["Command"]["CommandId"]
+    t = now_ms()
+    events.put_item(Item={
+        "pk": "webui-actions", "sk": command_id, "t": t, "expiresAt": int(t / 1000) + EVENT_TTL_DAYS * 86400,
+        "action": action, "instanceId": instance_id, "requestedBy": caller["id"], "status": "Pending",
+    })
+    _log(caller["id"], "info", f"Requested Open WebUI action '{action}' on {name}", instance_id)
+    return {"commandId": command_id, "instanceId": instance_id, "action": action, "status": "Pending", "requestedAt": t}
+
+
+def _last_json_line(text):
+    for line in reversed((text or "").strip().splitlines()):
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def get_webui_action(caller, command_id):
+    _require_admin_role(caller)
+    if not _COMMAND_ID.match(command_id or ""):
+        raise ApiError(400, "That is not an action ID.")
+    record, finished = _action_records(command_id)
+    if record is None or not WEBUI_DOCUMENT:
+        raise ApiError(404, "No such action.")
+    instance_id = record["instanceId"]
+    view = {
+        "commandId": command_id,
+        "instanceId": instance_id,
+        "action": record["action"],
+        "requestedBy": record["requestedBy"],
+        "requestedAt": _num(record["t"]),
+    }
+    # A finished action is answered from its stored result, so it stays readable after SSM
+    # drops the command from its history (about 30 days; the record lives EVENT_TTL_DAYS).
+    if finished is not None:
+        stored = finished.get("result")
+        return {**view, "status": finished["status"], "result": json.loads(stored) if stored else None}
+    try:
+        inv = ssm.get_command_invocation(CommandId=command_id, InstanceId=instance_id)
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "InvocationDoesNotExist":
+            print(json.dumps({"error": "get_command_invocation", "detail": str(err)}))
+            raise ApiError(502, "Could not read the action's result. Try again shortly.")
+        recent = now_ms() - int(record["t"]) < _PENDING_GRACE_MS
+        # Just started: SSM has not listed it yet. Long ago: SSM no longer knows it, and no
+        # result was ever read back, so the outcome is unknown.
+        return {**view, "status": "Pending" if recent else "Expired", "result": None}
+    if inv.get("DocumentName") != WEBUI_DOCUMENT:
+        raise ApiError(404, "No such action.")  # never show the output of anything else
+    status = inv.get("Status", "Pending")
+    if status not in _TERMINAL:
+        return {**view, "status": status, "result": None}
+    result = _last_json_line(inv.get("StandardOutputContent"))
+    item = {"pk": "webui-actions", "sk": f"{command_id}#result", "t": now_ms(),
+            "expiresAt": int(record["expiresAt"]), "status": status}
+    if result is not None:
+        item["result"] = json.dumps(result)
+    try:
+        events.put_item(Item=item, ConditionExpression="attribute_not_exists(sk)")
+        ok = status == "Success" and bool((result or {}).get("ok"))
+        # The outcome belongs in the log of whoever asked, whichever administrator reads it first.
+        _log(record["requestedBy"], "info" if ok else "error",
+             f"Open WebUI action '{record['action']}' on {instance_id}: {'done' if ok else 'failed (' + status + ')'}", instance_id)
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+    return {**view, "status": status, "result": result}
+
+
 # ---- routing -------------------------------------------------------------------------
 
 
@@ -827,6 +1052,8 @@ def _customer_routes(event, caller):
         return list_instances(caller)
     if key == "POST /instances/{instanceId}/start":
         return start_instance(caller, path["instanceId"])
+    if key == "POST /instances/{instanceId}/reset-timer":
+        return reset_timer(caller, path["instanceId"])
     if key == "GET /logins":
         return list_logins(caller)
     if key == "GET /logs":
@@ -851,6 +1078,10 @@ def _admin_routes(event, caller):
         return list_all_logs(caller, event.get("queryStringParameters") or {})
     if key == "PUT /admin/users/{userId}":
         return save_user(caller, path["userId"], _body(event))
+    if key == "POST /admin/webui/actions":
+        return start_webui_action(caller, _body(event))
+    if key == "GET /admin/webui/actions/{commandId}":
+        return get_webui_action(caller, path["commandId"])
     return None
 
 

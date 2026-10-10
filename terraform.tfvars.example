@@ -168,25 +168,24 @@ cognito_extra_users           = []
 
 # Control panel dashboard. Terraform only supplies its sign-in settings: an app
 # client in the Cognito pool and the config.js the page loads, which apply publishes to the
-# panel's bucket. The panel's hosting, DNS and API are built by hand (see dashboards/SETUP.md).
+# panel's bucket. The panel's hosting and DNS are built by hand (see SETUP.md).
 control_panel_url = "https://cp.aiwebdemo.click"
-# The control panel API is built by hand ahead of Terraform (dashboards/SETUP.md). Its
-# address goes into the published config.js. The three ids let apply point the API's
-# sign-in authorizer at this lab's Cognito pool (and back at the holding pool on destroy).
-control_panel_api_url         = "https://65j334bc19.execute-api.us-east-1.amazonaws.com"
-control_panel_api_id          = "65j334bc19"
-control_panel_authorizer_id   = "pnlj78"
-control_panel_holding_pool_id = "us-east-1_xcTOLNQJM"
+# The control panel API is its own Terraform stack (dashboards/api/terraform), applied before
+# the lab. It publishes its address, IDs and table names in the SSM parameter
+# /<project_name>/control-panel-api/settings, and with this set to true the lab reads them from
+# there at every plan: the API address for config.js, the IDs that let apply point the API's
+# sign-in authorizer at this lab's Cognito pool, and the users and grants tables to seed. A
+# rebuilt API needs no copying. Do not also set control_panel_api_url, control_panel_api_id,
+# control_panel_authorizer_id, control_panel_holding_pool_id, control_panel_users_table or
+# control_panel_entitlements_table here: a value set here wins over the parameter.
+control_panel_api_from_ssm = true
 # The panel's bucket and CloudFront distribution (built by hand). Apply writes config.js into
 # the bucket and clears it from the distribution's cache; destroy removes that one object.
 control_panel_bucket          = "aiwebdemo-control-panel-394566733278"
 control_panel_distribution_id = "E2799OUDXX2ED3"
 
-# Optional: seed the demo users' roles into the control panel's users table.
-control_panel_users_table = "panel_users"
-
-# Optional: grant the lab instance to every demo user with the operators role.
-control_panel_entitlements_table = "instance_entitlements"
+# The demo users' roles and the lab instance's grants are seeded into the users and grants
+# tables named in the API's settings parameter (see control_panel_api_from_ssm above).
 
 # SSH is disabled by default. Prefer SSM port forwarding.
 enable_ssh       = false
@@ -240,4 +239,4 @@ grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:
 # is read from the secret on the instance, never by Terraform). Turning this on or off
 # replaces the instance; changing only the table name does not.
 vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
-vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:vuln-mcp-token-aiwebdemo-aGyLZ"
+vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:vuln-mcp-token-aiwebdemo-aGyLZI"

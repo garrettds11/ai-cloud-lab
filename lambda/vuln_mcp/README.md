@@ -135,19 +135,11 @@ plus read access to the token secret, and the standard Lambda logging permission
 ## Deploy with Terraform
 
 `vuln_mcp.tf` in the repository root builds the Lambda, its read-only role, a log group and the
-Function URL. It is off until `vuln_mcp_table_name` is set. The token secret is created by hand so the
-token never appears in Terraform state:
+Function URL. It is off until `vuln_mcp_table_name` is set. The findings table and the token secret
+are created by hand, before the first deploy, so the token never appears in Terraform state: see
+[pre-deployment.md, steps 3 and 9](../../docs/runbook/pre-deployment.md#9-vulnerability-findings-table-optional).
 
-```powershell
-$bytes = New-Object byte[] 32
-$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-$rng.GetBytes($bytes)
-$rng.Dispose()
-$token = [Convert]::ToBase64String($bytes)
-aws secretsmanager create-secret --name vuln-mcp-token-aiwebdemo --secret-string $token --profile garrett_gspear --region us-east-1 --query ARN --output text
-```
-
-Put the table name and the printed ARN in `terraform.tfvars` (`vuln_mcp_table_name`,
+Put the table name and the secret's ARN in `terraform.tfvars.example` (`vuln_mcp_table_name`,
 `vuln_mcp_token_secret_arn`), then plan and apply. The lab instance connects Open WebUI to the server
 itself at boot (next section); nothing needs copying by hand.
 
@@ -217,7 +209,7 @@ calls fail with `401` for a while.
 
 **Local login must be on.** The admin API needs password sign-in. With `open_webui_enable_local_login = false`
 the script exits with code 3 (`Local login is off ...`), Terraform shows a warning, and the connection is not
-changed. Add it by hand instead: **Admin Settings > External Tools > +**, type **MCP (Streamable HTTP)**,
+changed. Add it by hand instead: **Admin Panel > Settings > Integrations > External Tool Servers > +**, type **MCP (Streamable HTTP)**,
 URL = the `vuln_mcp_url` output, auth **Bearer** with the token, then **Verify** and **Save**. To copy the token
 without displaying it (**Local Windows PowerShell**):
 `aws secretsmanager get-secret-value --secret-id <vuln_mcp_token_secret_arn> --query SecretString --output text | Set-Clipboard`.
@@ -245,7 +237,7 @@ value does not.
 | Symptom | Likely cause and fix |
 |---|---|
 | `Waiting for Open WebUI...` repeats, then `Gave up` | Open WebUI is slow or down. `sudo docker ps`, `sudo docker logs --tail 100 open-webui`; rerun the script when healthy. |
-| `Open WebUI could not connect to the MCP server and list its tools` | The Function URL is unreachable from the instance (egress is 443/80 only) or the token differs from the secret's. From Windows run the `401` check in `terraform-smoke-test-plan.md`; check the Lambda log group. |
+| `Open WebUI could not connect to the MCP server and list its tools` | The Function URL is unreachable from the instance (egress is 443/80 only) or the token differs from the secret's. From Windows run the `401` check in [Vulnerability MCP server test](../../docs/runbook/smoke-tests/lab-features.md#vulnerability-mcp-server-test); check the Lambda log group. |
 | `Open WebUI rejected the admin sign-in` | The admin secret no longer matches the admin password. Fix the secret or the account; the script does not retry this. |
 | `Local login is off` / exit 3 | See "Local login must be on" and "Turning local login off later" above. |
 | `Could not read ... secret` | The instance role cannot read it: confirm `vuln_mcp_token_secret_arn` was applied (the role is updated only when the feature is on). |

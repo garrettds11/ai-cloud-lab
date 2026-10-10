@@ -4,13 +4,13 @@ The AI Cloud Lab control panel: one page with four views, **Instances**, **Login
 
 It is plain HTML, CSS and JavaScript with no build step. The page holds no permissions of its own: it shows what the Control API returns, and the API checks every rule again.
 
-Live at `https://cp.aiwebdemo.click`. Setup of everything it needs is in [`SETUP.md`](SETUP.md).
+Live at `https://cp.aiwebdemo.click`. Setup of everything it needs is in [`SETUP.md`](../SETUP.md).
 
 ## Who sees what
 
 | Person | Role (panel's own table) | What they see |
 |---|---|---|
-| Customer with a grant | `operators` | Their instances, with Start and, once ready, Access |
+| Customer with a grant | `operators` | Their instances, with Start, Reset auto-stop timer (while running) and, once ready, Access |
 | A user with no role, or no grants | none | "You have no instances available for edit." |
 | User manager | `user_mgrs` (usually with `operators`) | The same pages, plus **User management**, where they change who may start which instance |
 | Administrator | `admin` (any number of people) | The same pages, and on **User management** they also change roles, including who else is an administrator |
@@ -28,7 +28,7 @@ A customer needs both the `operators` role and a grant in `instance_entitlements
 | `config.js` | Region, user pool ID, app client ID and API address. Published to the bucket by Terraform on apply; a local copy is not committed |
 | `config.example.js` | Shows what `config.js` looks like |
 | `api/` | The Control API Lambda, its tests and its setup guide |
-| `SETUP.md` | What is built by hand outside Terraform |
+| `../SETUP.md` | What is built by hand outside Terraform (at the repository root) |
 
 ## Run it
 

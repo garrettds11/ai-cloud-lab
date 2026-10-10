@@ -239,4 +239,4 @@ grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:
 # is read from the secret on the instance, never by Terraform). Turning this on or off
 # replaces the instance; changing only the table name does not.
 vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
-vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:vuln-mcp-token-aiwebdemo-aGyLZ"
+vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:vuln-mcp-token-aiwebdemo-aGyLZI"

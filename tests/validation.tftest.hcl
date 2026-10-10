@@ -739,6 +739,27 @@ run "vuln_mcp_token_secret_arn_must_be_valid" {
   expect_failures = [var.vuln_mcp_token_secret_arn]
 }
 
+run "vuln_mcp_token_secret_arn_must_be_the_full_arn" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdE"
+  }
+
+  expect_failures = [var.vuln_mcp_token_secret_arn]
+}
+
+run "grafana_secret_arn_must_be_the_full_arn" {
+  command = plan
+
+  variables {
+    grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana"
+  }
+
+  expect_failures = [var.grafana_credentials_secret_arn]
+}
+
 run "vuln_mcp_table_name_must_be_valid" {
   command = plan
 

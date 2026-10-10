@@ -272,6 +272,13 @@ $env:instance_id = terraform output -raw instance_id
 
 Apply finishes when EC2 is running, not when Ollama, the model and Open WebUI are ready (step 4).
 
+With `enable_cognito = true`, Terraform creates the Cognito users without passwords. Set them from
+the secrets now, or nobody can sign in at step 4:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File ".\scripts\set-cognito-passwords.ps1"
+```
+
 ### Deploy the pages
 
 Only when files in `dashboards` changed (the pages, not `dashboards\api`). `config.js` is
@@ -323,7 +330,7 @@ Every deploy. Each takes a minute or two.
 
    The target reports `healthy`.
 
-3. **The site is reachable.** Open `https://aiwebdemo.click` in a private window. With Cloudflare
+3. **The site is reachable.** Open ==[https://aiwebdemo.click]== in a private window. With Cloudflare
    Access on, you land on the Cognito sign-in page, not Open WebUI. Sign in as a demo user and send
    a chat message; the reply streams in. Accounts and passwords:
    [access-and-network.md](docs/smoke-tests/access-and-network.md#accounts-and-passwords).
@@ -340,7 +347,7 @@ Every deploy. Each takes a minute or two.
    - `config.js` starts with `// Written by Terraform` and has an `apiUrl`. A `null` `apiUrl` means
      the plan showed the `control_panel_api_settings_found` warning.
    - The authorizer's issuer ends with this lab's Cognito pool ID (`terraform output -raw cognito_user_pool_id`).
-   - Open `https://cp.aiwebdemo.click`, sign in, and the lab instance is listed.
+   - Open ==[https://cp.aiwebdemo.click]==, sign in, and the lab instance is listed.
 
    The full set of panel checks is in
    [control-panel.md](docs/smoke-tests/control-panel.md#control-panel-config-test).

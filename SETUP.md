@@ -11,12 +11,12 @@ The panel depends on these Terraform-owned things when you use the lab's Cognito
 | Needed by the panel | Where it comes from |
 |---|---|
 | Issuer, client ID, redirect address, API address (`config.js`) | For the lab's pool: Terraform writes `config.js` into the panel's bucket on apply and clears it from CloudFront's cache (`control_panel_site.tf`, needs `control_panel_bucket`; `control_panel_distribution_id` for the cache). For another provider: written by hand from `config.example.js` and uploaded |
-| Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set. Until then the authorizer trusts the empty holding pool and every route answers 401 |
-| Demo users and their roles in `panel_users` | `cognito.tf`, when `control_panel_users_table` is set |
+| Authorizer issuer and audience on the API | Terraform on apply and destroy (`control_panel_api.tf`), once the lab knows the API's IDs: from the parameter `/<project_name>/control-panel-api/settings` that the API stack publishes (with `control_panel_api_from_ssm = true`), or from `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id`. Until then the authorizer trusts the empty holding pool and every route answers 401 |
+| Demo users and their roles in `panel_users` | `cognito.tf`, when the lab knows the users table (from the API's settings parameter or `control_panel_users_table`) |
 | Instance ID, ALB target group and service address | SSM parameters under `/<project_name>/control-panel/` that Terraform writes when `control_panel_url` is set (`control_panel_lab.tf`). The Lambdas read them live, so the panel follows the lab with nothing to copy. Terraform also tags the instance `control-panel=managed`, the only instances the customer role may start |
 | Auto-stop setting `/<project_name>/auto-stop`, the timer reset parameter `/<project_name>/auto-stop/reset-at` and CloudWatch namespace `AILab` | `auto_stop.tf` and the instance's cloud-init. Terraform creates the reset parameter (value `0`) and never overwrites it; the panel's reset button writes it |
 
-Terraform needs `control_panel_url`, `control_panel_bucket` and `control_panel_distribution_id` set in `terraform.tfvars`, plus `control_panel_api_url` once the API exists. Apply publishes `config.js`; there is nothing to write or upload by hand for the lab's own pool.
+Terraform needs `control_panel_url`, `control_panel_bucket` and `control_panel_distribution_id` set in `terraform.tfvars`, plus `control_panel_api_from_ssm = true` once the API stack exists (or `control_panel_api_url` set by hand). Apply publishes `config.js`; there is nothing to write or upload by hand for the lab's own pool.
 
 Read other outputs through the repo's wrapper, not bare terraform:
 

@@ -370,7 +370,7 @@ The control panel (`dashboards/`) is a separate web app where customers start th
 | The demo users' rows in `panel_users` (every demo user as `operators`, plus `user_mgrs` for the odd demo users and `admin` for `admin@example.local`), when `control_panel_users_table` is set | Terraform |
 | The lab's instance, target group and service address, as SSM parameters, and the `control-panel=managed` tag on the instance | Terraform (`control_panel_lab.tf`) |
 | The timer reset parameter `/<project_name>/auto-stop/reset-at` | Terraform creates it with the value `0` and never overwrites the value (`auto_stop.tf`); the panel's reset button writes it, and the instance monitor and watchdog read it |
-| The authorizer's issuer and audience | Terraform on apply and destroy, when `control_panel_api_id`, `control_panel_authorizer_id` and `control_panel_holding_pool_id` are set (`control_panel_api.tf`) |
+| The authorizer's issuer and audience | Terraform on apply and destroy, once the lab knows the API's IDs, read from the API stack's `/<project_name>/control-panel-api/settings` parameter or set in `terraform.tfvars` (`control_panel_api.tf`) |
 | Real users, their roles and instance grants | The control panel. Terraform never touches them |
 
 Until a provider is wired, the authorizer trusts an empty holding Cognito pool that can never issue a token, so every API route answers 401. Apply points the authorizer at the lab's pool, and destroy points it back at the holding pool. The routes are never recreated. To use another provider, update the authorizer's issuer and audience by hand and upload a `config.js` for it.

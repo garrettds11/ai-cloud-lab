@@ -49,10 +49,9 @@ resource "aws_cognito_user_pool" "holding" {
 
 # Created pointing at the holding pool. The lab's Terraform (control_panel_api.tf at the
 # repository root) then points it at the lab's Cognito pool on apply and back here on
-# destroy, so the issuer and audience are deliberately not managed by this stack. Give the
-# lab these IDs through control_panel_api_id, control_panel_authorizer_id and
-# control_panel_holding_pool_id (see the outputs). For another sign-in provider, set the
-# issuer and audience by hand; this stack will not undo it.
+# destroy, so the issuer and audience are deliberately not managed by this stack. The lab
+# finds these IDs in the settings parameter (lab_settings.tf). For another sign-in provider,
+# set the issuer and audience by hand; this stack will not undo it.
 resource "aws_apigatewayv2_authorizer" "jwt" {
   api_id           = aws_apigatewayv2_api.panel.id
   authorizer_type  = "JWT"

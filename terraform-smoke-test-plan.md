@@ -185,6 +185,10 @@ function Invoke-TerraformWithCloudflareToken {
 }
 ```
 
+In PowerShell, quote any Terraform argument that has a dot after `=`, such as
+`"-out=api.tfplan"`. Unquoted, PowerShell splits it at the dot and Terraform fails with
+"Too many command line arguments". The wrapper's `@("...")` arrays are already quoted.
+
 Run every Terraform command that plans, applies, or destroys through the
 wrapper, including teardown. Plain `terraform plan`, `apply`, or `destroy`
 sends no Cloudflare credentials and fails with
@@ -240,23 +244,25 @@ The new API is created next to the hand-built one (`65j334bc19`), which keeps se
 
    ```powershell
    terraform init
-   terraform plan -out=api.tfplan
+   terraform plan "-out=api.tfplan"
    ```
 
    **Read the plan before applying.** Expected:
    - The three tables: **will be imported** (with `adopt_existing_tables = true`), possibly with in-place updates (deletion protection, point-in-time recovery). On a new account, **will be created**.
-   - Everything else: **will be created**. That covers the API, the authorizer, 15 routes, the stage, two functions and their roles and log groups, the holding pool, the Open WebUI admin document and the desired-state table.
+   - Everything else: **will be created**. That covers the API, the authorizer, 15 routes, the stage, two functions and their roles and log groups, the holding pool, the Open WebUI admin document, the desired-state table and the lab settings parameter (`/<project_name>/control-panel-api/settings`).
    - **Nothing** may show **must be replaced** or **will be destroyed**. If a table does, stop: its keys differ from `tables.tf`.
 
-3. Apply, then print the lab's new settings:
+3. Apply, then check the settings the stack published for the lab:
 
    ```powershell
    terraform apply api.tfplan
    Remove-Item api.tfplan
-   terraform output -raw lab_tfvars
+   aws ssm get-parameter --name (terraform output -raw lab_settings_parameter) --query Parameter.Value --output text
    ```
 
-   Replace the six matching lines in the **root** `terraform.tfvars.example` with the printed ones (`control_panel_api_url`, `control_panel_api_id`, `control_panel_authorizer_id`, `control_panel_holding_pool_id`, `control_panel_users_table`, `control_panel_entitlements_table`), commit that change, then copy the example over `terraform.tfvars` again before section 2B. Changing only the working copy works for this run but is lost at the next copy, and the lab would then point the panel back at the old API's IDs.
+   The last command prints one line of JSON with `api_url`, `api_id`, `authorizer_id`, `holding_pool_id`, `users_table` and `entitlements_table`. There is nothing to copy: with `control_panel_api_from_ssm = true` (set in the root `terraform.tfvars.example`), the lab reads these values from that parameter at every plan. The parameter's name uses `lab_project_name`, so it must match the lab's `project_name`.
+
+   Do not set `control_panel_api_url`, `control_panel_api_id`, `control_panel_authorizer_id`, `control_panel_holding_pool_id`, `control_panel_users_table` or `control_panel_entitlements_table` in the root tfvars. A value set there wins over the parameter, so an old one would point the lab at an API that no longer exists.
 
 4. Check, before the lab is pointed at it:
 
@@ -274,7 +280,7 @@ After a change to any of the stack's inputs (see the start of this section):
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\dashboards\api\terraform
-terraform plan -out=api.tfplan
+terraform plan "-out=api.tfplan"
 terraform apply api.tfplan
 Remove-Item api.tfplan
 ```
@@ -298,13 +304,15 @@ not be modified.
 
 When `control_panel_url` is set, the plan also shows the control panel changes: three
 new `aws_ssm_parameter` resources under `/<project_name>/control-panel/`, the
-`control-panel=managed` tag on the lab instance, and, if the three authorizer
-variables are set, the `terraform_data` resource that points the API's authorizer at
+`control-panel=managed` tag on the lab instance, and, once the lab knows the API's IDs
+(from the `/<project_name>/control-panel-api/settings` parameter), the `terraform_data` resource that points the API's authorizer at
 the lab's pool. It also shows a Cloudflare Worker script and route for the lab-hostname fallback. With `control_panel_bucket` set it also shows the `config.js` object, and with
 `control_panel_distribution_id` set the cache-clearing step. Section "Control panel
 config test", has the checks after `apply`.
 
-**First lab apply after section 2A's first-time steps** (the API IDs in `terraform.tfvars` changed). Also expect:
+If the plan prints **Warning: Check block assertion failed** for `check.control_panel_api_settings_found`, the lab could not find the API's settings parameter. Stop: apply section 2A first (or check that its `lab_project_name` matches `project_name`), then plan again. Applying anyway leaves the panel with no API address.
+
+**First lab apply after section 2A's first-time steps, and after any rebuild of the API stack** (the API's IDs changed). Also expect:
 
 - `terraform_data.control_panel_authorizer["authorizer"]` **must be replaced**. This is the switch-over. Its destroy step points the old hand-built authorizer back at its holding pool, so the old API starts answering 401, and its create step points the new authorizer at the lab's Cognito pool. If the plan does not show it, stop; see cutover step 5 in `dashboards\api\terraform\README.md`.
 - `aws_ssm_parameter.control_panel_open_webui_image` **will be created** (`/<project_name>/control-panel/open-webui-image`).
@@ -514,9 +522,9 @@ that file from CloudFront's cache. This needs `control_panel_bucket`, and
 `control_panel_distribution_id` for the cache. There is nothing to write or upload
 by hand.
 
-The checks below need values that live in `terraform.tfvars`. Read them into
-variables first, from the repository directory, in the same PowerShell window as
-`AWS_PROFILE`:
+The checks below need values from `terraform.tfvars` and from the API stack's settings
+parameter. Read them into variables first, from the repository directory, in the same
+PowerShell window as `AWS_PROFILE`:
 
 ```powershell
 function Get-TfVar([string]$Name) {
@@ -526,9 +534,10 @@ function Get-TfVar([string]$Name) {
 }
 $projectName       = Get-TfVar project_name
 $domainName        = Get-TfVar domain_name
-$panelApiId        = Get-TfVar control_panel_api_id
-$panelAuthorizerId = Get-TfVar control_panel_authorizer_id
 $panelBucket       = Get-TfVar control_panel_bucket
+$panelApi          = aws ssm get-parameter --name "/$projectName/control-panel-api/settings" --query Parameter.Value --output text | ConvertFrom-Json
+$panelApiId        = $panelApi.api_id
+$panelAuthorizerId = $panelApi.authorizer_id
 ```
 
 Check:
@@ -536,28 +545,27 @@ Check:
 1. `aws s3 cp "s3://$panelBucket/config.js" -` prints a
    file that starts with `// Written by Terraform` and holds the region, the user
    pool ID, an app client ID, the API address and the `redirectUri`
-   `https://cp.aiwebdemo.click/`. A `null` for `apiUrl` means `control_panel_api_url`
-   is not set in `terraform.tfvars`.
+   `https://cp.aiwebdemo.click/`. A `null` for `apiUrl` means the lab found no API
+   settings: the plan showed the `control_panel_api_settings_found` warning (see section 2B).
 2. Open `https://cp.aiwebdemo.click`. The page must show a sign-in button, not a
    message about a missing `clientId` or a missing settings file. If it shows an old
    message, the cache clearing did not run: check the `apply` output for the
    `terraform_data.control_panel_config_cache` step.
 3. In the Cognito console, the user pool has a second app client named
    `<project_name>-control-panel` with no client secret.
-4. If `control_panel_users_table` is set, the DynamoDB table it names has a row for
+4. With the API's settings found, the users table (`$panelApi.users_table`) has a row for
    each of the 11 demo accounts: `demo1@example.local`, `demo3@example.local` and the
    other odd demo users with `operators` and `user_mgrs` in `roles`;
    `demo2@example.local` and the other even demo users with `operators`;
    `admin@example.local` with `operators` and `admin`. Only an administrator can change
    roles, and any administrator can make another.
-   If `control_panel_entitlements_table` is also set, the table it names has one row per
+   The grants table (`$panelApi.entitlements_table`) has one row per
    demo user (all 11, because all have `operators`) for the lab instance, with
    `status` `applied` and `grantedBy` `terraform`. Signed in as `demo1@example.local`
    (or any demo user), the Instances page lists the lab instance. Signed in as an
    administrator, it lists every managed instance with or without a grant.
 
-5. If `control_panel_api_id`, `control_panel_authorizer_id` and
-   `control_panel_holding_pool_id` are set, `apply` pointed the control panel API's authorizer at
+5. With the API's settings found, `apply` pointed the control panel API's authorizer at
    this lab's pool. Check:
 
    ```powershell
@@ -568,8 +576,8 @@ Check:
    control panel app client ID. After `destroy`, the same command must show the holding
    pool's issuer and the audience `holding-unused`.
 
-   After the first cutover, `$panelApiId` and `$panelAuthorizerId` are the new IDs from
-   section 2A. Also check that the old hand-built authorizer went back to its holding pool:
+   `$panelApiId` and `$panelAuthorizerId` are the Terraform-built API's IDs from the
+   settings parameter. Also check that the old hand-built authorizer went back to its holding pool:
 
    ```powershell
    aws apigatewayv2 get-authorizer --api-id 65j334bc19 --authorizer-id pnlj78 --query JwtConfiguration
@@ -1044,7 +1052,7 @@ aws ssm put-parameter --name $param --value 0 --overwrite
 
 ## 4. Stop or destroy the test system
 
-Order: **the lab first, then the API stack** if you are removing it too. Destroying the lab points the panel's sign-in back at the holding pool, which needs the API to still exist. Rebuild the other way round: the API stack (section 2A, with `adopt_existing_tables = true` if the tables survived, which they do unless you turned deletion protection off and deleted them), copy the new `lab_tfvars` lines into the root `terraform.tfvars`, then the lab.
+Order: **the lab first, then the API stack** if you are removing it too. Destroying the lab points the panel's sign-in back at the holding pool, which needs the API to still exist. Rebuild the other way round: the API stack (section 2A, with `adopt_existing_tables = true` if the tables survived, which they do unless you turned deletion protection off and deleted them), then the lab. The lab reads the new IDs from the settings parameter, so nothing is copied.
 
 ### The lab
 
@@ -1081,14 +1089,14 @@ real password, but keep `terraform.tfvars.example`.
 Usually left in place: the panel should keep working with or without a lab. To remove it, from `dashboards\api\terraform`:
 
 ```powershell
-terraform plan -destroy -out=api-destroy.tfplan
+terraform plan -destroy "-out=api-destroy.tfplan"
 terraform apply api-destroy.tfplan
 Remove-Item api-destroy.tfplan
 ```
 
 The three panel tables and the desired-state table have deletion protection, so the destroy stops with an error on them. They stay in AWS with your users and grants. That is intended. To really delete them, set `deletion_protection_enabled = false` in `tables.tf` and `webui_admin.tf`, apply, then destroy. Their data is then gone for good.
 
-Rebuilding the API stack gives the API new IDs and a new address, so the lab must be applied again with the new `lab_tfvars` lines (section 2A step 3, then section 2B).
+Rebuilding the API stack gives the API new IDs and a new address, and publishes them in the settings parameter. Apply the lab again (section 2B) so it picks them up; expect the authorizer replacement listed there.
 
 ## Likely failure points
 
@@ -1101,6 +1109,15 @@ Rebuilding the API stack gives the API new IDs and a new address, so the lab mus
 > - Domain access requires an issued ACM certificate in the selected region, plus either a public Route 53 hosted zone or, with Cloudflare, an **Active** Cloudflare zone.
 > - A Terraform command run without the wrapper fails with `403 Missing X-Auth-Email header` because no Cloudflare token is set. (The API stack in `dashboards\api\terraform` does not need the wrapper.)
 > - The API stack plan shows a table **must be replaced**: the hand-built table's keys differ from `tables.tf`. Stop; do not apply.
-> - After the cutover the panel answers 401 to everyone: the lab apply did not replace `terraform_data.control_panel_authorizer`, so the new authorizer is still on its holding pool. Apply the lab with `-replace='terraform_data.control_panel_authorizer["authorizer"]'`.
+> - The lab plan warns about `check.control_panel_api_settings_found`: the API stack is not applied, or its `lab_project_name` differs from the lab's `project_name`, or `AWS_PROFILE` points at another account. Fix that before applying the lab.
+> - After the cutover the panel answers 401 to everyone: the lab apply did not replace `terraform_data.control_panel_authorizer`, so the new authorizer is still on its holding pool. Force the replacement from the repository root (Windows PowerShell 5.1 drops the inner quotes unless they are escaped, PowerShell 7.3 and later passes them as written):
+
+>   ```powershell
+>   $authorizer = 'terraform_data.control_panel_authorizer["authorizer"]'
+>   if ($PSVersionTable.PSVersion -lt [version]'7.3') { $authorizer = $authorizer.Replace('"', '\"') }
+>   Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-replace=$authorizer", "-out=ai-lab.tfplan")
+>   ```
+>
+>   Check that the plan replaces only that resource, then apply `ai-lab.tfplan` as usual.
 > - The panel still uses the old API: the pages are cached. Reload, or check `config.js` and the CloudFront invalidation.
 > - An Open WebUI action fails with a 409 about Systems Manager: the instance has not registered with SSM yet. Wait a minute after it reaches `READY`.

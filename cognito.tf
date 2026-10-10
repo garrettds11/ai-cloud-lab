@@ -125,9 +125,9 @@ resource "aws_cognito_user" "lab" {
 # are managed in the control panel. After a demo user signs in the panel adds a few
 # fields (name, last seen) to their row, and the next apply puts the row back as seeded.
 resource "aws_dynamodb_table_item" "panel_demo_user" {
-  for_each = var.control_panel_users_table == null ? {} : local.panel_demo_roles
+  for_each = local.panel_api.users_table == null ? {} : local.panel_demo_roles
 
-  table_name = var.control_panel_users_table
+  table_name = local.panel_api.users_table
   hash_key   = "email"
 
   item = jsonencode({

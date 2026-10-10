@@ -50,7 +50,7 @@ Because telemetry is on by default, `plan` fails with a clear message until thos
 
 ## Check that it works
 
-See "Grafana telemetry test" in the smoke test plan.
+See [Grafana telemetry test](docs/smoke-tests/lab-features.md#grafana-telemetry-test).
 
 ## Cost and data volume
 

@@ -56,7 +56,7 @@ Run these in PowerShell from the repository, in the window where `AWS_PROFILE` a
 
    Then apply the lab as usual from the repository root. Read its plan first: it must show `terraform_data.control_panel_authorizer["authorizer"]` **must be replaced**, because the API and authorizer IDs changed. That replacement is the switch-over. It points the old authorizer back at its holding pool, so the old API starts answering 401, and points the new authorizer at the lab's Cognito pool. The same apply publishes the new address in `config.js` and clears it from CloudFront's cache. Pages that are already open keep the old address until they are reloaded.
 
-   Before this apply the new API answers 401 to everything, which is expected. If the plan does not show the replacement, stop: the lab would publish the new address while the new authorizer still trusts only the holding pool. You can force the replacement; see the 401 entry under "Likely failure points" in `terraform-smoke-test-plan.md` for the PowerShell command.
+   Before this apply the new API answers 401 to everything, which is expected. If the plan does not show the replacement, stop: the lab would publish the new address while the new authorizer still trusts only the holding pool. You can force the replacement; see the 401 entry in [docs/troubleshooting.md](../../../docs/troubleshooting.md#after-apply) for the PowerShell command.
 
 6. **Check the panel.** Sign in, see the instance, start it, reset the timer, and as an administrator open User management and the logs.
 

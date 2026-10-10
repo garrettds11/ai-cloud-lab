@@ -15,6 +15,13 @@ version numbers yet, so everything is listed under Unreleased.
 - Auto-stop alert messages are encrypted at rest with the AWS managed SNS key.
 
 ### Changed
+- `terraform-smoke-test-plan.md` is now only the deploy runbook (prepare, API stack, lab, checks,
+  destroy) with a table of which tests to run for each kind of change. The feature tests moved to
+  `docs/smoke-tests/` (access and network, control panel, lab features) and the failure points to
+  `docs/troubleshooting.md`. The one-time cutover steps from the hand-built API were removed, the
+  default profile in the runbook no longer names a profile for another account, and the SSM-only
+  test now switches domain access off in the tfvars copy (an environment variable cannot override
+  it).
 - CI: the tflint and checkov job is now blocking, with checkov pinned. Every remaining finding is skipped
   inline next to its resource with the reason. The control panel API tests now also run in CI.
 

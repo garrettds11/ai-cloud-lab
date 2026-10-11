@@ -46,10 +46,11 @@ check "auto_stop_alert_email" {
 }
 
 # absolute_max_minutes is measured from boot only: no reset and no panel policy moves it (0 = off).
-# max_resets is how many times the Reset button may extend the hard limit in one run (0 = no limit);
-# the panel policy may only lower it.
+# max_resets is the most times the Reset button may extend the hard limit in one run (0 = none,
+# default 50). idle_minutes, max_uptime_minutes and max_resets here are the seeded defaults: the
+# control panel's timer policy is authoritative and sets them as entered once an admin saves it.
 # Settings read by the instance-side agent every minute. Keeping them here, not in
-# user-data, means changing the toggle or the timeout updates in place and never
+# user-data, means changing the toggle or the seed updates in place and never
 # replaces the instance.
 resource "aws_ssm_parameter" "auto_stop" {
   #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader

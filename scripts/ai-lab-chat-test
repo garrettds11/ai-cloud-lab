@@ -7,7 +7,8 @@
 # It proves the whole path people use: sign-in, Open WebUI, Ollama, the model. The prompt is
 # fixed ("Reply with the single word: ready."), so nothing a person typed ever reaches the
 # model, and the reply is shortened and has any <think> block removed before it is printed.
-# A first call after the model was unloaded takes longer, because the model loads into the GPU.
+# A first call after the model was unloaded takes longer, because the model loads into the GPU:
+# about two minutes from a cold disk after a restart, so the request may wait up to 330 seconds.
 #
 # Prints one JSON line: {"ok":true,"action":"chat-test","model":..,"latencyMs":..,"reply":..,
 # "inputTokens":..,"outputTokens":..} or {"ok":false,"error":..}.
@@ -34,7 +35,7 @@ ask() {
     local body answer started finished
     body="$(jq -cn --arg m "$model" --arg p "$PROMPT" '{model: $m, stream: false, messages: [{role: "user", content: $p}]}')"
     started="$(now_ms)"
-    answer="$(printf '%s' "$body" | WEBUI_POST_TIMEOUT=120 webui_post "/api/chat/completions")" || {
+    answer="$(printf '%s' "$body" | WEBUI_POST_TIMEOUT=330 webui_post "/api/chat/completions")" || {
         emit '{ok: false, error: "Open WebUI did not return a reply. The model may be missing or still loading; try again."}'
         return 1
     }

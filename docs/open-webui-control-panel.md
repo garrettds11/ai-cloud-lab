@@ -2,7 +2,7 @@
 
 What the **Open WebUI** page of the control panel can read and change, what it never touches, and
 how its changes survive a restart. All of it is built and tested offline only. Nothing has run
-against a real Open WebUI v0.11.4 yet; the smoke tests in
+against a real Open WebUI v0.12.0 yet; the smoke tests in
 `docs/runbook/smoke-tests/control-panel.md` ("Open WebUI settings test") are where that gets checked.
 
 ## How it works
@@ -31,6 +31,7 @@ failure, never as a false success.
 | Routes API keys may call | `set-feature` | Yes, after a confirmation |
 | Add, change or remove a tool server | `upsert-tool-server`, `remove-tool-server` | Yes, after a confirmation |
 | Import a skill (pasted text, up to 1800 characters) | `import-skill` | Yes, after a confirmation. Not saved for the next start |
+| Import several text skills at once (JSON array) | `import-skill`, one per skill | Yes, one confirmation for the batch. Not saved for the next start |
 | Reapply saved settings | `apply-desired` | Yes |
 | Chat API test, Usage | `chat-test`, `usage` | Read only (see their own pages) |
 
@@ -57,12 +58,27 @@ only takes the text of a `SKILL.md`.
 
 ## Skills
 
-Open WebUI v0.11.4 has Skills. The panel creates or replaces one skill by ID, with its name,
+Open WebUI v0.12.0 has Skills. The panel creates or replaces one skill by ID, with its name,
 description and text, readable by all users, and can add it to the chosen models' skill lists. Open
 WebUI stores the text and never runs it. Changing a skill that already exists keeps who may read it.
 A skill is too large to keep with the saved settings, so it is not put back after a restart: import it
 again, or import it in Open WebUI where it lives on the instance's data volume like the rest. If a
 model cannot take the skill, the page says the skill was saved and names the models.
+
+**Several at once.** Under *Import a skill*, "Import several at once (JSON)" takes a JSON array of up
+to 25 small skills and imports them one by one through the same checked path, with a single
+confirmation and a per-skill result (Imported or Failed). Each object takes `id`, `name`, `content`
+(up to 1800 characters) and optional `description`, `enabled` and `models`. It is a convenience for
+seeding many short skills; it is not a way around the size limit or the multi-file rule below.
+
+**Multi-file and repository skills.** A skill with supporting files (`scripts/`, `references/`, a
+`report-schema.json`, validators) or a whole repository -- for example a coding-agent skill such as
+`cloudflare/security-audit` -- is not panel-shaped. The panel only takes the text of a single
+`SKILL.md`. Import those in Open WebUI itself (Workspace, Skills), where they live on the instance's
+data volume. Note that a skill written for a *coding agent* (one that drives sub-agents, a sandbox and
+local scripts) will not behave as designed inside Open WebUI's chat, whatever format it is in; such
+skills belong in a coding agent (installed with its own tooling, e.g. `npx skills add <repo>`), not in
+the lab.
 
 ## Export scope
 
@@ -105,7 +121,7 @@ fit and says which to remove.
 ## Version and API assumptions to check at the first deploy
 
 The Open WebUI routes and field names below were written from the project's notes, not from a running
-v0.11.4, and are guarded by read-back:
+v0.12.0, and are guarded by read-back:
 
 - The tool server list and verify routes under `/api/v1/configs/tool_servers`.
 - The image settings route `/api/v1/images/config/update` and the `memory` permission key.
@@ -114,3 +130,14 @@ v0.11.4, and are guarded by read-back:
 
 A setting this version does not have shows as "does not have that setting", and the settings list
 names the ones that did not answer.
+
+## Two-factor sign-in (not turned on)
+
+Open WebUI v0.12.0 can require an authenticator app for every user (`ENABLE_MFA`, or Admin Settings,
+Authentication). It is off in the lab, on purpose. With it on, a sign-in with email and password no
+longer returns a session: it returns a second step, and counts toward 10 attempts per 15 minutes per
+account. The lab's own scripts (first-boot setup, the control panel actions, the vulnerability tool
+registration and the usage and chat tests) sign in that way as the admin account, so they would all
+stop working. Users who sign in with Cognito can skip it (`MFA_ALLOW_OAUTH_BYPASS`), as Cognito has its
+own second factor. Turning it on needs the scripts to use an Open WebUI API key instead of the password
+first. A lost authenticator is recovered with `open-webui mfa reset` inside the container.

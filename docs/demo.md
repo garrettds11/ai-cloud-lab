@@ -137,7 +137,7 @@ the lab for Open WebUI's health and version. Show it from PowerShell:
 
 ```powershell
 $doc = terraform -chdir=dashboards/api/terraform output -raw webui_admin_document
-$cmd = aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=0.11.4" --query Command.CommandId --output text
+$cmd = aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=0.12.0" --query Command.CommandId --output text
 Start-Sleep 15
 aws ssm get-command-invocation --command-id $cmd --instance-id $env:instance_id --query "[Status, StandardOutputContent]" --output text
 ```

@@ -74,7 +74,7 @@ value and how many chats overrode it, not a per-message value.
 | Input and output tokens by model | Volume of work | Open WebUI `GET /api/v1/analytics/tokens` | exporter, `ai_lab_tokens_total{model,direction}` |
 | Tokens and cost by user | Who uses the lab and their share of the cost | `GET /api/v1/analytics/users` | **control panel admin page**, not Grafana (see Cost allocation) |
 | Messages and chats per day | Adoption | `GET /api/v1/analytics/daily`, `/summary` | exporter |
-| Generation speed (output tokens/s) | The headline model-performance number | Ollama `eval_count / eval_duration`, kept by Open WebUI in message usage | exporter from `/api/v1/analytics/messages` (to verify on v0.11.4) |
+| Generation speed (output tokens/s) | The headline model-performance number | Ollama `eval_count / eval_duration`, kept by Open WebUI in message usage | exporter from `/api/v1/analytics/messages` (to verify on v0.12.0) |
 | Prompt processing speed and time to first token | How long users wait before text appears | Ollama `prompt_eval_*`, Open WebUI traces | exporter; trace span duration |
 | Model load time | Cold-start cost after idle | Ollama `load_duration` | exporter |
 | Context fill (prompt tokens / context length) | Near 100% means truncation and lost tool definitions | tokens and settings | Grafana expression |
@@ -324,7 +324,7 @@ The usage data on the instance is written and tested offline; it has not run on 
 Also built, offline only: the control panel pages for Open WebUI status, Usage and cost, Spend caps,
 Timer policy and the Chat API test, and the spend caps job (`dashboards/api/spend_job.py`, every five
 minutes) with the cost split in `dashboards/api/costing.py`. Nothing here has run against a real
-Open WebUI v0.11.4, Cognito or Amazon SES yet; see the control panel smoke tests.
+Open WebUI v0.12.0, Cognito or Amazon SES yet; see the control panel smoke tests.
 
 Grafana and log search, also offline only (nothing has run against a real Grafana Cloud stack):
 
@@ -350,7 +350,7 @@ and down; no titles or text). Each has its own `ai_lab_exporter_source_up` value
 leaves the rest. Request time is the whole request, not the time to the first token.
 
 Not built yet: time to first token and generation speed (tokens per second). They need per-message
-timing fields that Open WebUI v0.11.4 has to be checked for. Run `sudo ai-lab-metrics --shapes` on the
+timing fields that Open WebUI v0.12.0 has to be checked for. Run `sudo ai-lab-metrics --shapes` on the
 instance at first deploy; it prints the keys and types (never values) of the analytics answers and the
 `chat`, `feedback` and `message` tables, and the exporter is then written against what it shows
 (issue 12 in `issues-usage-caps-grafana.md`). Feedback is counted per rating only, not per model, and

@@ -67,8 +67,8 @@ AUTO_STOP_PARAMETER = os.environ.get("AUTO_STOP_PARAMETER", "")
 # watchdog read it. Defaults to the auto-stop parameter's "reset-at" child, which is what
 # Terraform creates (auto_stop.tf), so there is no extra setting to copy by hand.
 RESET_PARAMETER = os.environ.get("RESET_PARAMETER", f"{AUTO_STOP_PARAMETER}/reset-at" if AUTO_STOP_PARAMETER else "")
-# The timer policy the panel sets (idle and hard-limit minutes). It can only tighten the lab's
-# auto-stop setting, which stays the ceiling. The instance monitor reads it the same way.
+# The timer policy the panel sets (idle, session and reset values). The panel is authoritative:
+# its values apply as entered. The instance monitor reads this same parameter.
 POLICY_PARAMETER = os.environ.get("POLICY_PARAMETER", f"{AUTO_STOP_PARAMETER}/policy" if AUTO_STOP_PARAMETER else "")
 # How many times the Reset button has been used in the current run: "<launch epoch seconds>:<count>".
 RESET_COUNT_PARAMETER = os.environ.get("RESET_COUNT_PARAMETER", f"{AUTO_STOP_PARAMETER}/reset-count" if AUTO_STOP_PARAMETER else "")
@@ -323,46 +323,53 @@ def _instance_ids():
 _rule_cache = {"at": 0, "value": None}
 
 
-def _policy_minutes(value, ceiling):
-    """The minutes in force: the panel's value when set, never above a ceiling that is on."""
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        return ceiling
-    return min(value, ceiling) if ceiling > 0 else value
+DEFAULT_RESETS = 50  # resets per run seeded when the deployment does not say
+
+
+def _as_minutes(value):
+    """A stored policy value as a whole number >= 0, or None when it is missing or malformed."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def _rule_parts():
-    """(ceiling, policy, effective): the lab's setting, the panel's override, and what applies."""
-    ceiling = {"enabled": False, "idle": 0, "max": 0, "absolute": 0, "resets": 0}
-    policy = {"idle": 0, "max": 0, "resets": 0}
+    """(seed, policy, effective): the deployment's seeded defaults, the panel's saved values (None
+    until it is ever set), and what is in force. The panel is authoritative -- once saved, its idle,
+    session and reset values apply as entered; the seed only fills in a field before then."""
+    seed = {"enabled": False, "idle": 0, "max": 0, "absolute": 0, "resets": DEFAULT_RESETS}
     if AUTO_STOP_PARAMETER:
         try:
             data = json.loads(ssm.get_parameter(Name=AUTO_STOP_PARAMETER)["Parameter"]["Value"])
-            ceiling = {
+            seed = {
                 "enabled": bool(data.get("enabled")),
                 "idle": int(data.get("idle_minutes", 0) or 0),
                 "max": int(data.get("max_uptime_minutes", 0) or 0),
                 "absolute": int(data.get("absolute_max_minutes", 0) or 0),
-                "resets": int(data.get("max_resets", 0) or 0),
+                "resets": min(max(int(data.get("max_resets", DEFAULT_RESETS)), 0), RESETS_MAX),
             }
         except (ClientError, ValueError, KeyError) as err:
             print(json.dumps({"warning": "auto-stop parameter unreadable", "detail": str(err)}))
-    if POLICY_PARAMETER and ceiling["enabled"]:
+    policy = None
+    if POLICY_PARAMETER and seed["enabled"]:
         try:
             data = json.loads(ssm.get_parameter(Name=POLICY_PARAMETER)["Parameter"]["Value"])
-            policy = {"idle": data.get("idle_minutes", 0), "max": data.get("max_uptime_minutes", 0), "resets": data.get("max_resets", 0)}
+            policy = {"idle": _as_minutes(data.get("idle_minutes")), "max": _as_minutes(data.get("max_uptime_minutes")), "resets": _as_minutes(data.get("max_resets"))}
         except ClientError as err:
             if err.response.get("Error", {}).get("Code") != "ParameterNotFound":
                 print(json.dumps({"warning": "timer policy unreadable", "detail": str(err)}))
         except (ValueError, AttributeError) as err:
             print(json.dumps({"warning": "timer policy is not valid JSON; ignoring it", "detail": str(err)}))
+    # Each field: the panel's saved value when present, else the seed. 0 means that timer is off.
+    pick = lambda key: policy[key] if policy and policy[key] is not None else seed[key]
     effective = {
-        "enabled": ceiling["enabled"],
-        "idle": _policy_minutes(policy["idle"], ceiling["idle"]),
-        "max": _policy_minutes(policy["max"], ceiling["max"]),
-        "absolute": ceiling["absolute"],  # the panel cannot change it
-        "resets": _policy_minutes(policy["resets"], ceiling["resets"]),
+        "enabled": seed["enabled"],
+        "idle": pick("idle"),
+        "max": pick("max"),
+        "absolute": seed["absolute"],  # a hard backstop set at deploy; the panel never changes it
+        "resets": pick("resets"),
     }
-    return ceiling, policy, effective
+    return seed, policy, effective
 
 
 def _rule():
@@ -493,7 +500,7 @@ def _auto_stop(instance_id, launched_ms, rule):
         "maxUptimeMinutes": rule["max"],
         "absoluteMaxMinutes": rule["absolute"],
         "resetsAllowed": rule["resets"] if rule["max"] > 0 else 0,
-        "resetsUsed": _resets_used(launched_ms) if rule["max"] > 0 and rule["resets"] > 0 else None,
+        "resetsUsed": _resets_used(launched_ms) if rule["max"] > 0 else None,
         "launchedAt": launched_ms,
         "resetAt": _reset_at_ms(launched_ms) if rule["max"] > 0 else None,
         "setupDone": setup_done,
@@ -609,8 +616,12 @@ def reset_timer(caller, instance_id):
     launch = raws[instance_id]["instance"].get("LaunchTime")
     launched_ms = int(launch.timestamp() * 1000) if launch else now_ms()
     limit = rule["resets"]
+    if limit == 0:
+        _log(caller["id"], "warning", f"Timer reset refused for {name}: resets are turned off", instance_id)
+        raise ApiError(409, "Timer resets are turned off. An administrator can change this in the timer policy.")
+    counted = bool(RESET_COUNT_PARAMETER)
     used = _resets_used(launched_ms)
-    if limit > 0:
+    if counted:
         if used is None:
             raise ApiError(502, "Could not check how many timer resets are left. Try again shortly.")
         if used >= limit:
@@ -625,17 +636,13 @@ def reset_timer(caller, instance_id):
         current_ms = (_reset_at_ms(launched_ms) or launched_ms) + rule["max"] * 60000
         if min(stop_ms, absolute_ms) <= current_ms:
             at = datetime.datetime.fromtimestamp(absolute_ms / 1000, datetime.timezone.utc).strftime("%H:%M UTC")
-            raise ApiError(409, f"A reset would add no time: the lab's absolute limit stops it at {at} whatever the timer says.")
+            raise ApiError(409, f"A reset would add no time: the absolute limit stops it at {at} whatever the timer says.")
         if stop_ms > absolute_ms:
             stop_ms, capped = absolute_ms, True
     try:
-        if RESET_COUNT_PARAMETER:
-            try:
-                ssm.put_parameter(Name=RESET_COUNT_PARAMETER, Value=f"{launched_ms // 1000}:{(used or 0) + 1}", Type="String", Overwrite=True)
-            except ClientError:
-                if limit > 0:
-                    raise  # a counted limit must not be bypassed by a count that did not save
-                print(json.dumps({"warning": "reset count not saved"}))
+        if counted:
+            # A limit must not be bypassed by a count that did not save, so a failure here stops the reset.
+            ssm.put_parameter(Name=RESET_COUNT_PARAMETER, Value=f"{launched_ms // 1000}:{(used or 0) + 1}", Type="String", Overwrite=True)
         ssm.put_parameter(Name=RESET_PARAMETER, Value=str(reset_s), Type="String", Overwrite=True)
     except ClientError as err:
         code = err.response.get("Error", {}).get("Code", "")
@@ -643,7 +650,7 @@ def reset_timer(caller, instance_id):
         print(json.dumps({"error": "put_parameter", "detail": str(err)}))
         raise ApiError(502, "Could not reset the timer. Try again, and tell your administrator if it keeps failing.")
     stop_text = datetime.datetime.fromtimestamp(stop_ms / 1000, datetime.timezone.utc).strftime("%H:%M UTC")
-    left = limit - (used or 0) - 1 if limit > 0 else None
+    left = limit - (used or 0) - 1 if counted else None
     _log(caller["id"], "info", f"Reset the auto-stop timer for {name}: another {rule['max']} minutes, stopping at about {stop_text}" + (" (cut short by the absolute limit)" if capped else "") + (f", {left} resets left" if left is not None else ""), instance_id)
     message = f"Auto-stop timer reset. The lab will stop at about {stop_text}." if capped else f"Auto-stop timer reset. The lab has another {rule['max']} minutes."
     return {
@@ -1298,27 +1305,22 @@ def resend_confirmation(caller, user_id):
 
 # ---- admin: timer policy ----------------------------------------------------------------
 #
-# The lab's auto-stop setting (Terraform) is the ceiling. The panel may set shorter idle and
-# hard-limit minutes inside it, never longer, and cannot switch a limit that is on off. 0 means
-# "use the lab's value". The instance monitor applies the same rule from the same parameter.
+# The panel owns the timer values. Terraform's auto-stop setting only seeds the initial values
+# (used until the panel saves) and keeps the on/off gate and the absolute backstop. Each value is
+# required; 0 turns that timer off. The instance monitor reads the panel's values from the same
+# parameter. Fixed product bounds below are not tied to the deployment.
 
-IDLE_MIN, HARD_MIN, POLICY_MAX, RESETS_MAX = 5, 30, 10080, 50
+IDLE_MIN, HARD_MIN, POLICY_MAX, RESETS_MAX = 5, 5, 10080, 500  # fixed product bounds, not tied to the deployment
 
 
 def _policy_view():
-    ceiling, policy, effective = _rule_parts()
-
-    def own(value):
-        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
-
+    seed, policy, effective = _rule_parts()
     return {
-        "enabled": ceiling["enabled"],
-        "ceiling": {"idleMinutes": ceiling["idle"], "maxUptimeMinutes": ceiling["max"], "absoluteMaxMinutes": ceiling["absolute"], "maxResets": ceiling["resets"]},
-        "policy": {"idleMinutes": own(policy["idle"]), "maxUptimeMinutes": own(policy["max"]), "maxResets": own(policy["resets"])},
-        "effective": {"idleMinutes": effective["idle"], "maxUptimeMinutes": effective["max"], "absoluteMaxMinutes": effective["absolute"], "maxResets": effective["resets"]},
-        "minimums": {"idleMinutes": IDLE_MIN, "maxUptimeMinutes": HARD_MIN},
-        "maximum": POLICY_MAX,
-        "maximumResets": RESETS_MAX,
+        "enabled": seed["enabled"],
+        "values": {"idleMinutes": effective["idle"], "maxUptimeMinutes": effective["max"], "maxResets": effective["resets"]},
+        "custom": policy is not None,
+        "absoluteMaxMinutes": effective["absolute"],
+        "bounds": {"minMinutes": IDLE_MIN, "maxMinutes": POLICY_MAX, "maxResets": RESETS_MAX},
     }
 
 
@@ -1327,18 +1329,15 @@ def get_timer_policy(caller):
     return _policy_view()
 
 
-def _policy_field(payload, key, low, label, ceiling):
-    value = payload.get(key, 0)
-    if value is None:
-        value = 0
+def _policy_field(payload, key, low, label):
+    """A required timer field: 0 (off) or a whole number of minutes within the product bounds."""
+    value = payload.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ApiError(400, f"{label} must be a whole number of minutes (0 to use the lab's value).")
+        raise ApiError(400, f"{label} is required: a whole number of minutes, or 0 to turn it off.")
     if value == 0:
         return 0
     if value < low or value > POLICY_MAX:
-        raise ApiError(400, f"{label} must be 0 or between {low} and {POLICY_MAX} minutes.")
-    if ceiling > 0 and value > ceiling:
-        raise ApiError(400, f"{label} cannot be longer than the lab's own limit of {ceiling} minutes.")
+        raise ApiError(400, f"{label} must be 0 (off) or between {low} and {POLICY_MAX} minutes.")
     return value
 
 
@@ -1346,18 +1345,14 @@ def save_timer_policy(caller, payload):
     _require_admin(caller, "change the timer policy")
     if not POLICY_PARAMETER:
         raise ApiError(503, "The timer policy is not set up on this control panel yet.")
-    ceiling, _, _ = _rule_parts()
-    if not ceiling["enabled"]:
+    seed, _, _ = _rule_parts()
+    if not seed["enabled"]:
         raise ApiError(409, "Auto-stop is switched off for this lab, so there is no timer policy to set.")
-    idle = _policy_field(payload, "idleMinutes", IDLE_MIN, "Idle time", ceiling["idle"])
-    hard = _policy_field(payload, "maxUptimeMinutes", HARD_MIN, "Session length", ceiling["max"])
-    resets = payload.get("maxResets", 0)
-    if resets is None:
-        resets = 0
+    idle = _policy_field(payload, "idleMinutes", IDLE_MIN, "Idle time")
+    hard = _policy_field(payload, "maxUptimeMinutes", HARD_MIN, "Session length")
+    resets = payload.get("maxResets")  # required: a whole number, and 0 means no resets at all
     if isinstance(resets, bool) or not isinstance(resets, int) or resets < 0 or resets > RESETS_MAX:
-        raise ApiError(400, f"Resets per run must be a whole number from 0 (use the lab's value) to {RESETS_MAX}.")
-    if ceiling["resets"] > 0 and resets > ceiling["resets"]:
-        raise ApiError(400, f"Resets per run cannot be more than the lab's own limit of {ceiling['resets']}.")
+        raise ApiError(400, f"Resets per run is required: a whole number from 0 (off) to {RESETS_MAX}.")
     value = json.dumps({"idle_minutes": idle, "max_uptime_minutes": hard, "max_resets": resets, "by": caller["id"], "at": now_ms()})
     try:
         ssm.put_parameter(Name=POLICY_PARAMETER, Value=value, Type="String", Overwrite=True)
@@ -1365,7 +1360,7 @@ def save_timer_policy(caller, payload):
         print(json.dumps({"error": "put_parameter", "detail": str(err)}))
         raise ApiError(502, "Could not save the timer policy. Try again, and check the logs if it keeps failing.")
     _rule_cache.update(at=0, value=None)
-    text = (f"idle {idle} min" if idle else "idle: lab value") + ", " + (f"session {hard} min" if hard else "session: lab value") + ", " + (f"{resets} resets per run" if resets else "resets: lab value")
+    text = (f"idle {idle} min" if idle else "idle off") + ", " + (f"session {hard} min" if hard else "session off") + ", " + (f"{resets} resets per run" if resets else "resets off")
     _history(caller, "everyone", f"Set the timer policy: {text}")
     _log(caller["id"], "info", f"Changed the timer policy ({text})")
     return _policy_view()

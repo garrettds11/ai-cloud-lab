@@ -1,4 +1,5 @@
-"""Timer policy through the Control API: the panel sets shorter limits inside the lab's.
+"""Timer policy through the Control API: the panel owns the values; they apply as entered.
+Terraform only seeds the initial values and keeps the on/off gate and the absolute backstop.
 Run from dashboards/api: python -m pytest -q tests/test_timer_policy.py"""
 
 import json
@@ -13,8 +14,10 @@ POLICY = "/lab/auto-stop/policy"
 
 
 class PolicySSM:
-    def __init__(self, ceiling=None, policy=None, write_error=None):
-        self.ceiling = ceiling or {"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 240}
+    """Stands in for SSM: `seed` is the deployment's auto-stop parameter, `policy` the saved panel policy."""
+
+    def __init__(self, seed=None, policy=None, write_error=None):
+        self.seed = seed or {"enabled": True, "idle_minutes": 60, "max_uptime_minutes": 240}
         self.policy, self.write_error, self.writes = policy, write_error, []
 
     def get_parameter(self, Name):
@@ -22,7 +25,7 @@ class PolicySSM:
             if self.policy is None:
                 raise client_error("ParameterNotFound")
             return {"Parameter": {"Value": self.policy}}
-        return {"Parameter": {"Value": json.dumps(self.ceiling)}}
+        return {"Parameter": {"Value": json.dumps(self.seed)}}
 
     def put_parameter(self, **kwargs):
         if self.write_error:
@@ -40,7 +43,8 @@ def ssm(monkeypatch):
 
 
 def put(body, user=ADM):
-    return call("PUT /admin/timer-policy", user, body=body)
+    """Saves a policy. Every field is required, so a test that cares about one still sends the rest."""
+    return call("PUT /admin/timer-policy", user, body={"idleMinutes": 60, "maxUptimeMinutes": 240, "maxResets": 50, **body})
 
 
 def test_only_administrators_read_or_change_it(aws, ssm):
@@ -51,17 +55,19 @@ def test_only_administrators_read_or_change_it(aws, ssm):
     assert call("GET /admin/timer-policy", ADM)[0] == 200
 
 
-def test_with_no_policy_the_lab_values_apply(aws, ssm):
+def test_with_no_policy_the_seeded_values_apply(aws, ssm):
     body = call("GET /admin/timer-policy", ADM)[1]
     assert body["enabled"] is True
-    assert body["ceiling"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "absoluteMaxMinutes": 0, "maxResets": 0}
-    assert body["policy"] == {"idleMinutes": 0, "maxUptimeMinutes": 0, "maxResets": 0}
-    assert body["effective"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "absoluteMaxMinutes": 0, "maxResets": 0}
+    assert body["custom"] is False
+    assert body["values"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "maxResets": 50}
+    assert body["absoluteMaxMinutes"] == 0
+    assert body["bounds"] == {"minMinutes": 5, "maxMinutes": 10080, "maxResets": 500}
 
 
-def test_a_shorter_policy_is_saved_applied_and_recorded(aws, ssm):
+def test_saved_values_are_applied_and_recorded(aws, ssm):
     status, body = put({"idleMinutes": 20, "maxUptimeMinutes": 120})
-    assert status == 200 and body["effective"] == {"idleMinutes": 20, "maxUptimeMinutes": 120, "absoluteMaxMinutes": 0, "maxResets": 0}
+    assert status == 200 and body["custom"] is True
+    assert body["values"] == {"idleMinutes": 20, "maxUptimeMinutes": 120, "maxResets": 50}
     write = ssm.writes[0]
     assert write["Name"] == POLICY and write["Overwrite"] is True and write["Type"] == "String"
     saved = json.loads(write["Value"])
@@ -74,53 +80,80 @@ def test_the_reset_button_and_the_lab_view_use_the_policy(aws, ssm):
     assert handler._rule()["max"] == 100
 
 
-def test_a_value_longer_than_the_lab_limit_is_refused(aws, ssm):
-    assert put({"idleMinutes": 61})[0] == 400
-    assert put({"maxUptimeMinutes": 241})[0] == 400
-    assert ssm.writes == []
+def test_values_longer_than_the_seed_are_allowed(aws, ssm):
+    # The panel is authoritative: it is not capped by the deployment's seeded values.
+    status, body = put({"idleMinutes": 600, "maxUptimeMinutes": 9999})
+    assert status == 200
+    assert body["values"]["idleMinutes"] == 600 and body["values"]["maxUptimeMinutes"] == 9999
 
 
-@pytest.mark.parametrize("bad", [{"idleMinutes": 4}, {"maxUptimeMinutes": 29}, {"idleMinutes": -1}, {"idleMinutes": "30"},
+def test_a_seed_far_below_the_bounds_does_not_limit_the_panel(aws, monkeypatch):
+    # The old 20-minute "ceiling" problem: a small seed must not cap what the panel can set.
+    fake = PolicySSM(seed={"enabled": True, "idle_minutes": 0, "max_uptime_minutes": 20})
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
+    status, body = put({"maxUptimeMinutes": 240})
+    assert status == 200 and body["values"]["maxUptimeMinutes"] == 240
+
+
+@pytest.mark.parametrize("bad", [{"idleMinutes": 4}, {"maxUptimeMinutes": 4}, {"idleMinutes": -1}, {"idleMinutes": "30"},
                                  {"idleMinutes": 1.5}, {"idleMinutes": True}, {"maxUptimeMinutes": 10081}])
 def test_out_of_range_or_wrong_type_values_are_refused(aws, ssm, bad):
     assert put(bad)[0] == 400 and ssm.writes == []
 
 
-def test_zero_goes_back_to_the_lab_value(aws, ssm):
-    put({"idleMinutes": 20})
+def test_the_refusal_names_the_fixed_bounds_not_the_deployment(aws, monkeypatch):
+    fake = PolicySSM(seed={"enabled": True, "idle_minutes": 0, "max_uptime_minutes": 20})
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
+    status, body = put({"maxUptimeMinutes": 4})
+    assert status == 400 and "5" in body["message"] and "10080" in body["message"]
+
+
+def test_every_field_is_required(aws, ssm):
+    for body in ({}, {"idleMinutes": 20}, {"idleMinutes": 20, "maxUptimeMinutes": 30}, {"maxResets": None}, {"idleMinutes": None}):
+        status, answer = call("PUT /admin/timer-policy", ADM, body=body)
+        assert status == 400 and "required" in answer["message"]
+    assert ssm.writes == []
+
+
+def test_zero_turns_a_timer_off(aws, ssm):
     status, body = put({"idleMinutes": 0, "maxUptimeMinutes": 0})
-    assert status == 200 and body["effective"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "absoluteMaxMinutes": 0, "maxResets": 0}
+    assert status == 200
+    assert body["values"]["idleMinutes"] == 0 and body["values"]["maxUptimeMinutes"] == 0
 
 
-def test_a_limit_the_lab_leaves_off_can_be_switched_on(aws, monkeypatch):
-    fake = PolicySSM(ceiling={"enabled": True, "idle_minutes": 0, "max_uptime_minutes": 90})
+def test_a_timer_off_in_the_seed_can_be_switched_on(aws, monkeypatch):
+    fake = PolicySSM(seed={"enabled": True, "idle_minutes": 0, "max_uptime_minutes": 90})
     monkeypatch.setattr(handler, "ssm", fake)
     monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
     status, body = put({"idleMinutes": 45, "maxUptimeMinutes": 60})
-    assert status == 200 and body["effective"] == {"idleMinutes": 45, "maxUptimeMinutes": 60, "absoluteMaxMinutes": 0, "maxResets": 0}
+    assert status == 200 and body["values"] == {"idleMinutes": 45, "maxUptimeMinutes": 60, "maxResets": 50}
 
 
-def test_a_hand_written_longer_policy_cannot_loosen_the_lab(aws, monkeypatch):
-    fake = PolicySSM(policy=json.dumps({"idle_minutes": 600, "max_uptime_minutes": 9999}))
-    monkeypatch.setattr(handler, "ssm", fake)
-    monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
-    assert call("GET /admin/timer-policy", ADM)[1]["effective"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "absoluteMaxMinutes": 0, "maxResets": 0}
-
-
-@pytest.mark.parametrize("raw", ["not json", "[]", "3", json.dumps({"idle_minutes": "5"}), json.dumps({"idle_minutes": True})])
-def test_a_malformed_policy_is_ignored(aws, monkeypatch, raw):
-    fake = PolicySSM(policy=raw)
-    monkeypatch.setattr(handler, "ssm", fake)
-    monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
-    assert call("GET /admin/timer-policy", ADM)[1]["effective"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "absoluteMaxMinutes": 0, "maxResets": 0}
-
-
-def test_when_auto_stop_is_off_for_the_lab_there_is_nothing_to_set(aws, monkeypatch):
-    fake = PolicySSM(ceiling={"enabled": False, "idle_minutes": 0, "max_uptime_minutes": 0}, policy=json.dumps({"idle_minutes": 5}))
+def test_a_saved_policy_is_authoritative(aws, monkeypatch):
+    fake = PolicySSM(policy=json.dumps({"idle_minutes": 600, "max_uptime_minutes": 9999, "max_resets": 40}))
     monkeypatch.setattr(handler, "ssm", fake)
     monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
     body = call("GET /admin/timer-policy", ADM)[1]
-    assert body["enabled"] is False and body["effective"] == {"idleMinutes": 0, "maxUptimeMinutes": 0, "absoluteMaxMinutes": 0, "maxResets": 0}
+    assert body["custom"] is True
+    assert body["values"] == {"idleMinutes": 600, "maxUptimeMinutes": 9999, "maxResets": 40}
+
+
+@pytest.mark.parametrize("raw", ["not json", "[]", "3", json.dumps({"idle_minutes": "5"}), json.dumps({"idle_minutes": True})])
+def test_a_malformed_policy_falls_back_to_the_seed(aws, monkeypatch, raw):
+    fake = PolicySSM(policy=raw)
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
+    assert call("GET /admin/timer-policy", ADM)[1]["values"] == {"idleMinutes": 60, "maxUptimeMinutes": 240, "maxResets": 50}
+
+
+def test_when_auto_stop_is_off_for_the_lab_there_is_nothing_to_set(aws, monkeypatch):
+    fake = PolicySSM(seed={"enabled": False, "idle_minutes": 0, "max_uptime_minutes": 0}, policy=json.dumps({"idle_minutes": 5}))
+    monkeypatch.setattr(handler, "ssm", fake)
+    monkeypatch.setattr(handler, "POLICY_PARAMETER", POLICY)
+    body = call("GET /admin/timer-policy", ADM)[1]
+    assert body["enabled"] is False
     assert put({"idleMinutes": 20})[0] == 409
 
 
@@ -144,40 +177,36 @@ def test_resets_per_run_are_saved_and_shown(aws, ssm):
     status, body = put({"idleMinutes": 0, "maxUptimeMinutes": 0, "maxResets": 2})
     assert status == 200
     assert json.loads(ssm.writes[0]["Value"])["max_resets"] == 2
-    assert body["policy"]["maxResets"] == 2 and body["effective"]["maxResets"] == 2 and body["ceiling"]["maxResets"] == 0
+    assert body["values"]["maxResets"] == 2
 
 
-def test_zero_resets_means_the_lab_value(aws, ssm):
-    ssm.ceiling = {**ssm.ceiling, "max_resets": 4}
-    assert put({"maxResets": 2})[1]["effective"]["maxResets"] == 2
+def test_zero_resets_turns_resets_off(aws, ssm):
     body = put({"maxResets": 0})[1]
-    assert body["policy"]["maxResets"] == 0 and body["effective"]["maxResets"] == 4
+    assert body["values"]["maxResets"] == 0
 
 
-@pytest.mark.parametrize("value", [-1, 51, 1.5, "3", True])
+@pytest.mark.parametrize("value", [-1, 501, 1.5, "3", True])
 def test_bad_reset_counts_are_refused(aws, ssm, value):
     status, body = put({"maxResets": value})
     assert status == 400 and "Resets per run" in body["message"]
     assert ssm.writes == []
 
 
-def test_the_panel_cannot_allow_more_resets_than_the_lab(aws, ssm):
-    ssm.ceiling = {**ssm.ceiling, "max_resets": 3}
-    status, body = put({"maxResets": 4})
-    assert status == 400 and "lab's own limit of 3" in body["message"]
-    assert put({"maxResets": 3})[0] == 200
+def test_resets_up_to_the_maximum_are_allowed(aws, ssm):
+    assert put({"maxResets": 500})[0] == 200
+    assert json.loads(ssm.writes[-1]["Value"])["max_resets"] == 500
 
 
-def test_a_hand_written_higher_reset_count_cannot_loosen_the_lab(aws, ssm):
-    ssm.ceiling = {**ssm.ceiling, "max_resets": 2}
+def test_a_saved_reset_count_above_the_seed_is_authoritative(aws, ssm):
+    ssm.seed = {**ssm.seed, "max_resets": 2}
     ssm.policy = json.dumps({"max_resets": 40})
-    assert call("GET /admin/timer-policy", ADM)[1]["effective"]["maxResets"] == 2
+    assert call("GET /admin/timer-policy", ADM)[1]["values"]["maxResets"] == 40
 
 
 def test_the_absolute_limit_is_shown_and_is_not_changeable_here(aws, ssm):
-    ssm.ceiling = {**ssm.ceiling, "absolute_max_minutes": 600}
+    ssm.seed = {**ssm.seed, "absolute_max_minutes": 600}
     ssm.policy = json.dumps({"absolute_max_minutes": 5000})
     body = call("GET /admin/timer-policy", ADM)[1]
-    assert body["ceiling"]["absoluteMaxMinutes"] == 600 and body["effective"]["absoluteMaxMinutes"] == 600
-    put({"absoluteMaxMinutes": 9000, "idleMinutes": 30})
+    assert body["absoluteMaxMinutes"] == 600
+    put({"idleMinutes": 30})
     assert "absolute_max_minutes" not in json.loads(ssm.writes[-1]["Value"])

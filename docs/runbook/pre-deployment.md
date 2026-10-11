@@ -2,6 +2,9 @@
 
 Everything the lab needs that Terraform does not create. Do it once per AWS account and domain,
 before the first deploy, then follow [the deploy runbook](terraform-smoke-test-plan.md) from step 1.
+Deploying the control panel's pages after they change has its own page,
+[control-panel-deployment.md](control-panel-deployment.md). Calling the lab's API from a script is
+[programmatic-access.md](programmatic-access.md).
 
 On the demo account all of it already exists. The **Demo** column in the checklist shows the value
 in use, which is also what the committed `terraform.tfvars.example` files hold. Nothing here is

@@ -65,6 +65,11 @@ data "archive_file" "control_api" {
   }
 
   source {
+    content  = file("${path.module}/../costing.py")
+    filename = "costing.py"
+  }
+
+  source {
     content  = file("${path.module}/../spend_job.py")
     filename = "spend_job.py"
   }

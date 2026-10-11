@@ -656,7 +656,7 @@ run "auto_stop_max_resets_out_of_range_is_rejected" {
   command = plan
 
   variables {
-    auto_stop_max_resets = 51
+    auto_stop_max_resets = 501
   }
 
   expect_failures = [var.auto_stop_max_resets]
@@ -688,12 +688,12 @@ run "auto_stop_absolute_max_alone_turns_auto_stop_on_and_reaches_every_reader" {
   }
 }
 
-run "auto_stop_defaults_keep_the_new_limits_off" {
+run "auto_stop_defaults_keep_the_absolute_limit_off_and_resets_at_50" {
   command = plan
 
   assert {
-    condition     = jsondecode(aws_ssm_parameter.auto_stop.value).absolute_max_minutes == 0 && jsondecode(aws_ssm_parameter.auto_stop.value).max_resets == 0
-    error_message = "Unless set, the absolute limit and the reset count must be off (0)."
+    condition     = jsondecode(aws_ssm_parameter.auto_stop.value).absolute_max_minutes == 0 && jsondecode(aws_ssm_parameter.auto_stop.value).max_resets == 50
+    error_message = "Unless set, the absolute limit is off (0) and the reset count is 50."
   }
 }
 

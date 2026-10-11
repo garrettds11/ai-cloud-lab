@@ -258,15 +258,16 @@ powershell.exe -ExecutionPolicy Bypass -File ".\scripts\set-cognito-passwords.ps
 
 ### Deploy the pages
 
-Only when files in `dashboards` changed (the pages, not `dashboards\api`). `config.js` is
-published by the lab apply and is left alone here:
+Only when files in `dashboards` changed (the pages, not `dashboards\api`). Run the deploy script,
+which uploads the pages and clears the CloudFront cache, reading the bucket and distribution from
+`terraform.tfvars` and leaving `config.js` (owned by the lab apply) alone:
 
 ```powershell
-aws s3 sync .\dashboards "s3://$panelBucket" --exclude "*.md" --exclude "config.example.js" --exclude "config.js" --exclude "api/*" --exclude "_deploy/*" --delete
-aws cloudfront create-invalidation --distribution-id $panelDistribution --paths "/*"
+.\scripts\deploy-panel.ps1
 ```
 
-Reload the panel with Ctrl+F5 after about a minute.
+Reload the panel with Ctrl+F5 after about a minute. What it does, the manual fallback and
+verification are in [control-panel-deployment.md](control-panel-deployment.md).
 
 ## Step 4. Check the deployment
 

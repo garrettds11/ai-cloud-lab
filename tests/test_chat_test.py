@@ -74,7 +74,7 @@ class ChatTestTest(base.Base):
 
     def test_it_allows_a_long_first_call_while_the_model_loads(self):
         self.chat()
-        self.assertEqual((self.tmp / "chat-timeout").read_text(), "120")
+        self.assertEqual((self.tmp / "chat-timeout").read_text(), "330")
 
     def test_a_think_block_is_removed_and_a_long_reply_is_shortened(self):
         _, out = self.chat(STUB_REPLY="<think>\nhmm\nlet me see\n</think>\n\nready")

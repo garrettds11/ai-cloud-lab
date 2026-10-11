@@ -186,7 +186,7 @@ class IdleCheckResetTest(unittest.TestCase):
         status = json.loads((self.tmp / "state" / "status.json").read_text())
         self.assertEqual(status["hard_limit_seconds_remaining"], -1)
 
-    # ---- timer policy set from the control panel (shorter limits only) ----------------
+    # ---- timer policy set from the control panel (authoritative values) --------------
 
     def test_a_shorter_policy_stops_the_instance_sooner(self):
         policy = json.dumps({"idle_minutes": 0, "max_uptime_minutes": 60})
@@ -194,18 +194,25 @@ class IdleCheckResetTest(unittest.TestCase):
         self.assertTrue(off)
         self.assertIn("hard_limit_minutes=70/60", out)
 
-    def test_a_longer_policy_cannot_loosen_the_ceiling(self):
+    def test_a_longer_policy_is_applied(self):
+        # The panel is authoritative: a longer value extends the limit; it is not clamped to the seed.
         policy = json.dumps({"idle_minutes": 0, "max_uptime_minutes": 600})
         off, out, _, _ = self.run_script(uptime_minutes=130, max_minutes=120, policy=policy)
-        self.assertTrue(off)
-        self.assertIn("hard_limit_minutes=130/120", out)
+        self.assertFalse(off)
+        self.assertIn("hard_limit_minutes=130/600", out)
 
-    def test_zero_or_missing_policy_values_use_the_ceiling(self):
-        for policy in (None, "error", "{}", "not json", json.dumps({"max_uptime_minutes": 0}),
+    def test_missing_or_malformed_policy_values_use_the_seed(self):
+        for policy in (None, "error", "{}", "not json",
                        json.dumps({"max_uptime_minutes": "30"}), json.dumps({"max_uptime_minutes": -5})):
             with self.subTest(policy=policy):
                 _, out, _, _ = self.run_script(uptime_minutes=10, max_minutes=120, policy=policy)
                 self.assertIn("hard_limit_minutes=10/120", out)
+
+    def test_a_policy_value_of_zero_turns_the_limit_off(self):
+        policy = json.dumps({"idle_minutes": 0, "max_uptime_minutes": 0})
+        off, out, _, _ = self.run_script(uptime_minutes=200, max_minutes=120, policy=policy)
+        self.assertFalse(off)
+        self.assertIn("hard_limit_minutes=200/0", out)
 
     def test_the_policy_can_switch_on_a_limit_the_lab_leaves_off(self):
         policy = json.dumps({"idle_minutes": 20, "max_uptime_minutes": 45})

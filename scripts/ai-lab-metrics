@@ -24,7 +24,7 @@ INSTANCE_HOURLY_COST_USD="${INSTANCE_HOURLY_COST_USD:-}"
 
 # ai-lab-metrics --shapes: run by hand on the instance at first deploy. Prints the keys and value
 # types (never values) of the Open WebUI answers and tables that time to first token and generation
-# speed would be read from, so the exporter can be written against what v0.11.4 really returns.
+# speed would be read from, so the exporter can be written against what v0.12.0 really returns.
 if [[ "${1:-}" == "--shapes" ]]; then
     # shellcheck disable=SC1090
     [[ -r "$LIB" ]] && . "$LIB" || { echo "Open WebUI helper not found: $LIB" >&2; exit 1; }

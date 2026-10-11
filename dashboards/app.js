@@ -283,9 +283,10 @@
         text: (warn ? 'Stopping soon. ' : '') + 'Stops at about ' + fmt.time(stopAt) + '. ' + duration(left) + ' left.',
         tone: warn ? 'amber' : 'muted',
       });
-      if (absStop && absStop <= softStop) lines.push({ text: 'This is the lab\'s absolute limit. A reset cannot extend it.', tone: 'muted' });
-      if (resetAt) lines.push({ text: 'Timer reset at ' + fmt.time(resetAt) + '.' + (absStop && absStop <= softStop ? '' : ' The lab got another ' + duration(a.maxUptimeMinutes) + '.'), tone: 'green' });
-      if (a.resetsAllowed > 0) lines.push({ text: 'Resets used: ' + (a.resetsUsed === null || a.resetsUsed === undefined ? 'unknown' : a.resetsUsed) + ' of ' + a.resetsAllowed + ' this run.', tone: a.resetsUsed >= a.resetsAllowed ? 'amber' : 'muted' });
+      if (absStop && absStop <= softStop) lines.push({ text: 'This is the absolute limit. A reset cannot extend it.', tone: 'muted' });
+      if (resetAt) lines.push({ text: 'Timer reset at ' + fmt.time(resetAt) + '.' + (warn || (absStop && absStop <= softStop) ? '' : ' The lab got another ' + duration(a.maxUptimeMinutes) + '.'), tone: warn ? 'muted' : 'green' });
+      if (a.resetsAllowed === 0) lines.push({ text: 'Timer resets are turned off.', tone: 'muted' });
+      else if (a.resetsAllowed > 0) lines.push({ text: 'Resets used: ' + (a.resetsUsed === null || a.resetsUsed === undefined ? 'unknown' : a.resetsUsed) + ' of ' + a.resetsAllowed + ' this run.', tone: a.resetsUsed >= a.resetsAllowed ? 'amber' : 'muted' });
     } else if (absStop) {
       const left = (absStop - t) / MIN;
       if (left <= 0) return [{ text: 'Stopping', tone: 'amber' }];
@@ -329,10 +330,12 @@
     const running = inst.phase === 'ready' || inst.phase === 'initializing';
     const limited = !!(a && a.enabled && a.maxUptimeMinutes > 0);
     const busy = resetting.has(inst.id);
+    const off = !!(limited && a.resetsAllowed === 0);
     const spent = !!(limited && a.resetsAllowed > 0 && a.resetsUsed >= a.resetsAllowed);
-    const can = running && limited && !busy && !spent;
+    const can = running && limited && !busy && !spent && !off;
     const title = !running ? 'Only a running instance has an auto-stop timer to reset'
       : !limited ? 'No hard time limit is set, so there is nothing to reset'
+      : off ? 'Timer resets are turned off'
       : spent ? 'All ' + a.resetsAllowed + ' timer resets of this run are used'
       : busy ? 'Resetting the timer' : 'Reset auto-stop timer' + (limited && a.resetsAllowed > 0 ? ' (' + Math.max(0, a.resetsAllowed - (a.resetsUsed || 0)) + ' left)' : '');
     return h('button', {
@@ -1144,7 +1147,7 @@
     if (session !== state.session) return null;
     if (!instances.length) throw new Error('No lab is deployed, so there is no instance to ask.');
     const started = await API.startWebuiAction(instances[0].id, action, extra);
-    for (let i = 0; i < 75; i++) {
+    for (let i = 0; i < 140; i++) {  // about 7 minutes: the chat test may wait for a model to load
       await sleep(i === 0 ? 1500 : 3000);
       if (session !== state.session) return null;
       const answer = await API.getWebuiAction(started.commandId);
@@ -1248,24 +1251,16 @@
   function viewOpenWebui() {
     if (adminGate('Open WebUI')) return;
     $('#main').replaceChildren(
-      h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Open WebUI' }),
-      h('p', { class: 'page-lead', text: 'Whether Open WebUI and Ollama are answering on the lab instance, which version is running, and which models are loaded. Read only.' }),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
+      pageHead('Open WebUI', 'Whether Open WebUI and Ollama are answering on the lab instance, which version is running, and which models are loaded.',
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: checkOpenWebui }, icon('refresh'), 'Check now')),
       h('div', { id: 'ow-body' }),
-      h('h2', { class: 'section-title', text: 'Tool servers' }),
-      h('p', { class: 'page-lead', text: 'The tool servers Open WebUI knows about. Test connection asks Open WebUI to connect to each enabled one and list its tools, the same check as the Verify button in Open WebUI. Keys and headers are never shown.' }),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
+      sectionHead('Tool servers', 'The tool servers Open WebUI knows about. Test connection asks Open WebUI to connect to each enabled one and list its tools, the same check as the Verify button in Open WebUI. Keys and headers are never shown.',
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => runSection('tools') }, icon('refresh'), 'Test connection')),
       h('div', { id: 'ow-tools' }),
-      h('h2', { class: 'section-title', text: 'Settings in effect' }),
-      h('p', { class: 'page-lead', text: 'A fixed list of Open WebUI settings. Global applies to everyone; User default is the starting point for new users.' }),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
+      sectionHead('Settings in effect', 'A fixed list of Open WebUI settings. Global applies to everyone; User default is the starting point for new users.',
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => runSection('settings') }, icon('refresh'), 'Read settings')),
       h('div', { id: 'ow-settings' }),
-      h('h2', { class: 'section-title', text: 'Export configuration' }),
-      h('p', { class: 'page-lead', text: 'Downloads the settings above, the tool servers (name, type and address only) and the models (numeric parameters only) as one file. Left out, always: passwords, API keys and tokens, tool server keys, headers and OAuth settings, system prompts, users, chats, files and memories.' }),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
+      sectionHead('Export configuration', 'Downloads the settings above, the tool servers (name, type and address only) and the models (numeric parameters only) as one file. Left out, always: passwords, API keys and tokens, tool server keys, headers and OAuth settings, system prompts, users, chats, files and memories.',
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: exportConfiguration }, icon('copy'), 'Download configuration')),
       h('div', { id: 'ow-export' }),
       h('h2', { class: 'section-title', text: 'Change settings' }),
@@ -1460,12 +1455,66 @@
     return done;
   }
 
+  // Bulk import: a JSON array of small text skills. Each is sent to Open WebUI in turn through the
+  // same checked import-skill action as a single import, so the server re-validates every one.
+  async function importSkillsBulk() {
+    const c = state.owx.ctl;
+    if (c.busy || (c.bulk && c.bulk.busy)) return;
+    const raw = ($('#sk-bulk') ? $('#sk-bulk').value : '').trim();
+    if (!raw) { complain('Paste a JSON array of skills first.'); return; }
+    let list;
+    try { list = JSON.parse(raw); } catch (err) { complain('That is not valid JSON. ' + err.message); return; }
+    if (!Array.isArray(list) || !list.length) { complain('Give a non-empty JSON array of skills.'); return; }
+    if (list.length > 25) { complain('Import at most 25 skills at a time.'); return; }
+    const idRe = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+    for (let i = 0; i < list.length; i++) {
+      const sk = list[i] || {};
+      const where = 'Skill ' + (i + 1) + (sk.id ? ' (' + sk.id + ')' : '') + ': ';
+      if (!idRe.test(String(sk.id || ''))) { complain(where + 'id must be lower-case letters, digits, - or _ (up to 40).'); return; }
+      if (!(sk.name && String(sk.name).length <= 80)) { complain(where + 'a name is required, up to 80 characters.'); return; }
+      if (!(sk.content && String(sk.content).trim())) { complain(where + 'the skill text is required.'); return; }
+      if (String(sk.content).length > 1800) { complain(where + 'the text is over 1800 characters; import that one in Open WebUI itself.'); return; }
+    }
+    const ok = await confirmDialog({ title: 'Import ' + list.length + ' skills into Open WebUI?',
+      body: h('p', { text: 'Each is sent to Open WebUI in turn and attached to the models it lists. A skill with the same ID is replaced. None are kept for the next start.' }),
+      confirmLabel: 'Import all' });
+    if (!ok) return;
+    c.busy = 'Importing skills'; c.bulk = { busy: true, note: '', results: [] };
+    paintControls();
+    for (let i = 0; i < list.length; i++) {
+      const sk = list[i];
+      c.bulk.note = 'Importing ' + (i + 1) + ' of ' + list.length + ': ' + sk.id; paintControls();
+      const extra = { id: String(sk.id), name: String(sk.name), description: sk.description ? String(sk.description) : '',
+        content: String(sk.content), enabled: sk.enabled !== false, models: Array.isArray(sk.models) ? sk.models.map(String) : [], confirmed: true };
+      let res;
+      try {
+        const answer = await runAction('import-skill', extra);
+        const r = answer && answer.result;
+        res = answer && answer.status === 'Success' && r && r.ok ? { id: sk.id, ok: true } : { id: sk.id, ok: false, error: (r && r.error) || failedText(answer) };
+      } catch (err) { res = { id: sk.id, ok: false, error: err.message }; }
+      c.bulk.results.push(res); paintControls();
+    }
+    c.busy = null; c.bulk.busy = false; c.bulk.note = '';
+    const good = c.bulk.results.filter((r) => r.ok).length;
+    toast(good + ' of ' + list.length + ' skills imported.', good === list.length ? 'ok' : 'error');
+    await refreshDesired();
+    paintControls();
+  }
+
   function installedModels() {
     const a = state.openWebui.answer;
     return a && a.result.ollama ? a.result.ollama.installed.map((m) => m.name) : [];
   }
 
   const numberValue = (id) => { const v = ($('#' + id).value || '').trim(); return v === '' ? undefined : Number(v); };
+
+  // The value the panel has saved for a boolean feature: true, false, or undefined when it has
+  // not been set from here yet (then the live value is whatever Read settings shows).
+  function savedFeatureValue(key) {
+    const d = state.owx.ctl.desired;
+    const item = d && d.items ? d.items.find((i) => i.kind === 'feature' && i.feature === key) : null;
+    return item ? item.value : undefined;
+  }
 
   function describeSaved(i) {
     if (i.kind === 'default-model') return 'Default model: ' + i.model;
@@ -1532,19 +1581,27 @@
         })),
 
       h('h3', { class: 'section-title', text: 'Features' }),
-      h('p', { class: 'page-lead', text: 'Each switch changes Open WebUI for every user and asks you to confirm first. Read settings above shows what is on now.' }),
+      h('p', { class: 'page-lead', text: 'Each switch changes Open WebUI for every user and asks you to confirm first. The highlighted option is what the panel has set and keeps on each restart; Read settings above shows the live value.' }),
       h('table', { class: 'grid' },
         h('caption', { class: 'sr-only', text: 'Open WebUI features' }),
         h('thead', null, h('tr', null, ['Feature', 'Change'].map((x) => h('th', { scope: 'col', text: x })))),
         h('tbody', null, FEATURE_ROWS.map(([key, name, help]) => {
+          const cur = savedFeatureValue(key);  // true | false | undefined (not set from here yet)
           const set = (value) => changeWebui(name, 'set-feature', { feature: key, value }, {
             title: (value ? 'Turn on ' : 'Turn off ') + name.toLowerCase() + '?',
             body: h('p', { text: 'This changes Open WebUI for every user straight away, and the lab puts it back this way each time it starts.' }),
             confirmLabel: value ? 'Turn on' : 'Turn off',
           });
+          const seg = (label, value) => h('button', {
+            type: 'button', class: 'seg-btn' + (cur === value ? ' on' : ''), 'aria-pressed': cur === value ? 'true' : 'false',
+            disabled: busy ? true : null, title: cur === value ? name + ' is set ' + label.toLowerCase() : 'Set ' + name.toLowerCase() + ' ' + label.toLowerCase(),
+            onClick: () => set(value),
+          }, label);
           return h('tr', null,
             h('td', null, h('div', { class: 'name', text: name }), h('div', { class: 'cell-note', text: help })),
-            h('td', null, h('div', { class: 'toolbar' }, btn('Turn on', () => set(true)), btn('Turn off', () => set(false)))));
+            h('td', null,
+              h('div', { class: 'seg', role: 'group', 'aria-label': name + ' on or off' }, seg('On', true), seg('Off', false)),
+              cur === undefined ? h('div', { class: 'cell-note', text: 'Not set from here yet.' }) : null));
         }))),
       h('label', { for: 'routes', class: 'field-label', text: 'Routes API keys may call' }),
       h('p', { class: 'table-foot', text: 'One route per line, such as /api/chat/completions. Empty means none.' }),
@@ -1612,6 +1669,26 @@
             confirmLabel: 'Import',
           });
         }, 'btn-live')),
+      (function () {
+        const bulk = c.bulk || {};
+        const open = bulk.open || bulk.busy || (bulk.results && bulk.results.length);
+        return h('details', { class: 'bulk', open: open ? true : null,
+            onToggle: (e) => { if (state.owx.ctl.bulk) state.owx.ctl.bulk.open = e.target.open; } },
+          h('summary', { text: 'Import several at once (JSON)' }),
+          h('p', { class: 'table-foot', text: 'Paste a JSON array, up to 25 skills. Each needs id, name and content (up to 1800 characters); description, enabled and models are optional. Each is sent to Open WebUI in turn. Example:' }),
+          h('pre', { class: 'bulk-example' }, '[{"id":"triage","name":"Triage","description":"","content":"# Triage\n\nWhen to use this...","enabled":true,"models":["qwen3:14b"]}]'),
+          h('textarea', { id: 'sk-bulk', class: 'cap-input', rows: '7', style: 'width:100%', placeholder: '[ {"id":"...","name":"...","content":"# ..."} ]', 'aria-label': 'Skills as a JSON array' }),
+          bulk.busy ? h('p', { class: 'empty-small', role: 'status', text: (bulk.note || 'Importing') + '. This can take a few seconds per skill.' }) : null,
+          bulk.results && bulk.results.length ? h('table', { class: 'grid' },
+            h('caption', { class: 'sr-only', text: 'Bulk import results' }),
+            h('thead', null, h('tr', null, [h('th', { scope: 'col', text: 'Skill' }), h('th', { scope: 'col', text: 'Result' })])),
+            h('tbody', null, bulk.results.map((r) => h('tr', null,
+              h('td', null, h('code', { text: r.id })),
+              h('td', null, r.ok ? h('span', { class: 'chip tone-green' }, icon('check'), 'Imported')
+                : h('span', { class: 'chip tone-red', title: r.error }, icon('error'), 'Failed')))))) : null,
+          h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
+            btn('Import all', importSkillsBulk, 'btn-live')));
+      })(),
 
       h('h3', { class: 'section-title', text: 'Saved settings' }),
       h('p', { class: 'page-lead', text: 'Changes made here are kept so the lab can put them back after a restart. The lab does this by itself a few minutes after it starts, once per start. Reapply does the same now.' }),
@@ -1655,13 +1732,13 @@
     if (!s.models) { wrap.append(h('p', { class: 'empty-small', text: (s.note || 'Asking the instance for its models') + '. This takes a few seconds.' })); return; }
     if (!s.models.length) { wrap.append(h('div', { class: 'empty-state' }, h('h2', { text: 'No models are installed in Ollama.' }), h('p', { text: 'Install a model on the instance first, then check again.' }))); return; }
     put(wrap,
-      h('div', { class: 'toolbar' },
-        h('label', { for: 'chat-model', class: 'stat-label', text: 'Model' }),
-        h('select', { id: 'chat-model', class: 'cap-input', onChange: (e) => { s.model = e.target.value; } },
-          s.models.map((m) => h('option', { value: m, selected: m === s.model ? 'selected' : null, text: m }))),
-        h('span', { class: 'spacer' }),
-        h('button', { type: 'button', id: 'chat-send', class: 'btn btn-live', disabled: s.busy ? true : null, onClick: sendChatTest, text: s.busy ? 'Waiting for the model' : 'Send test' })),
-      s.busy ? h('p', { class: 'empty-small', text: (s.note || 'Sending') + '. A model that is not loaded yet can take a minute or two the first time.' }) : null,
+      h('div', { class: 'card runbar' },
+        h('div', { class: 'runbar-row' },
+          h('label', { for: 'chat-model', class: 'runbar-label', text: 'Model' }),
+          h('select', { id: 'chat-model', class: 'cap-input', disabled: s.busy ? true : null, onChange: (e) => { s.model = e.target.value; } },
+            s.models.map((m) => h('option', { value: m, selected: m === s.model ? 'selected' : null, text: m }))),
+          h('button', { type: 'button', id: 'chat-send', class: 'btn btn-live', disabled: s.busy ? true : null, onClick: sendChatTest, text: s.busy ? 'Waiting for the model' : 'Send test' })),
+        s.busy ? h('p', { class: 'runbar-note', role: 'status', text: (s.note || 'Sending') + '. This can take a few minutes if the model has to be loaded first, for example after the lab restarts.' }) : null),
       s.last && !s.busy ? chatResult(s.last) : null,
       s.history.length > 1 ? [
         h('h2', { class: 'section-title', text: 'Earlier tests this visit' }),
@@ -1734,8 +1811,7 @@
   function viewChatTest() {
     if (adminGate('Chat API test')) return;
     $('#main').replaceChildren(
-      h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Chat API test' }),
-      h('p', { class: 'page-lead', text: 'Checks that a model answers through Open WebUI\'s chat API, the way the lab\'s users and tools reach it, and how long it takes.' }),
+      pageHead('Chat API test', 'Checks that a model answers through Open WebUI\'s chat API, the way the lab\'s users and tools reach it, and how long it takes. A model that is not loaded yet can take a few minutes to answer the first time.'),
       h('div', { id: 'chat-body' }));
     paintChatTest();
     if (!state.chatTest.models) loadChatModels();
@@ -1851,13 +1927,10 @@
   function viewUsage() {
     if (adminGate('Usage and cost')) return;
     $('#main').replaceChildren(
-      h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Usage and cost' }),
-      h('p', { class: 'page-lead', text: 'What each run of the lab cost and each person\'s share of it, from the hours they used tokens. Administrators only.' }),
-      h('div', { class: 'toolbar' },
-        h('label', { class: 'field' }, h('span', { text: 'Period' }),
-          h('select', { onChange: (e) => { state.usage.rangeDays = Number(e.target.value); paintUsage(); } },
+      pageHead('Usage and cost', 'What each run of the lab cost and each person\'s share of it, from the hours they used tokens.',
+        h('label', { class: 'field inline' }, h('span', { text: 'Period' }),
+          h('select', { class: 'cap-input', onChange: (e) => { state.usage.rangeDays = Number(e.target.value); paintUsage(); } },
             RANGES.map(([value, text]) => h('option', { value, text, selected: state.usage.rangeDays === value })))),
-        h('span', { class: 'spacer' }),
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: loadUsage }, icon('refresh'), 'Refresh')),
       h('div', { id: 'usage-body' }));
     if (state.usage.answer) paintUsage(); else loadUsage();
@@ -1876,6 +1949,24 @@
     kids.flat(Infinity).forEach((kid) => { if (kid !== null && kid !== undefined && kid !== false) parent.append(kid); });
   }
 
+  // Title and intro on the left, the page's main button on the right.
+  function pageHead(title, lead, ...actions) {
+    return h('div', { class: 'page-head' },
+      h('div', null,
+        h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: title }),
+        lead ? h('p', { class: 'page-lead', text: lead }) : null),
+      actions.length ? h('div', { class: 'page-actions' }, actions) : null);
+  }
+
+  // A section heading with its intro on the left and the section's button on the right.
+  function sectionHead(title, lead, ...actions) {
+    return h('div', { class: 'section-head' },
+      h('div', null,
+        h('h2', { class: 'section-title', text: title }),
+        lead ? h('p', { class: 'page-lead', text: lead }) : null),
+      actions.length ? h('div', { class: 'page-actions' }, actions) : null);
+  }
+
   function pctTone(pct) {
     if (pct === null || pct === undefined) return 'grey';
     return pct >= 98 ? 'red' : pct >= 80 ? 'amber' : 'green';
@@ -1887,10 +1978,19 @@
       h('span', { class: 'meter-text', text: pct === null || pct === undefined ? 'No cap' : pct + '%' }));
   }
 
-  function emailChips(sent) {
+  // One small pill per alert email. A tick means that email has gone out this month.
+  function emailChips(sent, compact) {
     return h('span', { class: 'chips' }, THRESHOLDS.map((t) => (sent.includes(t)
-      ? h('span', { class: 'chip tone-info', title: 'The ' + t + '% email was sent' }, icon('check'), t + '%')
-      : h('span', { class: 'chip tone-grey', title: 'The ' + t + '% email has not been sent' }, t + '%'))));
+      ? h('span', { class: 'chip tone-info', title: 'The email at ' + t + '% of the cap was sent' }, icon('check'), compact ? t + '%' : 'Sent at ' + t + '%')
+      : h('span', { class: 'chip tone-grey', title: 'The email at ' + t + '% of the cap has not been sent' }, compact ? t + '%' : 'At ' + t + '%'))));
+  }
+
+  const ALERT_HELP = 'An email goes out when spend reaches 50%, 80%, 98% and 100% of a cap, once each month. A tick means that email has been sent.';
+
+  function emailAlerts(sent) {
+    return h('div', { class: 'alerts' },
+      h('div', { class: 'alerts-label' }, icon('info'), 'Email alerts'),
+      emailChips(sent));
   }
 
   const ADDRESS = {
@@ -1929,16 +2029,18 @@
         factCard('Your monthly cap', capText(d.effectiveCapUsd)),
         factCard('Spent so far in ' + d.period, money(d.spendUsd)),
         h('div', { class: 'fact' }, h('div', { class: 'stat-label', text: 'Used' }), meter(d.percent, 'Share of your cap used'))),
-      h('p', { class: 'page-lead', text: 'Cap emails sent this month: ' }, emailChips(d.emailsSent)),
+      h('div', { class: 'card pad' }, emailAlerts(d.emailsSent), h('p', { class: 'note tight', text: ALERT_HELP })),
       h('p', { class: 'table-foot', text: 'Your cap resets on ' + d.resetsOn + '. Your email address: ' }, addressChip(d.emailStatus)));
   }
 
   function numberInput(id, label, value, placeholder, disabled) {
-    return h('input', {
-      type: 'number', id, min: '0', max: '1000000', step: '0.01', class: 'cap-input', 'aria-label': label,
-      value: value === null || value === undefined ? '' : String(value), placeholder: placeholder || '', disabled: disabled || null,
-      onInput: () => { state.spend.dirty = true; const b = $('#spend-save'); if (b) b.disabled = false; },
-    });
+    return h('span', { class: 'money-input' },
+      h('span', { class: 'money-sign', 'aria-hidden': 'true', text: '$' }),
+      h('input', {
+        type: 'number', id, min: '0', max: '1000000', step: '0.01', class: 'cap-input', 'aria-label': label,
+        value: value === null || value === undefined ? '' : String(value), placeholder: placeholder || '', disabled: disabled || null,
+        onInput: () => { state.spend.dirty = true; const b = $('#spend-save'); if (b) b.disabled = false; },
+      }));
   }
 
   function paintSpendOverview(wrap, d) {
@@ -1948,20 +2050,22 @@
       lab.override ? h('div', { class: 'info-box', role: 'status' }, icon('info'), h('span', { text: lab.override.by + ' let the lab run once past its monthly cap' + (lab.override.used ? '. It is running on that permission, which ends when the lab next stops.' : '. The next start is allowed, and the permission ends when the lab next stops.') }))
         : lab.stopped ? h('div', { class: 'error-box', role: 'status' }, icon('error'), h('span', { text: 'The lab reached its monthly budget and was stopped. It cannot be started until the cap is raised or the month resets on ' + d.resetsOn + '.' }),
           edit ? h('button', { type: 'button', class: 'btn btn-secondary small', onClick: allowLabOnce, text: 'Allow one run past the cap' }) : null) : null,
-      h('div', { class: 'facts' },
-        h('div', { class: 'fact' },
+      h('div', { class: 'cap-cards' },
+        h('div', { class: 'card pad' },
           h('div', { class: 'stat-label', text: 'Lab total cap, ' + d.period }),
-          edit ? numberInput('lab-cap', 'Lab total monthly cap in dollars', lab.capUsd, 'No cap') : h('div', { class: 'stat-value', text: capText(lab.capUsd) }),
+          h('div', { class: 'cap-value' }, edit ? [numberInput('lab-cap', 'Lab total monthly cap in dollars', lab.capUsd, 'No cap'), h('span', { class: 'policy-unit', text: 'per month' })] : h('div', { class: 'stat-value', text: capText(lab.capUsd) })),
           h('div', { class: 'sub', text: 'Spent ' + money(lab.spendUsd) + (lab.projectedUsd ? ', on track for ' + money(lab.projectedUsd) : '') }),
-          meter(lab.percent, 'Share of the lab cap used'), emailChips(lab.emailsSent)),
-        h('div', { class: 'fact' },
+          meter(lab.percent, 'Share of the lab cap used'),
+          emailAlerts(lab.emailsSent)),
+        h('div', { class: 'card pad' },
           h('div', { class: 'stat-label', text: 'Default cap per person' }),
-          edit ? numberInput('default-cap', 'Default monthly cap per person in dollars', d.defaultUserCapUsd, 'No cap') : h('div', { class: 'stat-value', text: capText(d.defaultUserCapUsd) }),
+          h('div', { class: 'cap-value' }, edit ? [numberInput('default-cap', 'Default monthly cap per person in dollars', d.defaultUserCapUsd, 'No cap'), h('span', { class: 'policy-unit', text: 'per person, per month' })] : h('div', { class: 'stat-value', text: capText(d.defaultUserCapUsd) })),
           h('div', { class: 'sub', text: 'Everyone\'s caps add up to ' + money(d.userCapsTotalUsd) + (lab.capUsd ? (d.userCapsTotalUsd > lab.capUsd ? ', more than the lab cap, so the lab cap stops people first' : ', within the lab cap') : '') }))),
       h('h2', { class: 'section-title', text: 'People' }),
+      h('p', { class: 'note tight', text: ALERT_HELP }),
       h('table', { class: 'grid' },
-        h('caption', { class: 'sr-only', text: 'Monthly spend caps, spend and emails per person' }),
-        h('thead', null, h('tr', null, ['Person', 'Cap', 'Spent', 'Used', 'Emails sent', 'Email address'].map((c) => h('th', { scope: 'col', text: c })))),
+        h('caption', { class: 'sr-only', text: 'Monthly spend caps, spend and email alerts per person' }),
+        h('thead', null, h('tr', null, ['Person', 'Monthly cap', 'Spent', 'Used', 'Email alerts', 'Email address'].map((c) => h('th', { scope: 'col', text: c })))),
         h('tbody', null, d.users.map((u) => h('tr', null,
           h('td', null, u.name, h('div', { class: 'sub', text: u.email }), u.blocked ? blockedChip(u.blocked) : null,
             u.blocked ? h('div', { class: 'sub', text: u.blocked.reason }) : null),
@@ -1971,12 +2075,12 @@
             : capText(u.effectiveCapUsd)),
           h('td', { text: money(u.spendUsd) }),
           h('td', null, meter(u.percent, 'Share of ' + u.name + '\'s cap used')),
-          h('td', null, emailChips(u.emailsSent)),
+          h('td', null, emailChips(u.emailsSent, true)),
           h('td', null, addressChip(u.emailStatus), edit && u.emailStatus !== 'confirmed'
             ? h('button', { type: 'button', class: 'btn btn-secondary small', onClick: () => resendConfirmation(u), text: 'Send again' }) : null))))),
       edit ? h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
         h('button', { type: 'button', id: 'spend-save', class: 'btn btn-live', disabled: true, onClick: saveSpend, text: 'Save caps' })) : null,
-      h('p', { class: 'table-foot', text: 'Caps are dollars per calendar month (UTC) and reset on ' + d.resetsOn + '. Empty means the default; 0 means no cap. At 100% a person cannot sign in until the month resets or their cap is raised.' }));
+      h('p', { class: 'table-foot', text: 'Caps are dollars per calendar month (UTC) and reset on ' + d.resetsOn + '. Leave a person\'s cap empty to use the default; 0 means no cap. At 100% a person cannot sign in until the month resets or their cap is raised.' }));
   }
 
   async function loadSpend() {
@@ -2049,11 +2153,9 @@
 
   function viewSpend() {
     $('#main').replaceChildren(
-      h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Spend caps' }),
-      h('p', { class: 'page-lead', text: isAdmin() ? 'Set the lab\'s monthly budget and each person\'s monthly cap, and see who is close.'
-        : isManager() ? 'The lab\'s monthly budget and everyone\'s monthly cap and spend. Only an administrator can change them.' : 'Your monthly spend cap and how much of it you have used.' }),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
-        h('button', { type: 'button', class: 'btn btn-secondary', onClick: loadSpend }, icon('refresh'), 'Refresh')),
+      pageHead('Spend caps', isAdmin() ? 'Set the lab\'s monthly budget and each person\'s monthly cap, and see who is close.'
+        : isManager() ? 'The lab\'s monthly budget and everyone\'s monthly cap and spend. Only an administrator can change them.' : 'Your monthly spend cap and how much of it you have used.',
+      h('button', { type: 'button', class: 'btn btn-secondary', onClick: loadSpend }, icon('refresh'), 'Refresh')),
       h('div', { id: 'spend-body' }));
     paintSpend();
     loadSpend();
@@ -2061,8 +2163,8 @@
 
   // ---- views: Timer policy ---------------------------------------------------------------
   //
-  // The lab's own auto-stop setting (Terraform) is the ceiling. This page sets shorter idle and
-  // session-length limits inside it. 0 means "use the lab's value".
+  // The deployment's auto-stop setting is the maximum allowed. This page sets shorter limits inside it.
+  // Leaving a box blank (0) means no custom limit, so the maximum allowed applies.
 
   const minutesText = (m) => (!m ? 'Off' : m % 60 === 0 ? (m / 60) + (m === 60 ? ' hour' : ' hours') : m + ' minutes');
 
@@ -2075,41 +2177,36 @@
     if (!s.data) { wrap.append(h('p', { class: 'empty-small', text: 'Loading the timer policy' })); return; }
     const d = s.data;
     if (!d.enabled) {
-      wrap.append(h('div', { class: 'empty-state' }, h('h2', { text: 'Auto-stop is switched off for this lab.' }),
-        h('p', { text: 'The lab\'s Terraform settings turn it on. Until they do, there is no timer to shorten.' })));
+      wrap.append(h('div', { class: 'empty-state' }, h('h2', { text: 'Auto-stop is turned off.' }),
+        h('p', { text: 'Until it is turned on in the deployment settings, there is no timer to shorten.' })));
       return;
     }
-    const field = (id, label, value, low, ceiling) => h('div', { class: 'fact' },
-      h('label', { class: 'stat-label', for: id, text: label }),
-      h('input', {
-        type: 'number', id, class: 'cap-input', min: '0', max: String(ceiling || d.maximum), step: '1', value: value ? String(value) : '',
-        placeholder: '0', onInput: () => { state.timer.dirty = true; const b = $('#timer-save'); if (b) b.disabled = false; },
-      }),
-      h('div', { class: 'sub', text: 'Between ' + low + ' and ' + (ceiling || d.maximum) + ' minutes. 0 uses the lab\'s value.' }));
+    const markDirty = () => { state.timer.dirty = true; const b = $('#timer-save'); if (b) b.disabled = false; };
+    const maxMin = d.bounds.maxMinutes, minMin = d.bounds.minMinutes, maxRes = d.bounds.maxResets;
+    // One row per setting: a required value the admin sets. 0 turns that timer off.
+    const settingRow = (id, name, about, value, max, unit, hint) => h('tr', null,
+      h('th', { scope: 'row' }, h('div', { class: 'policy-name', text: name }), h('div', { class: 'policy-about', text: about })),
+      h('td', null,
+        h('div', { class: 'policy-input' },
+          h('input', { type: 'number', id, class: 'cap-input', min: '0', max: String(max), step: '1', required: true, value: String(value), 'aria-describedby': id + '-hint', onInput: markDirty }),
+          h('span', { class: 'policy-unit', text: unit })),
+        h('div', { class: 'policy-hint', id: id + '-hint', text: hint })));
+    const minutesHint = '0 turns it off, or ' + minMin + ' to ' + maxMin + ' minutes.';
     put(wrap,
-      h('div', { class: 'facts' },
-        factCard('Idle time in force', minutesText(d.effective.idleMinutes)),
-        factCard('Session length in force', minutesText(d.effective.maxUptimeMinutes)),
-        factCard('Resets per run in force', d.effective.maxResets ? String(d.effective.maxResets) : 'No limit')),
-      h('div', { class: 'facts' },
-        factCard('Lab limit for idle time', minutesText(d.ceiling.idleMinutes)),
-        factCard('Lab limit for session length', minutesText(d.ceiling.maxUptimeMinutes)),
-        factCard('Lab limit for resets per run', d.ceiling.maxResets ? String(d.ceiling.maxResets) : 'No limit')),
-      d.ceiling.absoluteMaxMinutes ? h('p', { class: 'table-foot', text: 'The lab also stops ' + minutesText(d.ceiling.absoluteMaxMinutes) + ' after it starts, whatever is set here. A reset cannot extend that.' }) : null,
-      h('h2', { class: 'section-title', text: 'Shorten the limits' }),
-      h('div', { class: 'facts' },
-        field('timer-idle', 'Stop after this many idle minutes', d.policy.idleMinutes, d.minimums.idleMinutes, d.ceiling.idleMinutes),
-        field('timer-max', 'Stop this many minutes after the session starts', d.policy.maxUptimeMinutes, d.minimums.maxUptimeMinutes, d.ceiling.maxUptimeMinutes),
-        h('div', { class: 'fact' },
-          h('label', { class: 'stat-label', for: 'timer-resets', text: 'Timer resets allowed per run' }),
-          h('input', {
-            type: 'number', id: 'timer-resets', class: 'cap-input', min: '0', max: String(d.ceiling.maxResets || d.maximumResets), step: '1', value: d.policy.maxResets ? String(d.policy.maxResets) : '',
-            placeholder: '0', onInput: () => { state.timer.dirty = true; const b = $('#timer-save'); if (b) b.disabled = false; },
-          }),
-          h('div', { class: 'sub', text: 'Between 1 and ' + (d.ceiling.maxResets || d.maximumResets) + '. 0 uses the lab\'s value.' }))),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
-        h('button', { type: 'button', id: 'timer-save', class: 'btn btn-live', disabled: true, onClick: saveTimer, text: 'Save timer policy' })),
-      h('p', { class: 'table-foot', text: 'A change reaches the running instance within a minute. The lab\'s own limit still applies as a backstop, so a limit can be shortened here but never made longer or switched off.' }));
+      h('div', { class: 'card' },
+        h('table', { class: 'policy' },
+          h('caption', { class: 'sr-only', text: 'Auto-stop timer settings' }),
+          h('thead', null, h('tr', null,
+            h('th', { scope: 'col', text: 'Setting' }), h('th', { scope: 'col', text: 'Value' }))),
+          h('tbody', null,
+            settingRow('timer-idle', 'Idle time', 'Stop the lab after this long with no activity.', d.values.idleMinutes, maxMin, 'minutes', minutesHint),
+            settingRow('timer-max', 'Session length', 'Stop the lab this long after it starts.', d.values.maxUptimeMinutes, maxMin, 'minutes', minutesHint),
+            settingRow('timer-resets', 'Timer resets', 'How many times the Reset button may extend one run.', d.values.maxResets, maxRes, 'resets', '0 turns resets off, or up to ' + maxRes + '.'))),
+        h('div', { class: 'card-foot' },
+          h('span', { class: 'card-foot-note', text: 'Takes effect on the running instance within a minute.' }),
+          h('button', { type: 'button', id: 'timer-save', class: 'btn btn-live', disabled: true, onClick: saveTimer, text: 'Save timer policy' }))),
+      d.absoluteMaxMinutes ? h('p', { class: 'note', text: 'The instance also stops ' + minutesText(d.absoluteMaxMinutes) + ' after it starts, whatever is set here. A reset cannot extend that.' }) : null,
+      h('p', { class: 'note', text: 'These settings control the lab directly. Set a timer to 0 to turn it off. Timer resets only matter while a session length is set.' }));
   }
 
   async function loadTimer() {
@@ -2130,10 +2227,10 @@
   }
 
   async function saveTimer() {
-    const read = (id) => { const el = document.getElementById(id); return el && el.value.trim() !== '' ? Number(el.value) : 0; };
+    const read = (id) => { const el = document.getElementById(id); const v = el ? el.value.trim() : ''; return v === '' ? NaN : Number(v); };
     const body = { idleMinutes: read('timer-idle'), maxUptimeMinutes: read('timer-max'), maxResets: read('timer-resets') };
     if (![body.idleMinutes, body.maxUptimeMinutes, body.maxResets].every((v) => Number.isInteger(v) && v >= 0)) {
-      toast('Enter whole minutes, or 0 to use the lab\'s value.', 'error');
+      toast('Fill in every box with a whole number. Use 0 to turn a timer off.', 'error');
       return;
     }
     try {
@@ -2149,12 +2246,13 @@
 
   function viewTimerPolicy() {
     if (adminGate('Timer policy')) return;
-    $('#main').replaceChildren(
-      h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Timer policy' }),
-      h('p', { class: 'page-lead', text: 'How long the lab may sit idle and how long a session may last before the instance stops itself.' }),
-      h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }),
+    $('#main').replaceChildren(h('div', { class: 'page-narrow' },
+      h('div', { class: 'page-head' },
+        h('div', null,
+          h('h1', { id: 'page-title', class: 'page-title', tabindex: '-1', text: 'Timer policy' }),
+          h('p', { class: 'page-lead', text: 'How long the instance may sit idle, and how long a session may last, before it stops itself.' })),
         h('button', { type: 'button', class: 'btn btn-secondary', onClick: loadTimer }, icon('refresh'), 'Refresh')),
-      h('div', { id: 'timer-body' }));
+      h('div', { id: 'timer-body' })));
     paintTimer();
     loadTimer();
   }
@@ -2168,6 +2266,7 @@
     state.route = TITLES[wanted] ? wanted : 'instances';
     clearTimeout(pollTimer);
     document.title = 'AI Cloud Lab · ' + TITLES[state.route];
+    $('#main').dataset.page = state.route;
     renderNav();
     if (state.route === 'instances') viewInstances();
     else if (state.route === 'logins') viewLogins();
@@ -2191,7 +2290,7 @@
     state.phases = new Map();
     state.um = freshUM();
     state.openWebui = { busy: false, error: null, answer: null, note: '' };
-    state.owx = { tools: { busy: false, error: null, answer: null, note: '' }, settings: { busy: false, error: null, answer: null, note: '' }, exportBusy: false, exportError: null, exportDone: null, ctl: { loading: false, busy: null, message: null, tokens: null, tokensError: null, desired: null, desiredError: null } };
+    state.owx = { tools: { busy: false, error: null, answer: null, note: '' }, settings: { busy: false, error: null, answer: null, note: '' }, exportBusy: false, exportError: null, exportDone: null, ctl: { loading: false, busy: null, message: null, tokens: null, tokensError: null, desired: null, desiredError: null, bulk: { busy: false, note: '', results: null } } };
     state.usage = { busy: false, error: null, answer: null, note: '', rangeDays: 30 };
     state.spend = { data: null, error: null, dirty: false };
     state.timer = { data: null, error: null, dirty: false };

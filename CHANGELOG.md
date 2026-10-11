@@ -6,6 +6,31 @@ version numbers yet, so everything is listed under Unreleased.
 
 ## [Unreleased]
 
+### Changed
+- Open WebUI skills can now be imported in bulk from the panel: "Import several at once (JSON)" takes
+  a JSON array of up to 25 small text skills and imports them one by one through the existing checked
+  `import-skill` path, with one confirmation and a per-skill Imported/Failed result. Multi-file and
+  repository skills still go through Open WebUI's own Workspace, Skills.
+- Open WebUI feature switches are now a segmented On / Off control that highlights the applied
+  option (blue with a focus-style glow), instead of two stateless buttons. The highlight follows the
+  panel's saved value; a feature not yet set from the panel shows neither option selected.
+- Timer policy is now owned by the control panel, not capped by the deployment. Idle time, session
+  length and timer resets are each a required value the admin sets (0 turns a timer off), bounded by
+  fixed product limits (minutes 0 or 5-10080; resets 0-500) rather than the tfvars `auto_stop_*`
+  values. Those tfvars now only seed the initial values and keep the on/off gate and the absolute
+  backstop. The instance monitor (`ai-lab-idle-check.sh`) applies the panel's values as entered, so
+  this change needs a root-stack apply to take effect. Fixes the save failure on a short-seed lab
+  and the reset spinner that could not move.
+- Added `scripts/deploy-panel.ps1` to deploy the control panel pages (upload to the panel bucket and
+  clear the CloudFront cache) in one command, and a runbook page,
+  `docs/runbook/control-panel-deployment.md`, documenting it. The deploy plan's "Deploy the pages"
+  step now calls the script. Panel pages stay out of Terraform by design, so this is the supported
+  way to ship an `app.js`/`styles.css`/`index.html` change.
+- Control panel layout: pages other than Instances, Logins and Logs now use one readable column, with the
+  page's main button beside the title. Spend caps shows the 50%, 80%, 98% and 100% levels under an
+  "Email alerts" label with a line explaining them, and cap boxes carry a `$` and "per month".
+- The Chat API test waits up to about seven minutes for a model that is still loading (the chat test
+  script allows 330 seconds and the command 420), and says so on the page.
 
 ### Security
 - The HTTPS listener now uses `ELBSecurityPolicy-TLS13-1-2-2021-06` (TLS 1.2 and 1.3, forward-secret
@@ -34,6 +59,18 @@ version numbers yet, so everything is listed under Unreleased.
   also falls back to the launch time on network errors instead of failing the run.
 
 ### Added
+- `scripts/ailab-api.ps1` and `docs/runbook/programmatic-access.md`: how a team member calls the lab's
+  Open WebUI API from PowerShell with their own API key. The script lists models or sends one chat
+  message, waits (default 10 minutes) for a stopped or loading lab to answer, and explains 401, 403,
+  sign-in redirects and 524 in plain words. It does not start the lab; start it from the control
+  panel. The runbook covers turning API keys on and the allowed routes in the panel, creating a key,
+  and a clearly marked "Cloudflare Access (demo only)" section (one service token per person) that
+  can be deleted, with the marked block in the script, when Cloudflare is removed.
+- Open WebUI is pinned to v0.12.0 (was v0.11.4), which adds an authenticator-app sign-in, model controls,
+  multi-file skills and compaction between tool rounds. The routes the control panel and the lab scripts use
+  were compared between the two versions and are unchanged; v0.12.0 only adds routes. Two-factor sign-in is
+  off (`ENABLE_MFA` is not set): the lab's own scripts sign in with the admin password, which two-factor
+  sign-in would stop. See `docs/open-webui-control-panel.md`.
 - Auto-stop: new Terraform variables `auto_stop_absolute_max_minutes` (an absolute limit from boot that no
   timer reset or panel setting can extend; the instance monitor and the watchdog both enforce it, and the
   watchdog warns by email before it) and `auto_stop_max_resets` (how many times the Reset button may extend
@@ -41,11 +78,15 @@ version numbers yet, so everything is listed under Unreleased.
   Instances page shows the resets used and left. A reset is cut short at the absolute limit, and one that
   would add no time is refused. New runtime parameter `/<project>/auto-stop/reset-count` (count per run).
   The stop time stays derived from the stored reset time and the policy, rather than stored as a deadline,
-  so a tighter policy applies at once. Both new variables default to 0 (off).
+  so a tighter policy applies at once. `auto_stop_absolute_max_minutes` defaults to 0 (off).
+  `auto_stop_max_resets` is the most resets per run: default 50, 0 turns resets off, up to 500. The
+  Timer policy page always needs a number for it. The page now shows "Maximum allowed", "Currently
+  applied" and "Custom limit" in a table, with narrower text. A lab limit below the usual 30-minute
+  minimum no longer makes the session length impossible to save.
 - Control panel, Open WebUI page: import a skill from pasted SKILL.md text (up to 1800 characters,
   stored as plain text and never run) and attach it to chosen models. It is read back before it counts
   and is not saved for the next start. Skills with files, ZIPs and folders are imported in Open WebUI
-  itself (Workspace, Skills). Written against the Skills routes read from the v0.11.4 source.
+  itself (Workspace, Skills). Written against the Skills routes read from the Open WebUI source.
 - Control panel, Open WebUI page: read tool servers with a connection test, read a fixed list of
   settings (Global or User default), and download the configuration without any secret.
 - Control panel, Open WebUI page: change the default model, a model's temperature and context length,

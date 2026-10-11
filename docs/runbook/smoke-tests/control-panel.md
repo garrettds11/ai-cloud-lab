@@ -141,12 +141,12 @@ After the runbook's step 2 and a lab apply. From the repository root.
 
    ```powershell
    $doc = terraform -chdir=dashboards/api/terraform output -raw webui_admin_document
-   $cmd = aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=0.11.4" --query Command.CommandId --output text
+   $cmd = aws ssm send-command --document-name $doc --instance-ids $env:instance_id --parameters "action=status,expectedVersion=0.12.0" --query Command.CommandId --output text
    Start-Sleep 15
    aws ssm get-command-invocation --command-id $cmd --instance-id $env:instance_id --query "[Status, StandardOutputContent]" --output text
    ```
 
-   Expected: `Success` and one JSON line with `"ok":true`, `"healthy":true`, `"version":"0.11.4"`, `"versionMatches":true`. If `version` is `null` while `healthy` is `true`, Open WebUI v0.11.4 does not serve `/api/version` without sign-in; record that in #59.
+   Expected: `Success` and one JSON line with `"ok":true`, `"healthy":true`, `"version":"0.12.0"`, `"versionMatches":true`. If `version` is `null` while `healthy` is `true`, Open WebUI v0.12.0 does not serve `/api/version` without sign-in; record that in #59.
 
 2. **The document refuses anything else:**
 
@@ -183,7 +183,7 @@ After the runbook's step 2 and a lab apply. From the repository root.
 
 **Pending manual execution.** Needs the lab running and `READY`, the API stack applied (this adds
 IAM, a DynamoDB table and routes) and the root stack applied (the instance role may now read the
-tool token secrets). Everything here was written without a running Open WebUI v0.11.4, so this test
+tool token secrets). Everything here was written without a running Open WebUI v0.12.0, so this test
 is where the routes and field names get checked. Record every failure in #59 (read) or #60 (change).
 How the page works: `docs/open-webui-control-panel.md`.
 
@@ -201,7 +201,7 @@ How the page works: `docs/open-webui-control-panel.md`.
 2. **Normal update.**
    - Under **Default model**, choose a model and press **Set default model**. Expected: "done, and read back from Open WebUI".
    - Under **Model settings**, choose a model, set temperature `0.3` and press **Save**. Open WebUI's own admin model page shows the same value.
-   - Press **Turn off** on **Thumbs up and down on answers** and confirm. Read settings now shows it Off, and a chat shows no rating buttons.
+   - On **Thumbs up and down on answers** press **Off** and confirm. The **Off** segment turns blue (the applied state), Read settings shows it Off, and a chat shows no rating buttons.
    - **Saved settings** lists all three. **Logs** shows the actions.
 
 3. **Survives a restart.** Stop the lab, start it, and wait about 5 minutes after it is `READY`.
@@ -232,6 +232,11 @@ How the page works: `docs/open-webui-control-panel.md`.
 7. **Unsupported setting or version.** Turn **Image generation** and **Memory** on, one at a time. Expected on this version either "done, and read back" or a clear message that Open WebUI does not have that setting (and no new Saved settings row). Write down which keys, routes or field names failed in #60, so the script can be corrected.
 
 8. **Skill import.** Under **Import a skill**, give ID `smoke-skill`, name `Smoke skill` and a few lines of text, tick one model and press **Import skill**. Expected: "done, and read back". In Open WebUI's own Workspace, Skills, `smoke-skill` is listed and turned on, and the chosen model's settings show it attached. Import again with changed text: the skill is replaced, not duplicated. Write down in #60 any route or field that failed (`/api/v1/skills/...`, `meta.skillIds`).
+
+   **Several at once.** Open "Import several at once (JSON)", paste a two-skill array (valid IDs,
+   short text), press **Import all**, and confirm once. Both show **Imported**; both appear in Open
+   WebUI's Workspace, Skills. Add one bad entry (ID with a space) to a fresh array: it is refused
+   before anything is sent.
 9. **Cleanup.** Delete the test key, delete `smoke-skill` in Open WebUI (Workspace, Skills) and set everything you changed back (PowerShell):
 
    ```powershell
@@ -337,7 +342,7 @@ Sign in to the panel as an administrator.
    unallocated part it shows.
 4. Sign in as an operator. Both pages must say they are for administrators.
 
-If either page shows an error about analytics, Open WebUI v0.11.4 answers
+If either page shows an error about analytics, Open WebUI v0.12.0 answers
 `/api/v1/analytics/users` or `/tokens` in a shape the collector did not expect. Record the real
 response in #76.
 
@@ -360,12 +365,12 @@ response in #76.
 
 ## Step 4. Timer policy
 
-1. On **Timer policy** the lab's limits (from Terraform) and the limits in force match.
-2. Set the session length to half of the lab's limit and save. Within a minute the instance's own
-   countdown (Grafana, or `cat /run/ai-lab/status.json` over SSM) shows the shorter limit.
-3. Try a value above the lab's limit. The page refuses it.
-4. Set both back to 0. The lab's limits apply again.
-5. **Resets per run.** Set **Timer resets allowed per run** to `1` and save. On **Instances**, the
+1. On **Timer policy** the three settings -- Idle time, Session length, Timer resets -- all show a
+   value, never blank. These are the values in force (the deployment's seed until you first save).
+2. Set the session length to a new number, above or below the seed, and save. Within a minute the
+   instance's own countdown (Grafana, or `cat /run/ai-lab/status.json` over SSM) shows it.
+3. Try a value above 10080 or below 5: the page refuses it. Set a box to `0` and the timer turns off.
+4. **Resets per run.** Set **Timer resets** to `1` and save. On **Instances**, the
    status shows `Resets used: 0 of 1 this run.` Press Reset and confirm: the toast says `0 resets
    left in this run`, the line shows `1 of 1`, and the Reset button is greyed with the title `All 1
    timer resets of this run are used`. A direct call must be refused too (browser console, F12;
@@ -379,7 +384,7 @@ response in #76.
    ```
 
    Expected: `409` and `This run has used all 1 timer resets`. Stop and start the lab: the count starts
-   again at 0. Try `99`: the page or API refuses it if the lab (`auto_stop_max_resets`) is lower. Set it back to 0.
+   again at 0. Try a number above the maximum allowed (`auto_stop_max_resets`, 50 unless changed): the page and API refuse it. `0` turns the Reset button off with the message `Timer resets are turned off`. Clear the box to go back to the maximum allowed.
 6. **Absolute limit.** In a copy of `terraform.tfvars` set `auto_stop_max_uptime_minutes = 20` and
    `auto_stop_absolute_max_minutes = 30`, apply, and start the lab. About 15 minutes in press Reset:
    the toast says the lab will stop at about the absolute time (30 minutes after the start), the

@@ -620,7 +620,7 @@ def test_reset_gives_another_full_period_and_is_logged(aws, monkeypatch):
     assert body["resetAt"] == int(write["Value"]) * 1000
     assert body["stopAt"] == body["resetAt"] + 90 * 60000
     assert body["maxUptimeMinutes"] == 90
-    assert body["message"] == "Auto-stop timer reset. The lab has another 90 minutes."
+    assert body["message"] == "Auto-stop timer reset. The lab has another 90 minutes. 49 resets left in this run."
     # One log line for the person who pressed it, visible in their own log.
     status, logs = call("GET /logs", OP)
     lines = [r for r in logs if "Reset the auto-stop timer" in r["event"]]

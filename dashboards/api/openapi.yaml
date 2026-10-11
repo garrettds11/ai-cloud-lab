@@ -340,10 +340,10 @@ paths:
     get:
       tags: [Admin]
       operationId: getTimerPolicy
-      summary: The lab's auto-stop limits, the panel's shorter limits, and what applies
+      summary: The auto-stop timer values in force, and the bounds for changing them
       description: |
-        Administrators only. The lab's own setting (Terraform) is the ceiling. The panel may set
-        shorter idle and session-length limits inside it, never longer.
+        Administrators only. The panel owns the timer values; they apply as entered. The deployment
+        only seeds the initial values and keeps the on/off gate and the absolute backstop.
       x-lambda: admin
       x-required-roles: [admin]
       responses:
@@ -1240,9 +1240,9 @@ components:
             - $ref: "#/components/schemas/SpendBlock"
             - type: "null"
 
-    TimerMinutes:
+    TimerValues:
       type: object
-      required: [idleMinutes, maxUptimeMinutes]
+      required: [idleMinutes, maxUptimeMinutes, maxResets]
       properties:
         idleMinutes:
           type: integer
@@ -1250,45 +1250,57 @@ components:
         maxUptimeMinutes:
           type: integer
           description: Session length in minutes before the instance stops even if people are active. 0 means off.
-        absoluteMaxMinutes:
-          type: integer
-          description: Only in `ceiling` and `effective`. The lab's absolute limit from launch. The panel cannot change it. 0 means off.
         maxResets:
           type: integer
-          description: Resets of the session timer allowed per run. 0 means no limit (in `policy`, 0 means use the lab's value).
+          description: Resets of the session timer allowed per run. 0 means resets are off.
+
+    TimerBounds:
+      type: object
+      required: [minMinutes, maxMinutes, maxResets]
+      properties:
+        minMinutes:
+          type: integer
+          description: Smallest non-zero minutes accepted for idle time and session length.
+        maxMinutes:
+          type: integer
+          description: Largest minutes accepted for idle time and session length.
+        maxResets:
+          type: integer
+          description: Largest number of resets per run accepted.
 
     TimerPolicyRequest:
       type: object
+      required: [idleMinutes, maxUptimeMinutes, maxResets]
       properties:
         idleMinutes:
           type: integer
-          description: 0, or 5 to 10080 and not above the lab's own idle limit.
+          description: Required. 0 (off), or 5 to 10080 minutes.
         maxUptimeMinutes:
           type: integer
-          description: 0, or 30 to 10080 and not above the lab's own session limit.
+          description: Required. 0 (off), or 5 to 10080 minutes.
         maxResets:
           type: integer
-          description: 0 to use the lab's value, or 1 to 50 and not above the lab's own limit when it has one.
+          description: Required. 0 (off), or up to 500.
 
     TimerPolicy:
       type: object
-      required: [enabled, ceiling, policy, effective, minimums, maximum]
+      required: [enabled, values, custom, absoluteMaxMinutes, bounds]
       properties:
         enabled:
           type: boolean
-          description: Whether auto-stop is on for the lab at all (Terraform).
-        ceiling:
-          $ref: "#/components/schemas/TimerMinutes"
-        policy:
-          $ref: "#/components/schemas/TimerMinutes"
-        effective:
-          $ref: "#/components/schemas/TimerMinutes"
-        minimums:
-          $ref: "#/components/schemas/TimerMinutes"
-        maximum:
+          description: Whether auto-stop is on for the lab at all (set at deploy). When false there is nothing to set.
+        values:
+          allOf: [{$ref: "#/components/schemas/TimerValues"}]
+          description: The idle, session and reset values in force -- the panel's saved values, or the seeded defaults until the panel has saved.
+        custom:
+          type: boolean
+          description: True once an administrator has saved values on the panel; false while the seeded defaults apply.
+        absoluteMaxMinutes:
           type: integer
-        maximumResets:
-          type: integer
+          description: A hard backstop from launch set at deploy; the panel never changes it. 0 means off.
+        bounds:
+          allOf: [{$ref: "#/components/schemas/TimerBounds"}]
+          description: The fixed limits the panel enforces, not tied to the deployment.
 
     SpendBlock:
       type: object

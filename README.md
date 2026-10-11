@@ -201,7 +201,10 @@ What to know:
 Everything to set up before the first deploy (tools, AWS account, secrets, domain, certificate,
 Cloudflare, Grafana Cloud, control panel hosting and the settings files) is in
 [docs/runbook/pre-deployment.md](docs/runbook/pre-deployment.md). The deploy itself is
-[docs/runbook/terraform-smoke-test-plan.md](docs/runbook/terraform-smoke-test-plan.md).
+[docs/runbook/terraform-smoke-test-plan.md](docs/runbook/terraform-smoke-test-plan.md), and
+deploying the control panel's pages after they change is
+[docs/runbook/control-panel-deployment.md](docs/runbook/control-panel-deployment.md). Calling the
+lab's API from a script is [docs/runbook/programmatic-access.md](docs/runbook/programmatic-access.md).
 
 ## Secure Admin Password
 

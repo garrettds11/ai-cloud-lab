@@ -73,7 +73,7 @@ resource "aws_ssm_document" "webui_admin" {
         type           = "String"
         description    = "For the write actions: the request as base64 text, already checked by the control panel's API. Empty for other actions."
         default        = ""
-        allowedPattern = "^[A-Za-z0-9+/=]{0,4000}$"
+        allowedPattern = "^[A-Za-z0-9+/=]*$"
       }
       toolTokenPrefix = {
         type           = "String"
@@ -93,7 +93,7 @@ resource "aws_ssm_document" "webui_admin" {
       name         = "webuiAdmin"
       precondition = { StringEquals = ["platformType", "Linux"] }
       inputs = {
-        timeoutSeconds = "180"
+        timeoutSeconds = "420"
         # Run under bash whatever shell SSM uses; the quoted delimiter stops any expansion
         # before bash reads the script.
         runCommand = concat(

@@ -193,7 +193,7 @@ run "open_webui_actions_run_only_the_panel_document_on_managed_instances" {
   command = apply
 
   assert {
-    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.action.allowedValues == [
+    condition = jsondecode(aws_ssm_document.webui_admin.content).parameters.action.allowedValues == [
       "status", "usage", "set-role", "chat-test", "tool-servers", "settings", "export-config",
       "set-default-model", "set-model-params", "set-feature", "upsert-tool-server", "remove-tool-server", "apply-desired",
     ]
@@ -234,7 +234,7 @@ run "open_webui_write_actions_have_tight_parameters_and_the_stored_settings_have
   command = apply
 
   assert {
-    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.payload.allowedPattern == "^[A-Za-z0-9+/=]{0,4000}$"
+    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.payload.allowedPattern == "^[A-Za-z0-9+/=]*$"
     error_message = "The write request must be limited to base64 text."
   }
 
@@ -244,12 +244,12 @@ run "open_webui_write_actions_have_tight_parameters_and_the_stored_settings_have
   }
 
   assert {
-    condition = aws_lambda_function.function["admin"].environment[0].variables["TOOL_TOKEN_PREFIX"] == "aiwebdemo/tool-tokens/" && aws_lambda_function.spend.environment[0].variables["TOOL_TOKEN_PREFIX"] == "aiwebdemo/tool-tokens/" && aws_lambda_function.function["admin"].environment[0].variables["WEBUI_DESIRED_TABLE"] == aws_dynamodb_table.webui_desired_state.name && aws_lambda_function.spend.environment[0].variables["WEBUI_DESIRED_TABLE"] == aws_dynamodb_table.webui_desired_state.name
+    condition     = aws_lambda_function.function["admin"].environment[0].variables["TOOL_TOKEN_PREFIX"] == "aiwebdemo/tool-tokens/" && aws_lambda_function.spend.environment[0].variables["TOOL_TOKEN_PREFIX"] == "aiwebdemo/tool-tokens/" && aws_lambda_function.function["admin"].environment[0].variables["WEBUI_DESIRED_TABLE"] == aws_dynamodb_table.webui_desired_state.name && aws_lambda_function.spend.environment[0].variables["WEBUI_DESIRED_TABLE"] == aws_dynamodb_table.webui_desired_state.name
     error_message = "The admin function and the spend job must be told the tool token prefix and the desired-state table."
   }
 
   assert {
-    condition = length([for st in jsondecode(aws_iam_role_policy.function["admin"].policy).Statement : st if st.Sid == "ListToolTokenNames" && st.Action == "secretsmanager:ListSecrets"]) == 1 && !strcontains(aws_iam_role_policy.function["admin"].policy, "GetSecretValue")
+    condition     = length([for st in jsondecode(aws_iam_role_policy.function["admin"].policy).Statement : st if st.Sid == "ListToolTokenNames" && st.Action == "secretsmanager:ListSecrets"]) == 1 && !strcontains(aws_iam_role_policy.function["admin"].policy, "GetSecretValue")
     error_message = "The admin function may list secret names but never read a secret."
   }
 

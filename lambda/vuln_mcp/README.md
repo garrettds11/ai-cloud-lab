@@ -184,7 +184,7 @@ Nothing to configure. When `vuln_mcp_table_name` is set, the lab instance adds t
 one **MCP** tool connection named **Vulnerability Findings** (id `vuln-findings`, bearer auth, usable by every
 signed-in user). When it is not set, the connection is absent.
 
-**Compatibility.** The pinned Open WebUI image (`open-webui:v0.11.4`) bundles the MCP Python SDK 1.27.2 and
+**Compatibility.** The pinned Open WebUI image (`open-webui:v0.12.0`) bundles the MCP Python SDK 1.27.2 and
 speaks MCP over Streamable HTTP, which is what this server speaks (JSON responses, no sessions, no stream).
 No adapter is needed. This was checked offline by pointing that SDK's client at this handler: initialize,
 the six tools, a tool call, and a `401` for a wrong token (`tests/test_vuln_mcp_registration.py`). Whether the
@@ -250,7 +250,7 @@ without displaying it (**Local Windows PowerShell**):
 `aws secretsmanager get-secret-value --secret-id <vuln_mcp_token_secret_arn> --query SecretString --output text | Set-Clipboard`.
 
 **Turning local login off later.** Two separate Open WebUI settings are involved (read from the Open WebUI
-v0.11.4 source, not confirmed on a running instance):
+v0.12.0 source, not confirmed on a running instance):
 
 | Setting | Where it can be changed | Effect on this script |
 |---|---|---|

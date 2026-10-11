@@ -59,25 +59,16 @@ if [[ -n $region ]] && config=$(aws ssm get-parameter --region "$region" --name 
   configured_abs=$(jq -r '.absolute_max_minutes // 0' <<<"$config" 2>/dev/null || true)
   [[ $configured_abs =~ ^[0-9]+$ ]] && ABSOLUTE_MAX_MINUTES=$configured_abs
 fi
-# Timer policy set from the control panel: shorter idle and hard-limit minutes, never longer.
-# The values above (Terraform) are the ceiling; 0 or a missing value means "use the ceiling".
-# A ceiling of 0 means that limit is off, and the policy may then switch it on. Unreadable or
-# malformed policy is ignored, so a bad value can never loosen a limit.
-apply_policy() { # $1 = ceiling, $2 = policy value; prints the minutes in force
-  local ceiling=$1 value=$2
-  if [[ ! $value =~ ^[0-9]{1,5}$ ]] || ((10#$value == 0)); then
-    echo "$ceiling"
-  elif ((ceiling > 0 && 10#$value > ceiling)); then
-    echo "$ceiling"
-  else
-    echo $((10#$value))
-  fi
-}
+# Timer policy set from the control panel is authoritative once saved: its idle and session
+# values replace the seeded ones above, applied as entered (0 means that timer is off). Only a
+# value that is a whole number is taken; an unreadable, missing or malformed field leaves the
+# seeded value in place, so a bad policy can never remove a limit by accident. The absolute limit
+# above is never changed by the policy.
 if [[ -n $region && $enabled != "false" ]] && policy=$(aws ssm get-parameter --region "$region" --name "$AUTO_STOP_PARAMETER/policy" --query Parameter.Value --output text 2>/dev/null); then
-  policy_idle=$(jq -r '.idle_minutes // 0 | if type == "number" then floor else 0 end' <<<"$policy" 2>/dev/null || echo 0)
-  policy_max=$(jq -r '.max_uptime_minutes // 0 | if type == "number" then floor else 0 end' <<<"$policy" 2>/dev/null || echo 0)
-  IDLE_MINUTES=$(apply_policy "$IDLE_MINUTES" "$policy_idle")
-  MAX_UPTIME_MINUTES=$(apply_policy "$MAX_UPTIME_MINUTES" "$policy_max")
+  policy_idle=$(jq -r 'if (.idle_minutes|type) == "number" then (.idle_minutes|floor) else "none" end' <<<"$policy" 2>/dev/null || echo none)
+  policy_max=$(jq -r 'if (.max_uptime_minutes|type) == "number" then (.max_uptime_minutes|floor) else "none" end' <<<"$policy" 2>/dev/null || echo none)
+  [[ $policy_idle =~ ^[0-9]+$ ]] && IDLE_MINUTES=$policy_idle
+  [[ $policy_max  =~ ^[0-9]+$ ]] && MAX_UPTIME_MINUTES=$policy_max
 fi
 if [[ $enabled == "false" ]]; then
   echo "$now" >"$STATE_DIR/last-activity" # a later re-enable gets a full idle window

@@ -174,7 +174,7 @@ variable "open_webui_demo_user_password_secret_arn" {
 variable "open_webui_container_image" {
   description = "Pinned Docker image used to run Open WebUI. Override deliberately when upgrading."
   type        = string
-  default     = "ghcr.io/open-webui/open-webui:v0.11.4"
+  default     = "ghcr.io/open-webui/open-webui:v0.12.0"
 }
 
 variable "open_webui_container_name" {
@@ -454,7 +454,7 @@ variable "origin_lockdown_extra_cidrs" {
 }
 
 variable "auto_stop_idle_minutes" {
-  description = "Idle shutdown. 0 turns it off. 1 to 1440 stops the instance after this many minutes with no active Open WebUI users and no reply being generated; people who are active are never stopped by this. The idle clock starts when first-boot setup finishes and after every restart. Independent of auto_stop_max_uptime_minutes."
+  description = "Idle shutdown, the initial value only: an administrator can change it later on the control panel's Timer policy page. 0 turns it off. 1 to 1440 stops the instance after this many minutes with no active Open WebUI users and no reply being generated; people who are active are never stopped by this. The idle clock starts when first-boot setup finishes and after every restart. Independent of auto_stop_max_uptime_minutes."
   type        = number
   default     = 60
 
@@ -465,7 +465,7 @@ variable "auto_stop_idle_minutes" {
 }
 
 variable "auto_stop_max_uptime_minutes" {
-  description = "Hard time limit. 0 (default) means no limit. 15 or more stops the instance this many minutes after it boots even if people are still using it, after an email warning shortly before. Right for a demo, for example 90. Independent of auto_stop_idle_minutes."
+  description = "Session length (hard time limit), the initial value only: an administrator can change it later on the control panel's Timer policy page. 0 means no limit. 15 or more stops the instance this many minutes after it boots even if people are still using it, after an email warning shortly before. Right for a demo, for example 90. Independent of auto_stop_idle_minutes."
   type        = number
   default     = 0
 
@@ -487,13 +487,13 @@ variable "auto_stop_absolute_max_minutes" {
 }
 
 variable "auto_stop_max_resets" {
-  description = "How many times the control panel's Reset button may extend the hard limit during one run. 0 (default) means no limit on the count. The panel's timer policy may set a lower number, never a higher one."
+  description = "Resets per run, the initial value only: an administrator can change it later (0 to 500) on the control panel's Timer policy page. The most times the Reset button may extend the hard limit during one run. 0 turns resets off. The default is 50."
   type        = number
-  default     = 0
+  default     = 50
 
   validation {
-    condition     = var.auto_stop_max_resets >= 0 && var.auto_stop_max_resets <= 50 && floor(var.auto_stop_max_resets) == var.auto_stop_max_resets
-    error_message = "auto_stop_max_resets must be a whole number from 0 (no limit) through 50."
+    condition     = var.auto_stop_max_resets >= 0 && var.auto_stop_max_resets <= 500 && floor(var.auto_stop_max_resets) == var.auto_stop_max_resets
+    error_message = "auto_stop_max_resets must be a whole number from 0 (resets off) through 500."
   }
 }
 

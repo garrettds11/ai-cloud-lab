@@ -24,13 +24,22 @@ def ready(aws, monkeypatch):
     return aws
 
 
-def test_with_no_limit_resets_are_counted_but_never_refused(ready, monkeypatch):
+def test_by_default_fifty_resets_are_allowed_and_counted(ready, monkeypatch):
     ssm = use_reset_ssm(monkeypatch)
     for n in (1, 2, 3):
         status, body = call(RESET, OP, path=PATH)
-        assert status == 200 and body["resetsLeft"] is None
+        assert status == 200 and body["resetsLeft"] == 50 - n
         assert ssm.count_writes[-1]["Value"] == f"{launch_epoch(ready)}:{n}"
     assert len(ssm.writes) == 3
+
+
+def test_zero_resets_turns_the_button_off(ready, monkeypatch):
+    ssm = use_reset_ssm(monkeypatch, rule={"max_resets": 0})
+    status, body = call(RESET, OP, path=PATH)
+    assert status == 409 and "turned off" in body["message"]
+    assert ssm.writes == [] and ssm.count_writes == []
+    view = call("GET /instances", OP)[1][0]["autoStop"]
+    assert view["resetsAllowed"] == 0
 
 
 def test_a_lab_limit_refuses_the_reset_after_the_last_one(ready, monkeypatch):
@@ -46,19 +55,22 @@ def test_a_lab_limit_refuses_the_reset_after_the_last_one(ready, monkeypatch):
     assert any("refused" in e and "all 2 resets" in e for e in lines)
 
 
-def test_the_panel_policy_can_lower_the_limit_but_not_raise_it(ready, monkeypatch):
+def test_the_panel_policy_sets_the_reset_limit(ready, monkeypatch):
+    # The panel's saved reset count applies as entered, whether below or above the seed.
     lower = use_reset_ssm(monkeypatch, rule={"max_resets": 3}, policy=json.dumps({"max_resets": 1}))
     assert call(RESET, OP, path=PATH)[0] == 200
     assert call(RESET, OP, path=PATH)[0] == 409
     assert len(lower.writes) == 1
     handler._rule_cache.update(at=0, value=None)
-    higher = use_reset_ssm(monkeypatch, rule={"max_resets": 1}, policy=json.dumps({"max_resets": 9}))
+    higher = use_reset_ssm(monkeypatch, rule={"max_resets": 1}, policy=json.dumps({"max_resets": 3}))
+    assert call(RESET, OP, path=PATH)[0] == 200
+    assert call(RESET, OP, path=PATH)[0] == 200
     assert call(RESET, OP, path=PATH)[0] == 200
     assert call(RESET, OP, path=PATH)[0] == 409
-    assert len(higher.writes) == 1
+    assert len(higher.writes) == 3
 
 
-def test_a_policy_can_switch_a_count_on_when_the_lab_has_none(ready, monkeypatch):
+def test_a_policy_can_lower_the_default_of_fifty(ready, monkeypatch):
     ssm = use_reset_ssm(monkeypatch, policy=json.dumps({"max_resets": 1}))
     assert call(RESET, OP, path=PATH)[0] == 200
     assert call(RESET, OP, path=PATH)[0] == 409
@@ -66,7 +78,7 @@ def test_a_policy_can_switch_a_count_on_when_the_lab_has_none(ready, monkeypatch
 
 
 @pytest.mark.parametrize("policy", ["not json", "[]", "3", json.dumps({"max_resets": "1"}), json.dumps({"max_resets": True}), json.dumps({"max_resets": -2}), json.dumps({"max_resets": 1.5})])
-def test_a_malformed_policy_never_loosens_the_lab_limit(ready, monkeypatch, policy):
+def test_a_malformed_policy_never_loosens_the_maximum_allowed(ready, monkeypatch, policy):
     ssm = use_reset_ssm(monkeypatch, rule={"max_resets": 1}, policy=policy)
     assert call(RESET, OP, path=PATH)[0] == 200
     assert call(RESET, OP, path=PATH)[0] == 409
@@ -86,22 +98,16 @@ def test_a_malformed_count_counts_as_none(ready, monkeypatch, stored):
     assert ssm.count == f"{launch_epoch(ready)}:1"
 
 
-def test_an_unreadable_count_stops_a_counted_limit_but_not_an_open_one(ready, monkeypatch):
-    counted = use_reset_ssm(monkeypatch, rule={"max_resets": 2}, count_error="ThrottlingException")
+def test_an_unreadable_count_stops_the_reset(ready, monkeypatch):
+    ssm = use_reset_ssm(monkeypatch, count_error="ThrottlingException")
     status, body = call(RESET, OP, path=PATH)
-    assert status == 502 and "how many timer resets" in body["message"] and counted.writes == []
-    handler._rule_cache.update(at=0, value=None)
-    open_ = use_reset_ssm(monkeypatch, count_error="ThrottlingException")
-    assert call(RESET, OP, path=PATH)[0] == 200 and len(open_.writes) == 1
+    assert status == 502 and "how many timer resets" in body["message"] and ssm.writes == []
 
 
-def test_a_count_that_cannot_be_saved_does_not_bypass_a_counted_limit(ready, monkeypatch):
-    ssm = use_reset_ssm(monkeypatch, rule={"max_resets": 2}, count_write_error="AccessDeniedException")
+def test_a_count_that_cannot_be_saved_does_not_bypass_the_limit(ready, monkeypatch):
+    ssm = use_reset_ssm(monkeypatch, count_write_error="AccessDeniedException")
     status, body = call(RESET, OP, path=PATH)
     assert status == 502 and ssm.writes == []
-    handler._rule_cache.update(at=0, value=None)
-    open_ = use_reset_ssm(monkeypatch, count_write_error="AccessDeniedException")
-    assert call(RESET, OP, path=PATH)[0] == 200 and len(open_.writes) == 1  # no limit to protect
 
 
 def test_a_reset_is_capped_at_the_absolute_limit(ready, monkeypatch):
@@ -150,7 +156,7 @@ def test_the_instance_view_shows_the_limits_and_the_count(ready, monkeypatch):
     handler._rule_cache.update(at=0, value=None)
     use_reset_ssm(monkeypatch)
     view = call("GET /instances", OP)[1][0]["autoStop"]
-    assert view["absoluteMaxMinutes"] == 0 and view["resetsAllowed"] == 0 and view["resetsUsed"] is None
+    assert view["absoluteMaxMinutes"] == 0 and view["resetsAllowed"] == 50 and view["resetsUsed"] == 0
 
 
 def test_an_absolute_limit_alone_still_counts_as_auto_stop_on(ready, monkeypatch):

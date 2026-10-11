@@ -1,6 +1,6 @@
 # Control panel
 
-The AI Cloud Lab control panel: one page with four views, **Instances**, **Logins**, **Logs** and **User management**. A customer signs in, starts the instances they have been granted, and opens the service when it is ready. They cannot stop anything. An administrator manages who may start what, and which roles people have.
+The AI Cloud Lab control panel: one page with four views, **Instances**, **Logins**, **Logs** and **User management**. A customer signs in, starts the instances they have been granted, and opens the service when it is ready. They cannot stop anything. Nobody can stop an instance from the panel, on purpose (decision on [#62](https://github.com/garrettds11/ai-cloud-lab/issues/62): auto-stop only, no Stop now button); an administrator who needs to end a run early uses the **AWS console** button on the Instances page, which opens the instance in the AWS console. An administrator manages who may start what, and which roles people have.
 
 It is plain HTML, CSS and JavaScript with no build step. The page holds no permissions of its own: it shows what the Control API returns, and the API checks every rule again.
 

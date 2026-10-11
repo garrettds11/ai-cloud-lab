@@ -29,6 +29,37 @@ of the name (`Log4Shell`). A wrong value returns a message that suggests the clo
 (tens or hundreds of findings). A much larger table would need precomputed rollups. A read that would
 exceed 50 pages fails with a message instead of returning a partial count.
 
+## Log tools (optional)
+
+When the three `LOKI_*` settings are present (Terraform: `log_mcp_loki_url`, `log_mcp_loki_user`,
+`log_mcp_loki_token_secret_arn`), the same server also offers five read-only tools over the lab's
+logs, which Grafana Alloy already ships to Grafana Cloud Loki. The code is `log_tools.py`. Without
+the settings the server offers only the findings tools above.
+
+| Tool | Answers |
+|---|---|
+| `list_log_sources` | Which logs exist: `bootstrap` (first-boot setup), `services` (Ollama, Docker, Alloy) and `containers` (Open WebUI and other containers). |
+| `search_logs` | "What happened?" Recent lines from one log, newest first, optionally only those containing some text or at error or warning level, for one service or container. |
+| `count_log_events` | "How many?" and "since when?" Matching lines per time bucket. |
+| `summarize_log_errors` | "Is anything wrong?" The most frequent distinct error messages of every log, with counts. |
+| `get_signin_events` | "Any failed logins?" Successful and failed Open WebUI password sign-ins and single sign-on callbacks, with recent failures. It sees only requests that reached Open WebUI. |
+
+Why they are safe to give a model:
+
+- The model never writes a query. Each tool takes a few validated fields and builds the LogQL itself;
+  text to match is escaped and is never a pattern.
+- Log lines are untrusted data. Every result says so, and the Security Analyst prompt tells the model
+  to report log text and never follow instructions in it.
+- Lines are scrubbed again before they leave (bearer tokens, JWTs, passwords, API keys, email
+  addresses) and cut to 300 characters; a window is at most one week, a result at most 100 lines
+  and 12,000 characters.
+- The token can only read logs (`logs:read`), and the function's role can read only that one secret.
+
+Why Loki and not Splunk, OpenSearch, Graylog or Wazuh: the logs are already in Loki, it is open
+source, and the Grafana Cloud free tier covers the lab. The others each add a server or a licence to
+run. Another store can be used by writing a class with the same two methods as `LokiBackend`
+(`streams` and `matrix`).
+
 ## Files
 
 | File | Role |
@@ -112,6 +143,10 @@ the server only accepts POST.
 | `AUTH_TOKEN` | none | Bearer token callers must send. For local use. |
 | `AUTH_TOKEN_SECRET_ARN` | none | Secrets Manager secret holding the token. Used in AWS instead of `AUTH_TOKEN`. |
 | `REQUIRE_AUTH` | off | Set to `1` to demand a token even outside Lambda. |
+| `LOKI_URL` | none | Grafana Cloud Loki address (https, no path). With the next two settings it turns the log tools on. |
+| `LOKI_USER` | none | The Loki user number (basic-auth user name). |
+| `LOKI_TOKEN_SECRET_ARN` | none | Secrets Manager secret holding a `logs:read` token. `LOKI_TOKEN` can be used locally instead. |
+| `LOKI_STREAM_SELECTOR` | `service_name=~".+"` | Labels that pick the lab's streams, without braces. |
 
 Inside Lambda the server fails closed: with no token configured, every request is refused.
 
@@ -130,7 +165,7 @@ Read-only access to this one table and its indexes:
 }
 ```
 
-plus read access to the token secret, and the standard Lambda logging permissions.
+plus read access to the token secret (and, when the log tools are on, to the Loki token secret), and the standard Lambda logging permissions.
 
 ## Deploy with Terraform
 
@@ -241,7 +276,8 @@ value does not.
 | `Open WebUI rejected the admin sign-in` | The admin secret no longer matches the admin password. Fix the secret or the account; the script does not retry this. |
 | `Local login is off` / exit 3 | See "Local login must be on" and "Turning local login off later" above. |
 | `Could not read ... secret` | The instance role cannot read it: confirm `vuln_mcp_token_secret_arn` was applied (the role is updated only when the feature is on). |
-| Connection exists but a model never calls the tools | The tool must be switched on in the chat, and a small model may not call tools. See the acceptance tests. |
+| Connection exists but a model never calls the tools | Use the **Security Analyst** model, which has the tools switched on; on another model they must be switched on in the chat, and a small model may not call tools. See the acceptance tests. |
+| No Security Analyst model, or its tools are off | Rerun `sudo ai-lab-register-vuln-mcp`: it puts back the base model, tools, capabilities, parameters and system prompt. `Could not create the security-analyst model` with a 401 means a model with that id exists that the admin cannot see; delete it in **Workspace > Models**. |
 | Two Vulnerability entries | One was added by hand with a different URL. Delete it; the managed one has id `vuln-findings`. |
 
 ## Not done yet

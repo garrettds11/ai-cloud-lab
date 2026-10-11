@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+# Lab metrics for Grafana: GPU, Ollama model load and request results, Open WebUI token totals,
+# model settings, chat and feedback counts, idle timers, and the instance's hourly price. Run every 30 seconds by ai-lab-metrics.timer.
+# It writes Prometheus text to $METRICS_DIR/ai_lab.prom, which Alloy's textfile collector picks up
+# and sends to Grafana Cloud (scripts/alloy-config.alloy). Names and meanings: docs/monitoring-spec.md.
+#
+# Each source is read on its own; one that fails leaves its metrics out and sets
+# ai_lab_exporter_source_up{source} to 0, and the rest are still written. Only numbers and
+# bounded labels (model, GPU index, throttle reason) are written. No user data, no prompt or
+# answer text. Per-user tokens are on the control panel's admin page, never in Grafana.
+set -uo pipefail
+
+METRICS_DIR="${AI_LAB_METRICS_DIR:-/var/lib/ai-lab/metrics}"
+ENV_FILE="${AI_LAB_METRICS_ENV:-/etc/ai-lab/metrics.env}"
+STATE_DIR="${AI_LAB_STATE_DIR:-/run/ai-lab}"
+READY_FILE="${AI_LAB_READY_FILE:-/var/lib/ai-lab/ready}"
+LIB="${AI_LAB_WEBUI_LIB:-/usr/local/lib/ai-lab/webui-lib.sh}"
+OLLAMA_URL="${AI_LAB_OLLAMA_URL:-http://127.0.0.1:11434}"
+
+# shellcheck disable=SC1090
+[[ -r "$ENV_FILE" ]] && . "$ENV_FILE" # INSTANCE_TYPE INSTANCE_HOURLY_COST_USD (written by cloud-init)
+INSTANCE_TYPE="${INSTANCE_TYPE:-unknown}"
+INSTANCE_HOURLY_COST_USD="${INSTANCE_HOURLY_COST_USD:-}"
+
+# ai-lab-metrics --shapes: run by hand on the instance at first deploy. Prints the keys and value
+# types (never values) of the Open WebUI answers and tables that time to first token and generation
+# speed would be read from, so the exporter can be written against what v0.11.4 really returns.
+if [[ "${1:-}" == "--shapes" ]]; then
+    # shellcheck disable=SC1090
+    [[ -r "$LIB" ]] && . "$LIB" || { echo "Open WebUI helper not found: $LIB" >&2; exit 1; }
+    webui_load_settings || { echo "Could not read the Open WebUI settings." >&2; exit 1; }
+    shape() { jq -r '[paths(scalars) as $p | ($p | map(if type == "number" then "[]" else . end) | join(".")) + ": " + (getpath($p) | type)] | unique | .[]'; }
+    webui_begin
+    if webui_login; then
+        now=$(date +%s)
+        for path in "/api/v1/analytics/messages" "/api/v1/analytics/summary" "/api/v1/analytics/models"; do
+            echo "== GET $path"
+            body="$(webui_get "$path?start_date=$((now - 86400))&end_date=$now&limit=1")" && shape <<<"$body" || echo "(no usable answer)"
+        done
+    else
+        echo "Could not sign in to Open WebUI."
+    fi
+    webui_end
+    db="$(webui_db_path 2>/dev/null)" || db=""
+    if [[ -n "$db" && -r "$db" ]] && command -v sqlite3 >/dev/null 2>&1; then
+        for t in chat feedback message; do
+            echo "== table $t"
+            cols="$(sqlite3 -readonly "$db" "SELECT name || ' ' || type FROM pragma_table_info('$t');" 2>/dev/null)"
+            echo "${cols:-(no such table)}"
+        done
+    else
+        echo "== database not readable"
+    fi
+    exit 0
+fi
+
+[[ -f $READY_FILE ]] || exit 0
+mkdir -p "$METRICS_DIR"
+chmod 0755 "$METRICS_DIR"
+
+instance_id="${AI_LAB_INSTANCE_ID:-}"
+if [[ -z "$instance_id" ]]; then
+    tok="$(curl -s -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' || true)"
+    instance_id="$(curl -s -m 3 -H "X-aws-ec2-metadata-token: $tok" http://169.254.169.254/latest/meta-data/instance-id || true)"
+fi
+[[ "$instance_id" =~ ^i-[0-9a-f]+$ ]] || instance_id=unknown
+
+out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+# Samples are collected per metric and written grouped at the end: the Prometheus text format
+# wants every sample of one metric together.
+declare -A m_type m_help m_lines
+m_order=()
+# metric NAME TYPE HELP LABELS VALUE  (LABELS like gpu="0",reason="x" or empty)
+metric() {
+    local name=$1 type=$2 help=$3 labels=$4 value=$5
+    if [[ -z "${m_type[$name]:-}" ]]; then
+        m_type[$name]=$type
+        m_help[$name]=$help
+        m_order+=("$name")
+    fi
+    printf -v line '%s{%sinstance_id="%s"} %s\n' "$name" "${labels:+$labels,}" "$instance_id" "$value"
+    m_lines[$name]+="$line"
+}
+num() { [[ "$1" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; }
+# A label value: keep letters, digits and a few separators; everything else becomes "_".
+lbl() { printf '%s' "${1//[^A-Za-z0-9_.:\/-]/_}"; }
+source_up() { metric ai_lab_exporter_source_up gauge "1 when the source was read this run" "source=\"$1\"" "$2"; }
+
+# ---- GPU ----
+gpu_ok=0
+if command -v nvidia-smi >/dev/null 2>&1; then
+    fields="index,temperature.gpu,utilization.gpu,memory.used,memory.total,power.draw,power.limit"
+    reasons_field="clocks_throttle_reasons.active"
+    smi="$(nvidia-smi --query-gpu="$fields,$reasons_field" --format=csv,noheader,nounits 2>/dev/null)" ||
+        { reasons_field="clocks_event_reasons.active"; smi="$(nvidia-smi --query-gpu="$fields,$reasons_field" --format=csv,noheader,nounits 2>/dev/null)"; }
+    if [[ -n "${smi:-}" ]]; then
+        gpu_ok=1
+        while IFS=',' read -r idx temp util mem_used mem_total power plimit reasons; do
+            idx="${idx// /}"; temp="${temp// /}"; util="${util// /}"; mem_used="${mem_used// /}"
+            mem_total="${mem_total// /}"; power="${power// /}"; plimit="${plimit// /}"; reasons="${reasons// /}"
+            [[ "$idx" =~ ^[0-9]+$ ]] || continue
+            l="gpu=\"$idx\""
+            num "$temp" && metric ai_lab_gpu_temperature_celsius gauge "GPU temperature" "$l" "$temp"
+            num "$util" && metric ai_lab_gpu_utilization_ratio gauge "GPU utilization, 0 to 1" "$l" "$(awk -v u="$util" 'BEGIN{printf "%.4f", u/100}')"
+            # nvidia-smi reports MiB.
+            num "$mem_used" && metric ai_lab_gpu_memory_used_bytes gauge "GPU memory in use" "$l" "$(awk -v m="$mem_used" 'BEGIN{printf "%.0f", m*1048576}')"
+            num "$mem_total" && metric ai_lab_gpu_memory_total_bytes gauge "GPU memory installed" "$l" "$(awk -v m="$mem_total" 'BEGIN{printf "%.0f", m*1048576}')"
+            num "$power" && metric ai_lab_gpu_power_watts gauge "GPU power draw" "$l" "$power"
+            num "$plimit" && metric ai_lab_gpu_power_limit_watts gauge "GPU power limit" "$l" "$plimit"
+            if [[ "$reasons" =~ ^0x[0-9A-Fa-f]+$ ]]; then
+                mask=$((reasons))
+                # Only the reasons that mean the GPU is being slowed. Idle (0x1) and application clock settings (0x2) are normal.
+                for pair in "0x4:sw_power_cap" "0x8:hw_slowdown" "0x20:sw_thermal_slowdown" "0x40:hw_thermal_slowdown" "0x80:hw_power_brake"; do
+                    bit=$((${pair%%:*}))
+                    metric ai_lab_gpu_throttled gauge "1 while the named throttle reason is active" "$l,reason=\"${pair##*:}\"" "$(((mask & bit) != 0 ? 1 : 0))"
+                done
+            fi
+        done <<<"$smi"
+    fi
+    source_up gpu "$gpu_ok"
+fi
+
+# ---- Ollama: loaded models ----
+ps_json="$(curl -fsS -m 5 "$OLLAMA_URL/api/ps" 2>/dev/null)"
+if [[ -n "$ps_json" ]] && jq -e '.models | type == "array"' <<<"$ps_json" >/dev/null 2>&1; then
+    source_up ollama 1
+    while IFS=$'\t' read -r name size vram; do
+        [[ -n "$name" ]] || continue
+        l="model=\"$(lbl "$name")\""
+        metric ai_lab_ollama_model_loaded gauge "1 while the model is loaded in Ollama" "$l" 1
+        num "$size" && metric ai_lab_ollama_model_size_bytes gauge "Loaded model size in memory" "$l" "$size"
+        if num "$size" && num "$vram" && [[ "$size" != 0 ]]; then
+            metric ai_lab_ollama_model_vram_ratio gauge "Share of the loaded model that is in GPU memory, 0 to 1" "$l" "$(awk -v s="$size" -v v="$vram" 'BEGIN{printf "%.4f", v/s}')"
+        fi
+    done < <(jq -r '.models[] | [.name, (.size // 0), (.size_vram // 0)] | @tsv' <<<"$ps_json")
+else
+    source_up ollama 0
+fi
+
+# ---- Open WebUI: token totals and model settings ----
+webui_up=0
+if [[ -r "$LIB" ]]; then
+    # shellcheck disable=SC1090
+    . "$LIB"
+    if webui_load_settings; then
+        webui_begin
+        if webui_login; then
+            tokens="$(webui_get "/api/v1/analytics/tokens")" || tokens=""
+            if [[ -n "$tokens" ]] && jq -e '(.models | type) == "array"' <<<"$tokens" >/dev/null 2>&1; then
+                webui_up=1
+                while IFS=$'\t' read -r model tin tout msgs; do
+                    l="model=\"$(lbl "$model")\""
+                    num "$tin" && metric ai_lab_tokens_total counter "Tokens processed since the lab was created" "$l,direction=\"input\"" "$tin"
+                    num "$tout" && metric ai_lab_tokens_total counter "Tokens processed since the lab was created" "$l,direction=\"output\"" "$tout"
+                    num "$msgs" && metric ai_lab_messages_total counter "Messages since the lab was created" "$l" "$msgs"
+                done < <(jq -r '.models[] | [.model_id, (.input_tokens // 0), (.output_tokens // 0), (.message_count // 0)] | @tsv' <<<"$tokens")
+            fi
+            models="$(webui_get "/api/v1/models")" || models=""
+            # Model params: temperature, top_p, top_k and num_ctx as configured in Open WebUI.
+            if [[ -n "$models" ]] && jq -e '(.data // .) | type == "array"' <<<"$models" >/dev/null 2>&1; then
+                while IFS=$'\t' read -r model param value; do
+                    num "$value" && metric ai_lab_model_param gauge "Configured model setting" "model=\"$(lbl "$model")\",param=\"$param\"" "$value"
+                done < <(jq -r '(.data // .)[] | select(.info.params? != null) | .id as $id | .info.params
+                                | to_entries[] | select(.key | IN("temperature","top_p","top_k","num_ctx"))
+                                | select(.value | type == "number") | [$id, .key, .value] | @tsv' <<<"$models")
+            fi
+        fi
+        webui_end
+    fi
+fi
+source_up open_webui "$webui_up"
+
+# ---- Ollama's journal: request outcomes and model load time ----
+# Read from the journal because Ollama has no metrics endpoint. Nothing is kept between runs: each
+# run looks at the last 5 minutes, so these are gauges. The time is the whole request (Ollama's
+# own latency field), not the time to the first token.
+log_ok=0
+if command -v journalctl >/dev/null 2>&1; then
+    recent="$(journalctl -u ollama --since "5 minutes ago" --no-pager -o cat 2>/dev/null)" && log_ok=1
+    if ((log_ok)); then
+        read -r n2 n4 n5 sum max < <(awk '
+            function secs(d) {
+                if (d ~ /ns$/) { sub(/ns$/, "", d); return d / 1e9 }
+                if (d ~ /(µs|us)$/) { sub(/(µs|us)$/, "", d); return d / 1e6 }
+                if (d ~ /ms$/) { sub(/ms$/, "", d); return d / 1e3 }
+                if (d ~ /^[0-9]+m[0-9.]+s$/) { split(d, p, "m"); sub(/s$/, "", p[2]); return p[1] * 60 + p[2] }
+                sub(/s$/, "", d); return d + 0
+            }
+            /^\[GIN\]/ && /"(\/api\/chat|\/api\/generate|\/v1\/chat\/completions)"/ {
+                n = split($0, f, "|")
+                if (n < 4) next
+                code = f[2]; gsub(/ /, "", code); lat = f[3]; gsub(/ /, "", lat)
+                if (code ~ /^2/) { c2++; t = secs(lat); sum += t; if (t > max) max = t }
+                else if (code ~ /^4/) c4++
+                else if (code ~ /^5/) c5++
+            }
+            END { printf "%d %d %d %.3f %.3f\n", c2, c4, c5, sum, max }' <<<"$recent")
+        for pair in "2xx:$n2" "4xx:$n4" "5xx:$n5"; do
+            metric ai_lab_ollama_chat_requests_5m gauge "Chat requests Ollama answered in the last 5 minutes, by status class" "status=\"${pair%%:*}\"" "${pair##*:}"
+        done
+        if ((n2 > 0)); then
+            metric ai_lab_ollama_chat_request_seconds_avg_5m gauge "Average time of successful chat requests in the last 5 minutes (whole request, not first token)" "" "$(awk -v s="$sum" -v n="$n2" 'BEGIN{printf "%.3f", s/n}')"
+            metric ai_lab_ollama_chat_request_seconds_max_5m gauge "Longest successful chat request in the last 5 minutes" "" "$max"
+        fi
+        loads="$(journalctl -u ollama --since "1 hour ago" --no-pager -o cat 2>/dev/null | sed -n 's/.*runner started in \([0-9.]*\) seconds.*/\1/p' | tail -n1)"
+        num "$loads" && metric ai_lab_ollama_last_model_load_seconds gauge "How long the most recent model load took, if one happened in the last hour" "" "$loads"
+    fi
+    source_up ollama_log "$log_ok"
+fi
+
+# ---- Open WebUI's database: chat count and answer feedback (read only) ----
+db_ok=0
+if command -v sqlite3 >/dev/null 2>&1 && declare -F webui_db_path >/dev/null; then
+    wdb="$(webui_db_path 2>/dev/null)" || wdb=""
+    if [[ -n "$wdb" && -r "$wdb" ]]; then
+        chats="$(sqlite3 -readonly -cmd '.timeout 2000' "$wdb" "SELECT COUNT(*) FROM chat;" 2>/dev/null)" || chats=""
+        if [[ "$chats" =~ ^[0-9]+$ ]]; then
+            db_ok=1
+            metric ai_lab_chats gauge "Chats stored in Open WebUI (no titles or text)" "" "$chats"
+            # data.rating is positive for a thumbs up and negative for a thumbs down.
+            fb="$(sqlite3 -readonly -cmd '.timeout 2000' "$wdb" "SELECT SUM(CASE WHEN CAST(json_extract(data,'\$.rating') AS REAL) > 0 THEN 1 ELSE 0 END), SUM(CASE WHEN CAST(json_extract(data,'\$.rating') AS REAL) < 0 THEN 1 ELSE 0 END) FROM feedback;" 2>/dev/null)" || fb=""
+            if [[ "$fb" =~ ^([0-9]*)\|([0-9]*)$ ]]; then
+                metric ai_lab_feedback gauge "Answers rated in Open WebUI, by rating" 'rating="up"' "${BASH_REMATCH[1]:-0}"
+                metric ai_lab_feedback gauge "Answers rated in Open WebUI, by rating" 'rating="down"' "${BASH_REMATCH[2]:-0}"
+            fi
+        fi
+    fi
+    source_up webui_db "$db_ok"
+fi
+
+# ---- Idle timers, from the idle monitor's status file ----
+status="$STATE_DIR/status.json"
+if [[ -r "$status" ]] && jq -e . "$status" >/dev/null 2>&1; then
+    v="$(jq -r '.idle_seconds_remaining // empty' "$status")"
+    num "$v" && metric ai_lab_idle_seconds_remaining gauge "Seconds until idle shutdown if nothing happens; -1 when idle shutdown is off" "" "$v"
+    v="$(jq -r '.hard_limit_seconds_remaining // empty' "$status")"
+    num "$v" && metric ai_lab_hard_limit_seconds_remaining gauge "Seconds until the hard time limit; -1 when there is none" "" "$v"
+fi
+
+# ---- Cost basis ----
+if num "$INSTANCE_HOURLY_COST_USD"; then
+    metric ai_lab_instance_hourly_cost_usd gauge "Price per running hour, from instance_hourly_cost_usd in terraform.tfvars" "instance_type=\"$(lbl "$INSTANCE_TYPE")\"" "$INSTANCE_HOURLY_COST_USD"
+fi
+
+metric ai_lab_exporter_last_success_timestamp_seconds gauge "When this exporter last finished a run" "" "$(date +%s)"
+
+for name in "${m_order[@]}"; do
+    printf '# HELP %s %s\n# TYPE %s %s\n%s' "$name" "${m_help[$name]}" "$name" "${m_type[$name]}" "${m_lines[$name]}" >>"$out"
+done
+chmod 0644 "$out"
+mv -f "$out" "$METRICS_DIR/ai_lab.prom"
+trap - EXIT

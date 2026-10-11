@@ -21,6 +21,17 @@ variable "name_prefix" {
   }
 }
 
+variable "private_tool_hosts" {
+  description = "Host names the control panel may register as Open WebUI tool servers even though they resolve to a private address (for example a server inside the lab's VPC). Everything else that resolves to a private, loopback, link-local or metadata address is refused."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for h in var.private_tool_hosts : can(regex("^[a-z0-9.-]{1,253}$", h))])
+    error_message = "private_tool_hosts must be lowercase host names (letters, digits, '.' and '-')."
+  }
+}
+
 variable "lab_project_name" {
   description = "The lab's project_name (from the root terraform.tfvars). The functions read the lab's parameters under /<lab_project_name>/control-panel and /<lab_project_name>/auto-stop."
   type        = string
@@ -102,4 +113,10 @@ variable "throttle_burst_limit" {
   description = "Short burst of requests the API accepts above the steady rate."
   type        = number
   default     = 20
+}
+
+variable "spend_emails_enabled" {
+  description = "Send spend cap emails (50, 80, 98 and 100 percent of a cap) through an Amazon SNS topic. false turns the emails off (caps are still enforced). When true, the spend caps job asks each person whose Cognito identity has a verified email address to confirm an email subscription: SNS sends them one confirmation link, and nothing is sent to them until they click it. People whose email is not verified are never emailed."
+  type        = bool
+  default     = false
 }

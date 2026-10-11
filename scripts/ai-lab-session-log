@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Keeps the lab's session log: when each run of the instance started and stopped. A session is one
+# run, from boot to stop; the cost model charges per session (docs/monitoring-spec.md).
+#
+#   ai-lab-session-log start      at boot (systemd). Closes a session left open by a crash, then opens one.
+#   ai-lab-session-log heartbeat  every minute (systemd timer). Notes the instance is still running.
+#   ai-lab-session-log stop       at shutdown (systemd ExecStop). Closes this boot's session.
+#   ai-lab-session-log show       prints the sessions as one JSON array.
+#
+# The log is JSON lines in $DATA_DIR/sessions.jsonl on the root volume, so it survives stop and
+# start. A session that ended without a "stop" line (power loss, crash) is closed at its last
+# heartbeat, at most a minute early, and marked "lost". The control panel checks sessions against
+# EC2's own state-change times, which are the authority for what AWS bills.
+# Counts and times only. No user data.
+set -uo pipefail
+
+DATA_DIR="${AI_LAB_DATA_DIR:-/var/lib/ai-lab}"
+LOG="$DATA_DIR/sessions.jsonl"
+HEARTBEAT="$DATA_DIR/session-heartbeat"
+BOOT_ID_FILE="${AI_LAB_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+KEEP_LINES=2000 # about 1000 sessions; the file stays small
+
+boot_id() { tr -d '\n' <"$BOOT_ID_FILE" 2>/dev/null || echo unknown; }
+now() { date +%s; }
+mkdir -p "$DATA_DIR"
+
+append() { printf '%s\n' "$1" >>"$LOG"; }
+
+# The session with no stop line after it, if any: prints its start line.
+open_start() {
+    [[ -s "$LOG" ]] || return 1
+    jq -cs '[.[] | select(.event == "start" or .event == "stop")] | if length == 0 then empty
+            elif last.event == "start" then last else empty end' "$LOG" 2>/dev/null | grep . || return 1
+}
+
+last_heartbeat() {
+    local hb
+    hb="$(cat "$HEARTBEAT" 2>/dev/null)"
+    [[ "$hb" =~ ^[0-9]{1,10}$ ]] && printf '%s' "$hb"
+}
+
+trim() {
+    [[ -s "$LOG" ]] || return 0
+    if (($(wc -l <"$LOG") > KEEP_LINES)); then
+        tail -n "$KEEP_LINES" "$LOG" >"$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+    fi
+}
+
+case "${1:-}" in
+start)
+    t="$(now)"
+    if prev="$(open_start)"; then
+        prev_start="$(jq -r .t <<<"$prev")"
+        hb="$(last_heartbeat || true)"
+        end="${hb:-$prev_start}"
+        ((end < prev_start)) && end="$prev_start"
+        append "$(jq -nc --argjson t "$end" --arg b "$(jq -r .boot <<<"$prev")" '{event: "stop", t: $t, boot: $b, reason: "lost"}')"
+    fi
+    append "$(jq -nc --argjson t "$t" --arg b "$(boot_id)" '{event: "start", t: $t, boot: $b}')"
+    printf '%s\n' "$t" >"$HEARTBEAT"
+    trim
+    ;;
+heartbeat)
+    printf '%s\n' "$(now)" >"$HEARTBEAT.tmp" && mv "$HEARTBEAT.tmp" "$HEARTBEAT"
+    ;;
+stop)
+    t="$(now)"
+    if prev="$(open_start)" && [[ "$(jq -r .boot <<<"$prev")" == "$(boot_id)" ]]; then
+        append "$(jq -nc --argjson t "$t" --arg b "$(boot_id)" '{event: "stop", t: $t, boot: $b, reason: "shutdown"}')"
+        printf '%s\n' "$t" >"$HEARTBEAT"
+    fi
+    ;;
+show)
+    if [[ ! -s "$LOG" ]]; then
+        echo '[]'
+        exit 0
+    fi
+    hb="$(last_heartbeat || echo 0)"
+    # Pair each start with the stop that follows it. A start with none is the running session
+    # when it belongs to this boot, and a lost one (ended at the last heartbeat) otherwise.
+    jq -cs --arg boot "$(boot_id)" --argjson hb "$hb" '
+      reduce (.[] | select(.event == "start" or .event == "stop")) as $e ([];
+        if $e.event == "start" then . + [{start: $e.t, stop: null, boot: $e.boot, endedBy: "running"}]
+        elif length > 0 and .[-1].stop == null then .[-1] |= (.stop = $e.t | .endedBy = $e.reason)
+        else . end)
+      | map(if .stop == null and .boot != $boot
+            then .stop = ([.start, $hb] | max) | .endedBy = "lost" else . end)' "$LOG"
+    ;;
+*)
+    echo "Usage: ai-lab-session-log start|heartbeat|stop|show" >&2
+    exit 2
+    ;;
+esac

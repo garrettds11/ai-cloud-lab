@@ -224,11 +224,17 @@ enable_origin_lockdown = true
 #   auto_stop_max_uptime_minutes: a hard time limit. The instance stops that many
 #                                 minutes after it boots even if people are using it,
 #                                 and an email warns shortly before.
+#   auto_stop_absolute_max_minutes: an absolute limit from boot that no timer reset or
+#                                 panel setting can extend. 0 = off.
+#   auto_stop_max_resets:         how many times the panel's Reset button may extend the
+#                                 hard limit in one run. 0 = no limit on the count.
 # Demo: idle 0 and limit 90, so it always stops 90 minutes after boot.
 # Production: idle 60 and limit 0, so it stops only when nobody is using it.
-auto_stop_idle_minutes       = 0
-auto_stop_max_uptime_minutes = 20
-auto_stop_alert_email        = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link
+auto_stop_idle_minutes         = 0
+auto_stop_max_uptime_minutes   = 20
+auto_stop_absolute_max_minutes = 0
+auto_stop_max_resets           = 0
+auto_stop_alert_email          = "garrettds11@gmail.com" # Replace; AWS sends a confirmation link
 
 # Grafana Cloud telemetry (host metrics, logs and Open WebUI traces through Grafana
 # Alloy). On by default; set enable_grafana_telemetry = false to run without it. The
@@ -246,3 +252,28 @@ grafana_credentials_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:
 # replaces the instance; changing only the table name does not.
 vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
 vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:394566733278:secret:vuln-mcp-token-aiwebdemo-aGyLZI"
+
+# What the instance costs per running hour, in USD. The usage and cost page, spend caps and Grafana
+# use it to price sessions. g6.xlarge is about 0.8048 on demand in us-east-1; use your effective
+# rate if you have a savings plan. Leave unset (null) to record usage without pricing it.
+# instance_hourly_cost_usd = 0.8048
+
+# Grafana Cloud's CloudWatch data source (tool-call logs and AWS metrics, read-only). A two-step
+# setup: add the CloudWatch data source in Grafana, copy the account ID and external ID it shows
+# here, apply, then paste the grafana_cloudwatch_role_arn output back into the data source.
+# Leave both unset to create no role. See docs/runbook/smoke-tests/lab-features.md.
+# grafana_cloudwatch_account_id  = "123456789012"
+# grafana_cloudwatch_external_id = "paste-the-external-id-from-grafana"
+
+# The Lab overview dashboard in Grafana. When set, the control panel shows a Grafana link.
+# grafana_dashboard_url = "https://yourstack.grafana.net/d/ai-lab-overview"
+
+# Log search tools for the Security Analyst (lambda/vuln_mcp/log_tools.py). Off unless all three are set,
+# and they need vuln_mcp_table_name. The logs are read from Grafana Cloud Loki, so Grafana has to be
+# receiving the lab's logs first (grafana-telemetry.md). Steps to find the three values are in
+# docs/runbook/smoke-tests/lab-features.md under "Log search tools test".
+# log_mcp_loki_url              = "https://logs-prod-012.grafana.net"
+# log_mcp_loki_user             = "123456"
+# log_mcp_loki_token_secret_arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:loki-read-token-aiwebdemo-AbCdEf"
+# Only change this if Grafana's Explore shows the lab's logs under labels other than service_name.
+# log_mcp_stream_selector       = "service_name=~\".+\""

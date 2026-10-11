@@ -19,7 +19,11 @@ window.PANEL_CONFIG = {
   // Optional. Default "openid email profile". Okta and Entra also need offline_access to refresh quietly.
   // scope: "openid email profile offline_access",
   // Shown in the status bar only.
-  region: "us-east-1"
+  region: "us-east-1",
+  // Optional. Where an administrator's "AWS console" button shows an icon: the address (a path on this site or
+  // https://) of the official AWS icon you download from AWS's own icon page and upload with the site. Left out, the
+  // button shows a plain cloud.
+  // awsIconUrl: "/aws-icon.svg"
   // Cognito only, instead of issuer: userPoolId, plus hostedLoginDomain
   // ("<prefix>.auth.us-east-1.amazoncognito.com") for its sign-in and sign-out pages.
   // This is what Terraform publishes.

@@ -9,10 +9,10 @@ deploy step is in [the runbook](runbook/terraform-smoke-test-plan.md).
 
 ## Before the audience joins
 
-- **Rehearse the MCP questions once on the same day** (step 9). The default model, `llama3.2:3b`,
-  sometimes answers without calling the tool. If it does in rehearsal, plan to use a larger model
-  (see [#41](https://github.com/garrettds11/ai-cloud-lab/issues/41)) or to show the tool call from
-  the server's log instead.
+- **Rehearse the MCP questions once on the same day** (step 9). The default model is **Security
+  Analyst**, which the lab creates at boot on `qwen3:14b` with the vulnerability tools switched on.
+  If it answers a question without calling the tool in rehearsal, plan to show the tool call from the
+  server's log for that question.
 - Have two private browser windows ready: one for the administrator, one for a demo user.
 - Have the passwords at hand (the administrator and demo-user secrets), not on screen.
 - Optional: start step 2 before the audience joins and pick up at step 3, to skip the wait.
@@ -79,6 +79,7 @@ $issuer = aws apigatewayv2 get-authorizer --api-id $panelApi.api_id --authorizer
 @{ commands = @(
   "test -f /var/lib/ai-lab/ready && echo 'Bootstrap      READY' || echo 'Bootstrap      NOT READY'",
   "grep -q 'Connection registered' /var/log/ai-lab-bootstrap.log && echo 'Vuln MCP       registered' || echo 'Vuln MCP       not registered'",
+  "grep -q '(security-analyst) created' /var/log/ai-lab-bootstrap.log && echo 'Analyst model  created' || echo 'Analyst model  missing'",
   "docker ps --filter name=open-webui --format 'Open WebUI     {{.Status}}'",
   'ollama list | tail -n +2 | awk ''{print "Model          " $1}'''
 ) } | ConvertTo-Json | Set-Content -Encoding ascii demo-check.json
@@ -89,7 +90,7 @@ Remove-Item demo-check.json
 ```
 
 Expected: `running`, `healthy`, the API address, `this lab's Cognito pool`, `READY`,
-`registered`, `Up ... (healthy)` and `llama3.2:3b`. If bootstrap is `NOT READY`, give it a few more
+`registered`, `created`, `Up ... (healthy)` and `qwen3:14b`. If bootstrap is `NOT READY`, give it a few more
 minutes and run the block again.
 
 Explain each line in one sentence: the instance runs, the load balancer can reach Open WebUI, the
@@ -151,7 +152,7 @@ through the roadmap:
 | [#60](https://github.com/garrettds11/ai-cloud-lab/issues/60), limited writes | Default model, basic model settings, curated feature switches, Skills, and adding or testing MCP and OpenAPI tool servers, each checked against the pinned Open WebUI version and kept across rebuilds |
 | [#63](https://github.com/garrettds11/ai-cloud-lab/issues/63), model catalog | Install vetted models from an approved catalog, with hardware checks and verified downloads |
 | [#64](https://github.com/garrettds11/ai-cloud-lab/issues/64), larger features | Sign-up policy and approvals, model sync, configuration restore, groups and knowledge collections |
-| [#62](https://github.com/garrettds11/ai-cloud-lab/issues/62), decision | An administrator-only **Stop now** button |
+| [#62](https://github.com/garrettds11/ai-cloud-lab/issues/62), decision | Decided: no **Stop now** button. Auto-stop only; an administrator stops a run by hand from the **AWS console** button, which opens the instance in the AWS console |
 
 The design rule to mention: Terraform owns how the lab is built, the panel owns day-to-day choices,
 and Open WebUI stays the place for advanced administration.
@@ -168,7 +169,9 @@ Pick what suits the audience:
 
 - **Chat with a local model:** ask a general question and let the reply stream in. Nothing leaves
   AWS.
-- **Model selector:** the models installed on this lab, and per-chat settings.
+- **Model selector:** **Security Analyst** is the default; the plain `qwen3:14b` model is also there
+  for general chat. **Workspace > Models > Security Analyst** shows how it is built: the base model,
+  the system prompt, and the Vulnerability Findings tools attached.
 - **Chat history:** earlier chats, search, renaming and folders.
 - **Documents:** attach a file to a chat and ask about its contents.
 - **Code Interpreter:** turn it on from the message box menu and ask for a small calculation or chart.
@@ -180,8 +183,9 @@ Pick what suits the audience:
 
 ## 9. Query the vulnerability database through MCP
 
-1. Start a **new chat**, choose the model, open **Integrations** (next to **+**) and switch on
-   **Vulnerability Findings**. A tool that is not switched on is never offered to the model.
+1. Start a **new chat**. The model is already **Security Analyst** and **Vulnerability Findings** is
+   already switched on; open **Integrations** (next to **+**) to show it. The lab set both up at
+   boot, so no one has to remember a toggle.
 2. Ask, one per message:
    - "How many open Critical findings are there?" (the standard data has **9**)
    - "Which hosts are affected by Log4Shell?"
@@ -201,8 +205,9 @@ Pick what suits the audience:
 5. **Show that it is read-only:** ask "Mark the Log4Shell finding on prod-app-01 as fixed." The model
    should say it cannot; there is no tool that changes data.
 
-If the model answers without a tool-call entry, say so plainly: small models do not always call
-tools. Ask again in a new chat, or show the same question answered in rehearsal.
+If the model answers without a tool-call entry, say so plainly: models do not always call tools.
+Check the chat is on **Security Analyst**, ask again in a new chat, or show the same question
+answered in rehearsal.
 
 ## 10. Wrap up
 

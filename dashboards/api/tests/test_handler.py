@@ -76,6 +76,10 @@ class FakeTable:
         for target, value in re.findall(r"(#?\w+) = (:\w+)", UpdateExpression):
             self.items[k][names.get(target, target)] = ExpressionAttributeValues[value]
 
+    def delete_item(self, Key):
+        self._check()
+        self.items.pop(tuple(Key[k] for k in self.keys), None)
+
     def scan(self, **_):
         self._check()
         return {"Items": [dict(v) for v in self.items.values()]}
@@ -212,7 +216,7 @@ def test_operator_sees_only_granted_instances(aws):
     assert status == 200
     assert [i["id"] for i in body] == ["i-aaa"]
     assert body[0]["phase"] == "stopped" and body[0]["autoStop"] is None and body[0]["url"] == "https://example.test"
-    assert body[0]["rule"] == {"enabled": True, "idleMinutes": 60, "maxUptimeMinutes": 90}
+    assert body[0]["rule"] == {"enabled": True, "idleMinutes": 60, "maxUptimeMinutes": 90, "absoluteMaxMinutes": 0}
 
 
 def test_admin_sees_and_starts_every_instance_without_grants(aws):
@@ -262,6 +266,9 @@ def test_start_happy_path(aws):
     assert call(START, OP, path={"instanceId": "i-aaa"}) == (200, {"ok": True})
     assert aws.ec2.started == ["i-aaa"]
     assert any("Start requested" in e.get("event", "") for e in aws.events.items.values())
+    starts = [e for e in aws.events.items.values() if e.get("pk") == "starts"]
+    assert len(starts) == 1 and starts[0]["userId"] == OP and starts[0]["instanceId"] == "i-aaa"
+    assert [r["id"] for r in handler.recent_starts()] == [OP]
 
 
 def test_start_needs_a_grant(aws):
@@ -538,17 +545,29 @@ def test_only_admin_sees_everyones_logins_and_logs(aws):
 
 RESET = "POST /instances/{instanceId}/reset-timer"
 RESET_NAME = "/lab/auto-stop/reset-at"
+COUNT_NAME = "/lab/auto-stop/reset-count"
 
 
 class FakeResetSSM:
     """The auto-stop rule plus the reset parameter, which can be read, written or made to fail."""
 
-    def __init__(self, max_minutes=90, reset=None, read_error=None, write_error=None):
-        self.rule = {"enabled": True, "idle_minutes": 60, "max_uptime_minutes": max_minutes}
+    def __init__(self, max_minutes=90, reset=None, read_error=None, write_error=None, rule=None, count=None, policy=None, count_error=None, count_write_error=None):
+        self.rule = {"enabled": True, "idle_minutes": 60, "max_uptime_minutes": max_minutes, **(rule or {})}
         self.value = reset  # epoch seconds as a string, or None when the parameter does not exist
-        self.read_error, self.write_error, self.writes = read_error, write_error, []
+        self.count, self.policy, self.count_error, self.count_write_error = count, policy, count_error, count_write_error  # "<launch>:<n>" / policy JSON, or None
+        self.read_error, self.write_error, self.writes, self.count_writes = read_error, write_error, [], []
 
     def get_parameter(self, Name):
+        if Name == COUNT_NAME:
+            if self.count_error:
+                raise client_error(self.count_error)
+            if self.count is None:
+                raise client_error("ParameterNotFound")
+            return {"Parameter": {"Value": self.count}}
+        if Name == "/lab/auto-stop/policy":
+            if self.policy is None:
+                raise client_error("ParameterNotFound")
+            return {"Parameter": {"Value": self.policy}}
         if Name == RESET_NAME:
             if self.read_error:
                 raise client_error(self.read_error)
@@ -558,6 +577,12 @@ class FakeResetSSM:
         return {"Parameter": {"Value": json.dumps(self.rule)}}
 
     def put_parameter(self, **kwargs):
+        if kwargs["Name"] == COUNT_NAME:
+            if self.count_write_error:
+                raise client_error(self.count_write_error)
+            self.count_writes.append(kwargs)
+            self.count = kwargs["Value"]
+            return
         if self.write_error:
             raise client_error(self.write_error)
         self.writes.append(kwargs)
@@ -791,15 +816,52 @@ def test_the_customer_function_has_no_open_webui_routes(aws, webui):
     assert _raw(handler.customer_handler, ACTIONS, ADM) == 404
 
 
+def test_the_chat_test_needs_a_valid_model_and_passes_it_to_the_document(aws, webui):
+    for bad in (None, "", 5, "a b", "x;id", "$(id)", "a" * 101):
+        body = {"action": "chat-test", "instanceId": "i-aaa"}
+        if bad is not None:
+            body["model"] = bad
+        assert call(ACTIONS, ADM, body=body)[0] == 400
+    assert webui.sent == []
+    status, body = call(ACTIONS, ADM, body={"action": "chat-test", "instanceId": "i-aaa", "model": "qwen3:14b"})
+    assert status == 200 and body["action"] == "chat-test"
+    assert webui.sent[0]["Parameters"]["model"] == ["qwen3:14b"] and webui.sent[0]["Parameters"]["action"] == ["chat-test"]
+    assert call(ACTIONS, OP, body={"action": "chat-test", "instanceId": "i-aaa", "model": "qwen3:14b"})[0] == 403
+
+
+def test_the_read_only_open_webui_actions_are_admin_only_and_take_no_extra_input(aws, webui):
+    for action in ("tool-servers", "settings", "export-config"):
+        status, body = call(ACTIONS, ADM, body={"action": action, "instanceId": "i-aaa", "model": "x;id", "sinceHour": "5"})
+        assert status == 200 and body["action"] == action
+        assert call(ACTIONS, OP, body={"action": action, "instanceId": "i-aaa"})[0] == 403
+    sent = [c["Parameters"] for c in webui.sent]
+    assert [p["action"] for p in sent] == [["tool-servers"], ["settings"], ["export-config"]]
+    assert all(p["model"] == [""] for p in sent)
+
+
+def test_a_model_is_ignored_for_other_actions(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa", "model": "x;id"})
+    assert webui.sent[0]["Parameters"]["model"] == [""]
+
+
 def test_an_action_runs_the_panel_document_with_the_pinned_version(aws, webui):
     status, body = call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
     assert status == 200 and body["commandId"] == CMD and body["status"] == "Pending"
     sent = webui.sent[0]
     assert sent["DocumentName"] == "panel-webui-admin" and sent["InstanceIds"] == ["i-aaa"]
-    assert sent["Parameters"] == {"action": ["status"], "expectedVersion": ["0.11.4"]}
+    assert sent["Parameters"] == {"action": ["status"], "expectedVersion": ["0.11.4"], "sinceHour": [""], "model": [""], "payload": [""], "toolTokenPrefix": [""]}
     record = aws.events.items[("webui-actions", CMD)]
     assert record["requestedBy"] == ADM and record["action"] == "status"
     assert any("Requested Open WebUI action 'status'" in r.get("event", "") for r in aws.events.items.values())
+
+
+def test_the_usage_action_passes_a_validated_start_hour(aws, webui):
+    status, _ = call(ACTIONS, ADM, body={"action": "usage", "instanceId": "i-aaa", "sinceHour": "1790000000"})
+    assert status == 200 and webui.sent[0]["Parameters"]["sinceHour"] == ["1790000000"]
+    assert webui.sent[0]["Parameters"]["action"] == ["usage"]
+    for bad in ("1; rm -rf /", "-5", "12345678901", "abc", True, 1.5):
+        assert call(ACTIONS, ADM, body={"action": "usage", "instanceId": "i-aaa", "sinceHour": bad})[0] == 400
+    assert len(webui.sent) == 1
 
 
 def test_unknown_actions_unmanaged_instances_and_stopped_instances_are_refused(aws, webui):
@@ -837,6 +899,27 @@ def test_the_result_is_read_back_and_recorded_once(aws, webui):
     done = [r for r in aws.events.items.values() if "Open WebUI action 'status' on i-aaa: done" in r.get("event", "")]
     assert len(done) == 1
     assert ("webui-actions", CMD + "#result") in aws.events.items
+
+
+def test_a_finished_usage_action_carries_the_session_costs(aws, webui):
+    start = 1_700_000_000 // 3600 * 3600
+    record = {"ok": True, "action": "usage", "hourlyCostUsd": 2.0, "instanceType": "g6.xlarge", "truncated": False,
+              "sessions": [{"start": start, "stop": start + 3600, "endedBy": "shutdown"}],
+              "hours": [{"hour": start, "users": [{"id": "u1", "email": "a@x", "name": "Ann", "in": 10, "out": 10, "messages": 1}]}]}
+    call(ACTIONS, ADM, body={"action": "usage", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin", "StandardOutputContent": json.dumps(record)}
+    status, body = call(ACTION, ADM, path={"commandId": CMD})
+    assert status == 200 and body["cost"]["sessions"][0]["cost"] == 2.0
+    assert body["cost"]["users"][0]["charge"] == 2.0
+    stored = call(ACTION, ADM, path={"commandId": CMD})[1]  # answered from the stored result the second time
+    assert stored["cost"]["users"][0]["name"] == "Ann"
+
+
+def test_a_status_result_has_no_cost(aws, webui):
+    call(ACTIONS, ADM, body={"action": "status", "instanceId": "i-aaa"})
+    webui.invocation = {"Status": "Success", "DocumentName": "panel-webui-admin",
+                        "StandardOutputContent": json.dumps({"ok": True, "action": "status", "healthy": True})}
+    assert "cost" not in call(ACTION, ADM, path={"commandId": CMD})[1]
 
 
 def test_a_command_from_another_document_is_never_shown(aws, webui):

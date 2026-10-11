@@ -592,6 +592,19 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(mcp_handler.lambda_handler(event(rpc("ping"), token="wrong"))["statusCode"], 401)
         self.assertEqual(mcp_handler.lambda_handler(event(rpc("ping"), token="s3cret-token"))["statusCode"], 200)
 
+    def test_a_refusal_logs_one_line_and_never_the_token(self):
+        import contextlib
+        import io
+        os.environ["AUTH_TOKEN"] = "s3cret-token"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mcp_handler.lambda_handler(event(rpc("ping"), token="wrong-guess"))
+            mcp_handler.lambda_handler(event(rpc("ping")))
+        lines = [json.loads(x) for x in out.getvalue().splitlines() if x.strip()]
+        self.assertEqual(lines, [{"event": "unauthorized", "scheme_given": True}, {"event": "unauthorized", "scheme_given": False}])
+        self.assertNotIn("wrong-guess", out.getvalue())
+        self.assertNotIn("s3cret-token", out.getvalue())
+
     def test_missing_token_in_lambda_fails_closed(self):
         os.environ["AWS_LAMBDA_FUNCTION_NAME"] = "vuln-mcp"
         self.assertEqual(mcp_handler.lambda_handler(event(rpc("ping")))["statusCode"], 500)

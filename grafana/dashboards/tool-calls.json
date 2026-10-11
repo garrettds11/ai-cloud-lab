@@ -1,0 +1,889 @@
+{
+  "uid": "ai-lab-tool-calls",
+  "title": "AI Lab: Tool calls",
+  "description": "Proof the tools are used and healthy: calls, errors and speed per tool, and refused requests.",
+  "tags": [
+    "ai-lab"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds_prom",
+        "label": "Metrics",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "type": "datasource",
+        "name": "ds_loki",
+        "label": "Logs",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "type": "datasource",
+        "name": "ds_cw",
+        "label": "CloudWatch",
+        "query": "cloudwatch",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Now",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Calls (range)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(ToolCalls) FROM SCHEMA(\"AILab/Tools\", Tool)",
+          "region": "default",
+          "id": "",
+          "label": "",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Errors (range)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(ToolErrors) FROM SCHEMA(\"AILab/Tools\", Tool)",
+          "region": "default",
+          "id": "",
+          "label": "",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Refused requests (range)",
+      "description": "Requests the tool server answered with 401: a wrong or missing token.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(Unauthorized) FROM \"AILab/Tools\"",
+          "region": "default",
+          "id": "",
+          "label": "",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Slowest call (range)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT MAX(ToolLatencyMs) FROM SCHEMA(\"AILab/Tools\", Tool)",
+          "region": "default",
+          "id": "",
+          "label": "",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": null,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Per tool",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Calls per tool",
+      "description": "Per 5 minutes.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(ToolCalls) FROM SCHEMA(\"AILab/Tools\", Tool) GROUP BY Tool",
+          "region": "default",
+          "id": "",
+          "label": "{{Tool}}",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Errors per tool",
+      "description": "Per 5 minutes.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(ToolErrors) FROM SCHEMA(\"AILab/Tools\", Tool) GROUP BY Tool",
+          "region": "default",
+          "id": "",
+          "label": "{{Tool}}",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Average time per tool",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT AVG(ToolLatencyMs) FROM SCHEMA(\"AILab/Tools\", Tool) GROUP BY Tool",
+          "region": "default",
+          "id": "",
+          "label": "{{Tool}}",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Slowest call per tool",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT MAX(ToolLatencyMs) FROM SCHEMA(\"AILab/Tools\", Tool) GROUP BY Tool",
+          "region": "default",
+          "id": "",
+          "label": "{{Tool}}",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Lambda and refusals",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Refused requests",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(Unauthorized) FROM \"AILab/Tools\"",
+          "region": "default",
+          "id": "",
+          "label": "401s",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 8,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Lambda invocations and errors",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(Invocations) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '__PROJECT__-vuln-mcp'",
+          "region": "default",
+          "id": "",
+          "label": "invocations",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        },
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(Errors) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '__PROJECT__-vuln-mcp'",
+          "region": "default",
+          "id": "",
+          "label": "errors",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 8,
+        "y": 23,
+        "w": 8,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Lambda duration",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT AVG(Duration) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '__PROJECT__-vuln-mcp'",
+          "region": "default",
+          "id": "",
+          "label": "average",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        },
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${ds_cw}"
+          },
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT MAX(Duration) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '__PROJECT__-vuln-mcp'",
+          "region": "default",
+          "id": "",
+          "label": "slowest",
+          "period": "300",
+          "expression": "",
+          "namespace": "",
+          "metricName": "",
+          "dimensions": {},
+          "statistic": "Average",
+          "matchExact": true
+        }
+      ],
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${ds_cw}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14,
+      "gridPos": {
+        "x": 16,
+        "y": 23,
+        "w": 8,
+        "h": 7
+      }
+    }
+  ]
+}

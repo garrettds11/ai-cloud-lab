@@ -1,0 +1,882 @@
+{
+  "folderUid": "ai-lab",
+  "folderTitle": "AI Lab",
+  "group": "ai-lab",
+  "interval": "1m",
+  "rules": [
+    {
+      "uid": "ai-lab-gpu-hot",
+      "title": "GPU hot",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_PROM__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "__DS_PROM__"
+            },
+            "expr": "(max(ai_lab_gpu_temperature_celsius > bool 85) or vector(0)) + (max(ai_lab_gpu_throttled{reason=~\".*thermal.*\"} > bool 0) or vector(0))",
+            "instant": true,
+            "range": false,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "5m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "GPU temperature has been above 85 \u00b0C, or a thermal throttle is active, for 5 minutes."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    },
+    {
+      "uid": "ai-lab-model-on-cpu",
+      "title": "Model running partly on the CPU",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_PROM__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "__DS_PROM__"
+            },
+            "expr": "count((ai_lab_ollama_model_vram_ratio < 0.99) and on(model) (ai_lab_ollama_model_loaded == 1)) or vector(0)",
+            "instant": true,
+            "range": false,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "5m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "A loaded model is not fully in GPU memory, so replies will be slow."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    },
+    {
+      "uid": "ai-lab-tool-errors",
+      "title": "Tool error rate above 10%",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "F",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 900,
+            "to": 0
+          },
+          "datasourceUid": "__DS_CW__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "cloudwatch",
+              "uid": "__DS_CW__"
+            },
+            "queryMode": "Metrics",
+            "metricQueryType": 1,
+            "metricEditorMode": 1,
+            "sqlExpression": "SELECT SUM(ToolErrors) FROM SCHEMA(\"AILab/Tools\", Tool)",
+            "region": "default",
+            "id": "",
+            "label": "",
+            "period": "300",
+            "expression": "",
+            "namespace": "",
+            "metricName": "",
+            "dimensions": {},
+            "statistic": "Sum",
+            "matchExact": true,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 900,
+            "to": 0
+          },
+          "datasourceUid": "__DS_CW__",
+          "model": {
+            "refId": "B",
+            "datasource": {
+              "type": "cloudwatch",
+              "uid": "__DS_CW__"
+            },
+            "queryMode": "Metrics",
+            "metricQueryType": 1,
+            "metricEditorMode": 1,
+            "sqlExpression": "SELECT SUM(ToolCalls) FROM SCHEMA(\"AILab/Tools\", Tool)",
+            "region": "default",
+            "id": "",
+            "label": "",
+            "period": "300",
+            "expression": "",
+            "namespace": "",
+            "metricName": "",
+            "dimensions": {},
+            "statistic": "Sum",
+            "matchExact": true,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "sum",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "D",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "D",
+            "type": "reduce",
+            "expression": "B",
+            "reducer": "sum",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "E",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "E",
+            "type": "math",
+            "expression": "$D > 0 ? $C / $D * 100 : 0",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            }
+          }
+        },
+        {
+          "refId": "F",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "F",
+            "type": "threshold",
+            "expression": "E",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    10
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "F"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "0s",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "More than 10% of tool calls failed over the last 15 minutes."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    },
+    {
+      "uid": "ai-lab-mcp-refusals",
+      "title": "MCP server refusing requests",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_CW__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "cloudwatch",
+              "uid": "__DS_CW__"
+            },
+            "queryMode": "Metrics",
+            "metricQueryType": 1,
+            "metricEditorMode": 1,
+            "sqlExpression": "SELECT SUM(Unauthorized) FROM \"AILab/Tools\"",
+            "region": "default",
+            "id": "",
+            "label": "",
+            "period": "60",
+            "expression": "",
+            "namespace": "",
+            "metricName": "",
+            "dimensions": {},
+            "statistic": "Sum",
+            "matchExact": true,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "sum",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    5
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "0s",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "The tool server answered more than 5 requests with 401 in 10 minutes: a wrong or missing token."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    },
+    {
+      "uid": "ai-lab-disk-filling",
+      "title": "Root disk above 85%",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_PROM__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "__DS_PROM__"
+            },
+            "expr": "max(1 - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}) * 100 or vector(0)",
+            "instant": true,
+            "range": false,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    85
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "10m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "The instance's root disk is more than 85% full."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    },
+    {
+      "uid": "ai-lab-webui-errors",
+      "title": "Open WebUI server errors above 5%",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_PROM__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "__DS_PROM__"
+            },
+            "expr": "sum(rate(http_server_duration_milliseconds_count{http_status_code=~\"5..\"}[5m])) / sum(rate(http_server_duration_milliseconds_count[5m])) * 100 or vector(0)",
+            "instant": true,
+            "range": false,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "B",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "threshold",
+            "expression": "B",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    5
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "5m",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "More than 5% of Open WebUI requests failed with a 5xx over 5 minutes. Check the metric name at first import."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    },
+    {
+      "uid": "ai-lab-telemetry-silent",
+      "title": "Telemetry silent while the instance runs",
+      "ruleGroup": "ai-lab",
+      "folderUID": "ai-lab",
+      "orgID": 1,
+      "condition": "F",
+      "data": [
+        {
+          "refId": "A",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_PROM__",
+          "model": {
+            "refId": "A",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "__DS_PROM__"
+            },
+            "expr": "count(ai_lab_exporter_last_success_timestamp_seconds) or vector(0)",
+            "instant": true,
+            "range": false,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "B",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "__DS_CW__",
+          "model": {
+            "refId": "B",
+            "datasource": {
+              "type": "cloudwatch",
+              "uid": "__DS_CW__"
+            },
+            "queryMode": "Metrics",
+            "metricQueryType": 1,
+            "metricEditorMode": 1,
+            "sqlExpression": "SELECT COUNT(CPUUtilization) FROM SCHEMA(\"AWS/EC2\", InstanceId) WHERE InstanceId = '__INSTANCE_ID__'",
+            "region": "default",
+            "id": "",
+            "label": "",
+            "period": "60",
+            "expression": "",
+            "namespace": "",
+            "metricName": "",
+            "dimensions": {},
+            "statistic": "Sum",
+            "matchExact": true,
+            "intervalMs": 1000,
+            "maxDataPoints": 43200
+          }
+        },
+        {
+          "refId": "C",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "C",
+            "type": "reduce",
+            "expression": "A",
+            "reducer": "last",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "D",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "D",
+            "type": "reduce",
+            "expression": "B",
+            "reducer": "sum",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "settings": {
+              "mode": "dropNN"
+            }
+          }
+        },
+        {
+          "refId": "E",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "E",
+            "type": "math",
+            "expression": "$D > 0 && $C == 0",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            }
+          }
+        },
+        {
+          "refId": "F",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "refId": "F",
+            "type": "threshold",
+            "expression": "E",
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "conditions": [
+              {
+                "type": "query",
+                "evaluator": {
+                  "type": "gt",
+                  "params": [
+                    0
+                  ]
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "F"
+                  ]
+                },
+                "reducer": {
+                  "type": "last",
+                  "params": []
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "for": "0s",
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "isPaused": false,
+      "annotations": {
+        "summary": "The instance is running but no lab metrics reached Grafana for 10 minutes."
+      },
+      "labels": {
+        "severity": "warning",
+        "app": "ai-lab"
+      }
+    }
+  ]
+}

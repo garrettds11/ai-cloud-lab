@@ -139,6 +139,9 @@ variables {
   grafana_otlp_endpoint            = null
   grafana_otlp_instance_id         = null
   grafana_credentials_secret_arn   = null
+  grafana_cloudwatch_account_id    = null
+  grafana_cloudwatch_external_id   = null
+  grafana_dashboard_url            = null
   origin_lockdown_extra_cidrs      = []
   cloudflare_account_id            = null
   cloudflare_api_token_secret_arn  = null
@@ -162,6 +165,10 @@ variables {
   auto_stop_max_uptime_minutes     = 0
   vuln_mcp_table_name              = null
   vuln_mcp_token_secret_arn        = null
+  log_mcp_loki_url                 = null
+  log_mcp_loki_user                = null
+  log_mcp_loki_token_secret_arn    = null
+  log_mcp_stream_selector          = "service_name=~\".+\""
 }
 
 run "baseline_plan_succeeds" {
@@ -615,6 +622,81 @@ run "auto_stop_max_uptime_below_the_floor_is_rejected" {
   expect_failures = [var.auto_stop_max_uptime_minutes]
 }
 
+run "auto_stop_absolute_max_below_the_floor_is_rejected" {
+  command = plan
+
+  variables {
+    auto_stop_absolute_max_minutes = 10
+  }
+
+  expect_failures = [var.auto_stop_absolute_max_minutes]
+}
+
+run "auto_stop_absolute_max_above_the_ceiling_is_rejected" {
+  command = plan
+
+  variables {
+    auto_stop_absolute_max_minutes = 20161
+  }
+
+  expect_failures = [var.auto_stop_absolute_max_minutes]
+}
+
+run "auto_stop_absolute_max_must_be_whole_minutes" {
+  command = plan
+
+  variables {
+    auto_stop_absolute_max_minutes = 60.5
+  }
+
+  expect_failures = [var.auto_stop_absolute_max_minutes]
+}
+
+run "auto_stop_max_resets_out_of_range_is_rejected" {
+  command = plan
+
+  variables {
+    auto_stop_max_resets = 51
+  }
+
+  expect_failures = [var.auto_stop_max_resets]
+}
+
+run "auto_stop_absolute_max_alone_turns_auto_stop_on_and_reaches_every_reader" {
+  command = apply
+
+  variables {
+    auto_stop_idle_minutes         = 0
+    auto_stop_max_uptime_minutes   = 0
+    auto_stop_absolute_max_minutes = 720
+    auto_stop_max_resets           = 3
+  }
+
+  assert {
+    condition     = jsondecode(aws_ssm_parameter.auto_stop.value).enabled == true && jsondecode(aws_ssm_parameter.auto_stop.value).absolute_max_minutes == 720 && jsondecode(aws_ssm_parameter.auto_stop.value).max_resets == 3
+    error_message = "The auto-stop setting must carry the absolute limit and the reset count, and be on when only the absolute limit is set."
+  }
+
+  assert {
+    condition     = aws_lambda_function.auto_stop_watchdog["auto_stop"].environment[0].variables["ABSOLUTE_MAX_MINUTES"] == "720"
+    error_message = "The watchdog must be told the absolute limit."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.auto_stop_reset_count.name == "/${var.project_name}/auto-stop/reset-count" && !strcontains(aws_iam_role_policy.auto_stop_agent.policy, aws_ssm_parameter.auto_stop_reset_count.arn)
+    error_message = "The reset count parameter must exist, and the instance has no need to read it."
+  }
+}
+
+run "auto_stop_defaults_keep_the_new_limits_off" {
+  command = plan
+
+  assert {
+    condition     = jsondecode(aws_ssm_parameter.auto_stop.value).absolute_max_minutes == 0 && jsondecode(aws_ssm_parameter.auto_stop.value).max_resets == 0
+    error_message = "Unless set, the absolute limit and the reset count must be off (0)."
+  }
+}
+
 run "auto_stop_off_creates_no_watchdog" {
   command = plan
 
@@ -655,6 +737,11 @@ run "auto_stop_reset_parameter_is_created_and_scoped_to_the_readers" {
   assert {
     condition     = aws_lambda_function.auto_stop_watchdog["auto_stop"].environment[0].variables["RESET_PARAMETER"] == aws_ssm_parameter.auto_stop_reset.name
     error_message = "The watchdog must be told which parameter holds the timer reset."
+  }
+
+  assert {
+    condition     = aws_lambda_function.auto_stop_watchdog["auto_stop"].environment[0].variables["POLICY_PARAMETER"] == aws_ssm_parameter.auto_stop_policy.name && strcontains(aws_iam_role_policy.auto_stop_watchdog["auto_stop"].policy, aws_ssm_parameter.auto_stop_policy.arn)
+    error_message = "The watchdog must be told which parameter holds the timer policy and be allowed to read it."
   }
 }
 
@@ -787,6 +874,20 @@ run "vuln_mcp_on_lets_the_instance_read_only_the_token_secret" {
   }
 }
 
+run "the_instance_role_can_read_only_the_tool_token_prefix_besides_its_own_secrets" {
+  command = plan
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.open_webui_admin_password.policy, "secret:aiwebdemo/tool-tokens/*")
+    error_message = "The instance role must be able to read the secrets the control panel offers as tool server tokens."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.open_webui_admin_password.policy, "secret:*")
+    error_message = "The instance role must never be able to read every secret."
+  }
+}
+
 run "vuln_mcp_table_needs_a_token_secret" {
   command = plan
 
@@ -837,4 +938,137 @@ run "vuln_mcp_table_name_must_be_valid" {
   }
 
   expect_failures = [var.vuln_mcp_table_name]
+}
+
+# ---- Grafana CloudWatch role and dashboard link ----
+
+run "grafana_cloudwatch_role_is_created_when_both_values_are_set" {
+  command = plan
+
+  variables {
+    grafana_cloudwatch_account_id  = "123456789012"
+    grafana_cloudwatch_external_id = "abc123-external"
+  }
+
+  assert {
+    condition     = length(aws_iam_role.grafana_cloudwatch) == 1
+    error_message = "Setting the Grafana account ID and external ID must create the read-only role."
+  }
+}
+
+run "grafana_cloudwatch_role_is_not_created_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role.grafana_cloudwatch) == 0
+    error_message = "No Grafana role may exist unless both values are set."
+  }
+}
+
+run "grafana_cloudwatch_account_id_must_be_twelve_digits" {
+  command = plan
+
+  variables {
+    grafana_cloudwatch_account_id = "1234"
+  }
+
+  expect_failures = [var.grafana_cloudwatch_account_id]
+}
+
+run "grafana_dashboard_url_must_be_https" {
+  command = plan
+
+  variables {
+    grafana_dashboard_url = "http://example.grafana.net/d/ai-lab-overview"
+  }
+
+  expect_failures = [var.grafana_dashboard_url]
+}
+
+run "log_tools_are_off_by_default" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdEf"
+  }
+
+  assert {
+    condition     = !contains(keys(aws_lambda_function.vuln_mcp["vuln_mcp"].environment[0].variables), "LOKI_URL")
+    error_message = "Without the three log_mcp settings, the MCP Lambda must get no Loki settings."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.vuln_mcp["vuln_mcp"].policy, "loki")
+    error_message = "Without the log tools, the Lambda role must not be able to read a Loki secret."
+  }
+}
+
+run "log_tools_on_give_the_lambda_the_loki_settings_and_only_that_secret" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name           = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn     = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdEf"
+    log_mcp_loki_url              = "https://logs-prod-012.grafana.net"
+    log_mcp_loki_user             = "123456"
+    log_mcp_loki_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:loki-read-token-AbCdEf"
+  }
+
+  assert {
+    condition     = aws_lambda_function.vuln_mcp["vuln_mcp"].environment[0].variables["LOKI_URL"] == "https://logs-prod-012.grafana.net"
+    error_message = "The MCP Lambda must be given the Loki address."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.vuln_mcp["vuln_mcp"].policy, "secret:loki-read-token-AbCdEf")
+    error_message = "The Lambda role must be able to read the Loki token secret."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.open_webui_admin_password.policy, "loki")
+    error_message = "The instance role must not be able to read the Loki token; only the Lambda reads it."
+  }
+}
+
+run "log_tools_need_all_three_settings" {
+  command = plan
+
+  variables {
+    vuln_mcp_table_name       = "aiwebdemo-vuln-findings"
+    vuln_mcp_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vuln-mcp-token-AbCdEf"
+    log_mcp_loki_url          = "https://logs-prod-012.grafana.net"
+  }
+
+  expect_failures = [check.log_mcp_settings_are_complete]
+}
+
+run "log_mcp_loki_url_must_be_https" {
+  command = plan
+
+  variables {
+    log_mcp_loki_url = "http://logs-prod-012.grafana.net"
+  }
+
+  expect_failures = [var.log_mcp_loki_url]
+}
+
+run "log_mcp_loki_user_must_be_numeric" {
+  command = plan
+
+  variables {
+    log_mcp_loki_user = "me@example.com"
+  }
+
+  expect_failures = [var.log_mcp_loki_user]
+}
+
+run "log_mcp_stream_selector_must_be_a_plain_matcher" {
+  command = plan
+
+  variables {
+    log_mcp_stream_selector = "a=\"b\"} or {c=\"d\""
+  }
+
+  expect_failures = [var.log_mcp_stream_selector]
 }

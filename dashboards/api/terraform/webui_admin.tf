@@ -11,7 +11,23 @@
 
 locals {
   # Add an action here, in ../webui-admin.sh and in WEBUI_ACTIONS in ../handler.py together.
-  webui_admin_actions = ["status"]
+  # "set-role" is run by the spend caps job only; the admin function's route does not offer it.
+  webui_admin_actions = [
+    "status",
+    "usage",
+    "set-role",
+    "chat-test",
+    "tool-servers",
+    "settings",
+    "export-config",
+    "set-default-model",
+    "set-model-params",
+    "set-feature",
+    "upsert-tool-server",
+    "remove-tool-server",
+    "import-skill",
+    "apply-desired",
+  ]
 }
 
 resource "aws_ssm_document" "webui_admin" {
@@ -29,6 +45,42 @@ resource "aws_ssm_document" "webui_admin" {
         description   = "The action to run."
         allowedValues = local.webui_admin_actions
       }
+      sinceHour = {
+        type           = "String"
+        description    = "For the usage action: only hours at or after this epoch hour start. Empty means all recorded hours."
+        default        = ""
+        allowedPattern = "^([0-9]{1,10})?$"
+      }
+      userId = {
+        type           = "String"
+        description    = "For the set-role action: the Open WebUI user ID. Empty for other actions."
+        default        = ""
+        allowedPattern = "^([A-Za-z0-9-]{1,64})?$"
+      }
+      role = {
+        type          = "String"
+        description   = "For the set-role action: pending (blocked) or user (restored). Empty for other actions."
+        default       = ""
+        allowedValues = ["", "pending", "user"]
+      }
+      model = {
+        type           = "String"
+        description    = "For the chat-test action: the model name. Empty for other actions."
+        default        = ""
+        allowedPattern = "^([A-Za-z0-9._:/-]{1,100})?$"
+      }
+      payload = {
+        type           = "String"
+        description    = "For the write actions: the request as base64 text, already checked by the control panel's API. Empty for other actions."
+        default        = ""
+        allowedPattern = "^[A-Za-z0-9+/=]{0,4000}$"
+      }
+      toolTokenPrefix = {
+        type           = "String"
+        description    = "For upsert-tool-server and apply-desired: the Secrets Manager name prefix that tool tokens may be chosen from. Empty when none are offered."
+        default        = ""
+        allowedPattern = "^[A-Za-z0-9/_.-]{0,100}$"
+      }
       expectedVersion = {
         type           = "String"
         description    = "The Open WebUI version the lab pins, or empty when the image is not pinned to a version."
@@ -41,7 +93,7 @@ resource "aws_ssm_document" "webui_admin" {
       name         = "webuiAdmin"
       precondition = { StringEquals = ["platformType", "Linux"] }
       inputs = {
-        timeoutSeconds = "60"
+        timeoutSeconds = "180"
         # Run under bash whatever shell SSM uses; the quoted delimiter stops any expansion
         # before bash reads the script.
         runCommand = concat(
@@ -55,8 +107,9 @@ resource "aws_ssm_document" "webui_admin" {
 }
 
 # Settings the panel will own in Open WebUI, kept outside the instance so they survive its
-# replacement (the instance's Open WebUI data does not, #13). Created now so phase 2 of #55
-# only adds the writers and the reapply at boot; nothing reads or writes it yet.
+# replacement (the instance's Open WebUI data does not, #13). The admin function writes it after
+# the instance confirms a change; the spend caps job replays it after an instance start (items whose
+# key starts with "_" are bookkeeping, never replayed).
 resource "aws_dynamodb_table" "webui_desired_state" {
   #checkov:skip=CKV_AWS_119:Encrypted at rest with the AWS owned key; a customer managed key adds cost and a key policy to keep for no lab benefit
   name                        = "${var.name_prefix}-webui-desired-state"

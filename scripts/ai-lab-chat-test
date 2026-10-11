@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Sends one fixed test prompt to a model through Open WebUI's chat API, for the control panel's
+# "Chat API test" page. Run as root by the panel's SSM document.
+#
+#   ai-lab-chat-test MODEL
+#
+# It proves the whole path people use: sign-in, Open WebUI, Ollama, the model. The prompt is
+# fixed ("Reply with the single word: ready."), so nothing a person typed ever reaches the
+# model, and the reply is shortened and has any <think> block removed before it is printed.
+# A first call after the model was unloaded takes longer, because the model loads into the GPU.
+#
+# Prints one JSON line: {"ok":true,"action":"chat-test","model":..,"latencyMs":..,"reply":..,
+# "inputTokens":..,"outputTokens":..} or {"ok":false,"error":..}.
+# Exit: 0 got a reply, 1 failed, 2 bad arguments, 3 password login is off.
+set -uo pipefail
+
+LIB="${AI_LAB_WEBUI_LIB:-/usr/local/lib/ai-lab/webui-lib.sh}"
+READY_FILE="${AI_LAB_READY_FILE:-/var/lib/ai-lab/ready}"
+PROMPT='Reply with the single word: ready.'
+model="${1:-}"
+
+emit() { jq -cn "$@"; }
+fail() { emit --arg m "$1" '{ok: false, error: $m}'; exit "${2:-1}"; }
+
+[[ "$model" =~ ^[A-Za-z0-9._:/-]{1,100}$ ]] || fail "A valid model name is required." 2
+[[ -f "$READY_FILE" ]] || fail "Open WebUI is not set up yet."
+
+# shellcheck disable=SC1090
+. "$LIB" || fail "Cannot read the Open WebUI helper."
+
+now_ms() { echo $(($(date +%s%N) / 1000000)); }
+
+ask() {
+    local body answer started finished
+    body="$(jq -cn --arg m "$model" --arg p "$PROMPT" '{model: $m, stream: false, messages: [{role: "user", content: $p}]}')"
+    started="$(now_ms)"
+    answer="$(printf '%s' "$body" | WEBUI_POST_TIMEOUT=120 webui_post "/api/chat/completions")" || {
+        emit '{ok: false, error: "Open WebUI did not return a reply. The model may be missing or still loading; try again."}'
+        return 1
+    }
+    finished="$(now_ms)"
+    jq -ce --arg m "$model" --argjson ms "$((finished - started))" '
+        (.choices[0].message.content // empty) as $c
+        | {ok: true, action: "chat-test", model: $m, latencyMs: $ms,
+           reply: ($c | gsub("(?s)<think>.*?</think>"; "") | gsub("^\\s+|\\s+$"; "") | .[0:300]),
+           inputTokens: (.usage.prompt_tokens // null), outputTokens: (.usage.completion_tokens // null)}' <<<"$answer" 2>/dev/null ||
+        { emit '{ok: false, error: "Open WebUI answered, but not with a chat reply."}'; return 1; }
+}
+
+webui_load_settings || fail "No usable lab settings."
+webui_begin
+webui_login
+rc=$?
+if [[ $rc -eq 0 ]]; then
+    ask
+    rc=$?
+elif [[ $rc -eq 3 ]]; then
+    webui_end
+    fail "Password login is off, so the test cannot sign in automatically." 3
+else
+    webui_end
+    fail "Could not sign in to Open WebUI."
+fi
+webui_end
+exit $rc

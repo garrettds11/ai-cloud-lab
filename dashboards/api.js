@@ -216,6 +216,8 @@
     now: () => Date.now(),
     configProblem,
     region: () => (cfg ? cfg.region || '' : ''),
+    // Optional address of the AWS icon the owner supplies (see config.example.js); empty uses a plain cloud.
+    awsIconUrl: () => (cfg && typeof cfg.awsIconUrl === 'string' && /^(\/|https:\/\/)/.test(cfg.awsIconUrl) ? cfg.awsIconUrl : ''),
 
     // Completes a sign-in in progress, or sends the browser to the sign-in page. Resolves
     // with the signed-in user, or never when the browser is leaving for the sign-in page.
@@ -241,5 +243,22 @@
     getGrants: (userId) => request('GET', '/admin/users/' + enc(userId) + '/grants'),
     listChanges: () => request('GET', '/admin/changes'),
     saveUserChanges: (userId, payload) => request('PUT', '/admin/users/' + enc(userId), payload),
+
+    // Open WebUI actions (administrators). The action runs on the instance and is read back later.
+    startWebuiAction: (instanceId, action, extra) => request('POST', '/admin/webui/actions', Object.assign({ instanceId, action }, extra || {})),
+    getWebuiAction: (commandId) => request('GET', '/admin/webui/actions/' + enc(commandId)),
+    getWebuiToolTokens: () => request('GET', '/admin/webui/tool-tokens'),
+    getWebuiDesiredState: () => request('GET', '/admin/webui/desired-state'),
+
+    // Spend caps
+    getMySpend: () => request('GET', '/spend'),
+    getSpendCaps: () => request('GET', '/admin/spend-caps'),
+    saveSpendCaps: (payload) => request('PUT', '/admin/spend-caps', payload),
+    // The Lab overview dashboard in Grafana, when the lab publishes one in config.js; null otherwise.
+    grafanaUrl: () => (cfg && typeof cfg.grafanaUrl === 'string' && /^https:\/\/[A-Za-z0-9.-]+(\/[^\s]*)?$/.test(cfg.grafanaUrl) ? cfg.grafanaUrl : null),
+    getTimerPolicy: () => request('GET', '/admin/timer-policy'),
+    saveTimerPolicy: (payload) => request('PUT', '/admin/timer-policy', payload),
+    allowLabStartOnce: () => request('POST', '/admin/spend-caps/lab-override'),
+    confirmSpendEmail: (userId) => request('POST', '/admin/spend-caps/' + enc(userId) + '/confirm-email'),
   };
 })();

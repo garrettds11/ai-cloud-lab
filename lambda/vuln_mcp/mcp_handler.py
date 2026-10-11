@@ -12,7 +12,8 @@ import json
 import os
 
 import mcp_protocol
-from vuln_tools import VulnTools
+import log_tools
+from vuln_tools import TOOLS, VulnTools
 
 MAX_BODY_BYTES = 100_000
 _JSON = {"content-type": "application/json"}
@@ -25,6 +26,16 @@ def _get_tools():
     global _tools
     if _tools is None:
         _tools = VulnTools()
+        try:
+            backend = log_tools.backend_from_env()
+        except Exception as error:  # a bad log-store setting must not take the findings tools down
+            print(json.dumps({"event": "log_tools_config_error", "error": type(error).__name__}))
+            backend = None
+        if backend is not None:
+            _tools = mcp_protocol.Toolset(
+                (_tools, TOOLS),
+                (log_tools.LogTools(backend), log_tools.LOG_TOOL_DEFINITIONS),
+            )
     return _tools
 
 
@@ -80,6 +91,8 @@ def _authorize(headers):
     supplied = headers.get("authorization", "")
     scheme, _, value = supplied.partition(" ")
     if scheme.lower() != "bearer" or not hmac.compare_digest(value.strip().encode(), expected.encode()):
+        # One counted line per refusal for the "MCP refusals" alert. Nothing the caller sent is logged.
+        print(json.dumps({"event": "unauthorized", "scheme_given": bool(scheme)}))
         return _response(401, json.dumps({"error": "Unauthorized"}), {**_JSON, "www-authenticate": "Bearer"})
     return None
 

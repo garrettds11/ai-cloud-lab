@@ -39,6 +39,12 @@ case "$*" in
       missing) echo "An error occurred (ParameterNotFound) when calling the GetParameter operation" >&2; exit 254 ;;
       *) echo "An error occurred (AccessDeniedException) when calling the GetParameter operation" >&2; exit 254 ;;
     esac ;;
+  *"ssm get-parameter"*"/proj/auto-stop/policy"*)
+    case "$POLICY_MODE" in
+      value) echo "$POLICY_VALUE" ;;
+      error) echo "An error occurred (AccessDeniedException) when calling the GetParameter operation" >&2; exit 254 ;;
+      *) echo "An error occurred (ParameterNotFound) when calling the GetParameter operation" >&2; exit 254 ;;
+    esac ;;
   *"ssm get-parameter"*) echo "$CONFIG_JSON" ;;
   *) exit 0 ;;
 esac
@@ -68,8 +74,9 @@ class IdleCheckResetTest(unittest.TestCase):
         (self.tmp / "ready").write_text("")
         (self.tmp / "state").mkdir()
 
-    def run_script(self, *, uptime_minutes, max_minutes=120, reset=None):
-        """reset: None = parameter missing, an int = epoch seconds, 'error' = unreadable."""
+    def run_script(self, *, uptime_minutes, max_minutes=120, reset=None, idle_minutes=0, policy=None, absolute=None):
+        """reset: None = parameter missing, an int = epoch seconds, 'error' = unreadable.
+        policy: None = no timer policy, a string = the raw parameter value, 'error' = unreadable."""
         (self.tmp / "uptime").write_text(f"{uptime_minutes * 60 + 5}.00 1.00\n")
         for stale in ("systemctl-calls", "logger-calls", "aws-calls"):
             (self.tmp / stale).unlink(missing_ok=True)
@@ -81,7 +88,9 @@ class IdleCheckResetTest(unittest.TestCase):
             AI_LAB_READY_FILE=str(self.tmp / "ready"),
             AI_LAB_STATE_DIR=str(self.tmp / "state"),
             AI_LAB_UPTIME_FILE=str(self.tmp / "uptime"),
-            CONFIG_JSON=json.dumps({"enabled": True, "idle_minutes": 0, "max_uptime_minutes": max_minutes}),
+            CONFIG_JSON=json.dumps({"enabled": True, "idle_minutes": idle_minutes, "max_uptime_minutes": max_minutes, **({} if absolute is None else {"absolute_max_minutes": absolute})}),
+            POLICY_MODE="missing" if policy is None else "error" if policy == "error" else "value",
+            POLICY_VALUE="" if policy in (None, "error") else policy,
             RESET_MODE="missing" if reset is None else "error" if reset == "error" else "value",
             RESET_VALUE="" if reset in (None, "error") else str(reset),
         )
@@ -165,6 +174,107 @@ class IdleCheckResetTest(unittest.TestCase):
         off, _, _, aws_calls = self.run_script(uptime_minutes=500, max_minutes=0, reset=self.minutes_ago(1))
         self.assertFalse(off)
         self.assertNotIn("reset-at", aws_calls)
+
+    def test_it_writes_the_time_left_for_the_metrics_exporter(self):
+        # ai-lab-metrics turns this file into ai_lab_idle_seconds_remaining and
+        # ai_lab_hard_limit_seconds_remaining; -1 means that limit is off.
+        self.run_script(uptime_minutes=30, max_minutes=120, reset=None)
+        status = json.loads((self.tmp / "state" / "status.json").read_text())
+        self.assertEqual(status["hard_limit_seconds_remaining"], (120 - 30) * 60)
+        self.assertEqual(status["idle_seconds_remaining"], -1)  # the test settings turn idle shutdown off
+        self.run_script(uptime_minutes=30, max_minutes=0, reset=None)
+        status = json.loads((self.tmp / "state" / "status.json").read_text())
+        self.assertEqual(status["hard_limit_seconds_remaining"], -1)
+
+    # ---- timer policy set from the control panel (shorter limits only) ----------------
+
+    def test_a_shorter_policy_stops_the_instance_sooner(self):
+        policy = json.dumps({"idle_minutes": 0, "max_uptime_minutes": 60})
+        off, out, _, _ = self.run_script(uptime_minutes=70, max_minutes=120, policy=policy)
+        self.assertTrue(off)
+        self.assertIn("hard_limit_minutes=70/60", out)
+
+    def test_a_longer_policy_cannot_loosen_the_ceiling(self):
+        policy = json.dumps({"idle_minutes": 0, "max_uptime_minutes": 600})
+        off, out, _, _ = self.run_script(uptime_minutes=130, max_minutes=120, policy=policy)
+        self.assertTrue(off)
+        self.assertIn("hard_limit_minutes=130/120", out)
+
+    def test_zero_or_missing_policy_values_use_the_ceiling(self):
+        for policy in (None, "error", "{}", "not json", json.dumps({"max_uptime_minutes": 0}),
+                       json.dumps({"max_uptime_minutes": "30"}), json.dumps({"max_uptime_minutes": -5})):
+            with self.subTest(policy=policy):
+                _, out, _, _ = self.run_script(uptime_minutes=10, max_minutes=120, policy=policy)
+                self.assertIn("hard_limit_minutes=10/120", out)
+
+    def test_the_policy_can_switch_on_a_limit_the_lab_leaves_off(self):
+        policy = json.dumps({"idle_minutes": 20, "max_uptime_minutes": 45})
+        off, out, _, _ = self.run_script(uptime_minutes=50, max_minutes=0, idle_minutes=0, policy=policy)
+        self.assertTrue(off)
+        self.assertIn("idle_minutes=0/20", out)
+        self.assertIn("hard_limit_minutes=50/45", out)
+
+    def test_the_policy_shortens_the_idle_limit_too(self):
+        policy = json.dumps({"idle_minutes": 15})
+        _, out, _, _ = self.run_script(uptime_minutes=5, max_minutes=0, idle_minutes=60, policy=policy)
+        self.assertIn("/15 ", out)
+
+    def test_the_reset_still_extends_a_policy_period(self):
+        policy = json.dumps({"max_uptime_minutes": 60})
+        off, out, _, _ = self.run_script(uptime_minutes=130, max_minutes=120, reset=self.minutes_ago(10), policy=policy)
+        self.assertFalse(off)
+        self.assertIn("hard_limit_minutes=10/60", out)
+
+    # --- the absolute limit: from boot only, nothing the panel writes moves it
+    def test_the_absolute_limit_alone_powers_off(self):
+        off, out, logged, _ = self.run_script(uptime_minutes=101, max_minutes=0, absolute=100)
+        self.assertTrue(off)
+        self.assertIn("absolute limit reached", logged)
+        self.assertIn("absolute_limit_minutes=101/100", out)
+
+    def test_below_the_absolute_limit_nothing_happens(self):
+        off, _, _, _ = self.run_script(uptime_minutes=99, max_minutes=0, absolute=100)
+        self.assertFalse(off)
+
+    def test_a_reset_does_not_extend_the_absolute_limit(self):
+        off, _, logged, _ = self.run_script(uptime_minutes=200, max_minutes=120, reset=self.minutes_ago(10), absolute=150)
+        self.assertTrue(off)
+        self.assertIn("absolute limit reached", logged)
+
+    def test_the_absolute_limit_holds_when_the_reset_cannot_be_read(self):
+        off, _, logged, _ = self.run_script(uptime_minutes=200, max_minutes=120, reset="error", absolute=150)
+        self.assertTrue(off)
+        self.assertIn("absolute limit reached", logged)
+
+    def test_a_malformed_policy_cannot_loosen_the_absolute_limit(self):
+        for policy in ("not json", "[]", json.dumps({"absolute_max_minutes": 9999, "max_uptime_minutes": 9999})):
+            off, _, _, _ = self.run_script(uptime_minutes=200, max_minutes=0, policy=policy, absolute=150)
+            self.assertTrue(off, policy)
+
+    def test_a_policy_cannot_set_the_absolute_limit(self):
+        off, _, _, _ = self.run_script(uptime_minutes=200, max_minutes=0, policy=json.dumps({"absolute_max_minutes": 60}))
+        self.assertFalse(off)
+
+    def test_active_people_do_not_prevent_it(self):
+        # The stub docker finds no database, so activity is unknown; the limit applies all the same.
+        off, _, _, _ = self.run_script(uptime_minutes=151, max_minutes=0, idle_minutes=60, absolute=150)
+        self.assertTrue(off)
+
+    def test_an_unusable_absolute_value_is_ignored(self):
+        for bad in ("x", -5, None, True, 1.5, []):
+            off, _, _, _ = self.run_script(uptime_minutes=200, max_minutes=0, absolute=bad)
+            self.assertFalse(off, bad)
+
+    def test_the_metrics_status_shows_the_nearer_of_the_two_limits(self):
+        self.run_script(uptime_minutes=90, max_minutes=120, absolute=100)
+        status = json.loads((self.tmp / "state" / "status.json").read_text())
+        self.assertLess(status["hard_limit_seconds_remaining"], 700)
+        self.assertGreater(status["hard_limit_seconds_remaining"], 500)
+        self.run_script(uptime_minutes=90, max_minutes=0, absolute=100)
+        status = json.loads((self.tmp / "state" / "status.json").read_text())
+        self.assertLess(status["hard_limit_seconds_remaining"], 700)
+        self.run_script(uptime_minutes=90, max_minutes=0, absolute=0)
+        self.assertEqual(json.loads((self.tmp / "state" / "status.json").read_text())["hard_limit_seconds_remaining"], -1)
 
 
 if __name__ == "__main__":

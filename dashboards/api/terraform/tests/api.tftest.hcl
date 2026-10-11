@@ -75,6 +75,38 @@ variables {
   adopt_existing_tables = false
 }
 
+run "spend_emails_are_off_by_default_and_need_no_topic" {
+  command = plan
+
+  assert {
+    condition     = length(aws_sns_topic.spend) == 0 && aws_lambda_function.spend.environment[0].variables["SPEND_TOPIC_ARN"] == ""
+    error_message = "With spend_emails_enabled false there must be no topic and the job must get no topic address."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.spend.policy, "sns:") && !strcontains(aws_iam_role_policy.spend.policy, "ses:")
+    error_message = "With the emails off, the spend job must have no email permissions."
+  }
+}
+
+run "spend_emails_on_give_the_job_only_its_own_topic" {
+  command = plan
+
+  variables {
+    spend_emails_enabled = true
+  }
+
+  assert {
+    condition     = length(aws_sns_topic.spend) == 1 && strcontains(aws_iam_role_policy.spend.policy, "sns:Subscribe") && !strcontains(aws_iam_role_policy.spend.policy, "ses:")
+    error_message = "With the emails on, the job may publish and subscribe on the spend topic and must not use SES."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role_policy.spend.policy, "cognito-idp:AdminGetUser")
+    error_message = "The job must be able to read a Cognito user to check that the email address is verified."
+  }
+}
+
 run "every_route_exists_and_admin_routes_go_to_the_admin_function" {
   command = apply
 
@@ -129,8 +161,8 @@ run "the_customer_role_writes_only_the_timer_reset_and_cannot_set_roles" {
 
   assert {
     condition = length([for s in jsondecode(aws_iam_role_policy.function["customer"].policy).Statement : s
-    if contains(flatten([s.Action]), "ssm:PutParameter") && flatten([s.Resource]) != ["arn:aws:ssm:us-east-1:123456789012:parameter/aiwebdemo/auto-stop/reset-at"]]) == 0
-    error_message = "ssm:PutParameter must be allowed on the reset parameter only, never on the auto-stop rule."
+    if contains(flatten([s.Action]), "ssm:PutParameter") && flatten([s.Resource]) != ["arn:aws:ssm:us-east-1:123456789012:parameter/aiwebdemo/auto-stop/reset-at", "arn:aws:ssm:us-east-1:123456789012:parameter/aiwebdemo/auto-stop/reset-count"]]) == 0
+    error_message = "ssm:PutParameter must be allowed on the reset time and the reset count only, never on the auto-stop rule or the policy."
   }
 
   assert {
@@ -149,8 +181,11 @@ run "the_admin_role_cannot_start_instances_or_write_ssm" {
   command = apply
 
   assert {
-    condition     = !strcontains(aws_iam_role_policy.function["admin"].policy, "ec2:StartInstances") && !strcontains(aws_iam_role_policy.function["admin"].policy, "ssm:PutParameter")
-    error_message = "The admin role must not start instances or write SSM parameters."
+    condition = !strcontains(aws_iam_role_policy.function["admin"].policy, "ec2:StartInstances") && length([
+      for st in jsondecode(aws_iam_role_policy.function["admin"].policy).Statement : st
+      if contains(flatten([st.Action]), "ssm:PutParameter") && st.Sid != "WriteTimerPolicyOnly"
+    ]) == 0
+    error_message = "The admin role must not start instances, and the only SSM parameter it may write is the timer policy."
   }
 }
 
@@ -158,7 +193,10 @@ run "open_webui_actions_run_only_the_panel_document_on_managed_instances" {
   command = apply
 
   assert {
-    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.action.allowedValues == ["status"]
+    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.action.allowedValues == [
+      "status", "usage", "set-role", "chat-test", "tool-servers", "settings", "export-config",
+      "set-default-model", "set-model-params", "set-feature", "upsert-tool-server", "remove-tool-server", "apply-desired",
+    ]
     error_message = "The document must accept only the listed action names."
   }
 
@@ -190,6 +228,55 @@ run "open_webui_actions_run_only_the_panel_document_on_managed_instances" {
     condition     = aws_lambda_function.function["admin"].environment[0].variables["WEBUI_DOCUMENT"] == aws_ssm_document.webui_admin.name
     error_message = "The admin function must be told the document's name."
   }
+}
+
+run "open_webui_write_actions_have_tight_parameters_and_the_stored_settings_have_their_own_access" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.payload.allowedPattern == "^[A-Za-z0-9+/=]{0,4000}$"
+    error_message = "The write request must be limited to base64 text."
+  }
+
+  assert {
+    condition     = jsondecode(aws_ssm_document.webui_admin.content).parameters.toolTokenPrefix.allowedPattern == "^[A-Za-z0-9/_.-]{0,100}$"
+    error_message = "The token prefix must be limited to a secret name prefix."
+  }
+
+  assert {
+    condition = aws_lambda_function.function["admin"].environment[0].variables["TOOL_TOKEN_PREFIX"] == "aiwebdemo/tool-tokens/" && aws_lambda_function.spend.environment[0].variables["TOOL_TOKEN_PREFIX"] == "aiwebdemo/tool-tokens/" && aws_lambda_function.function["admin"].environment[0].variables["WEBUI_DESIRED_TABLE"] == aws_dynamodb_table.webui_desired_state.name && aws_lambda_function.spend.environment[0].variables["WEBUI_DESIRED_TABLE"] == aws_dynamodb_table.webui_desired_state.name
+    error_message = "The admin function and the spend job must be told the tool token prefix and the desired-state table."
+  }
+
+  assert {
+    condition = length([for st in jsondecode(aws_iam_role_policy.function["admin"].policy).Statement : st if st.Sid == "ListToolTokenNames" && st.Action == "secretsmanager:ListSecrets"]) == 1 && !strcontains(aws_iam_role_policy.function["admin"].policy, "GetSecretValue")
+    error_message = "The admin function may list secret names but never read a secret."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.function["customer"].policy, "secretsmanager") && !strcontains(aws_iam_role_policy.function["customer"].policy, "webui-desired-state")
+    error_message = "Only the admin function and the spend job touch the stored Open WebUI settings and the tool token names."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.spend.policy, "secretsmanager")
+    error_message = "The spend job must not touch Secrets Manager."
+  }
+
+  assert {
+    condition     = aws_lambda_function.function["admin"].environment[0].variables["PRIVATE_TOOL_HOSTS"] == ""
+    error_message = "No private tool server host is allowed unless it is listed."
+  }
+}
+
+run "private_tool_hosts_must_be_host_names" {
+  command = plan
+
+  variables {
+    private_tool_hosts = ["Bad Host"]
+  }
+
+  expect_failures = [var.private_tool_hosts]
 }
 
 run "the_tables_are_protected_and_keyed_as_the_code_expects" {

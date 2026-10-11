@@ -10,7 +10,7 @@ linked from [step 5](#step-5-test-what-changed) and [Troubleshooting](troublesho
 |---|---|
 | [docs/smoke-tests/access-and-network.md](smoke-tests/access-and-network.md) | Accounts and passwords, domain access, Cloudflare Access, Cognito sign-in, SSM-only access, origin lockdown, outbound and edge checks, load balancer hardening, the lab unavailable page |
 | [docs/smoke-tests/control-panel.md](smoke-tests/control-panel.md) | The full control panel config test, the API stack test, the Open WebUI admin action test, the auto-stop timer reset test |
-| [docs/smoke-tests/lab-features.md](smoke-tests/lab-features.md) | Grafana telemetry, the vulnerability findings MCP server |
+| [docs/smoke-tests/lab-features.md](smoke-tests/lab-features.md) | Grafana telemetry, Grafana dashboards and alerts, the vulnerability findings MCP server, log search tools, Ollama and database metrics |
 | [docs/troubleshooting.md](troubleshooting.md) | Likely failure points and their fixes |
 
 ## Which steps to run
@@ -364,6 +364,9 @@ Run only the tests for what this deploy changed:
 | The control panel pages or its API | [Control panel config](smoke-tests/control-panel.md#control-panel-config-test), [API stack](smoke-tests/control-panel.md#control-panel-api-stack-test), [Open WebUI admin action](smoke-tests/control-panel.md#open-webui-admin-action-test), [Lab unavailable page](smoke-tests/access-and-network.md#lab-unavailable-page-test) |
 | Auto-stop or the timer reset | [Auto-stop timer reset](smoke-tests/control-panel.md#auto-stop-timer-reset-test) |
 | Grafana telemetry | [Grafana telemetry](smoke-tests/lab-features.md#grafana-telemetry-test) |
+| Grafana dashboards, alerts or the panel link | [Grafana dashboards and alerts](smoke-tests/lab-features.md#grafana-dashboards-and-alerts-test) |
+| Log search tools | [Log search tools](smoke-tests/lab-features.md#log-search-tools-test) |
+| Ollama journal and Open WebUI database metrics | [Metrics test](smoke-tests/lab-features.md#metrics-from-ollama-and-the-open-webui-database-test) |
 | The vulnerability findings tool | [Vulnerability MCP server](smoke-tests/lab-features.md#vulnerability-mcp-server-test), then the [acceptance tests](../vuln-mcp-acceptance-tests.md) |
 
 The test pages expect this window's `$env:AWS_PROFILE`, the wrapper, `Get-TfVar`, `$projectName`,

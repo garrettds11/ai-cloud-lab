@@ -25,6 +25,7 @@ locals {
       hostedLoginDomain = "${var.cognito_domain_prefix}.auth.${var.aws_region}.amazoncognito.com"
       redirectUri       = "${var.control_panel_url}/"
       apiUrl            = local.panel_api.url
+      grafanaUrl        = var.grafana_dashboard_url
     }),
     ";\n",
   ]) : ""

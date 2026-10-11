@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Moves one Open WebUI user between the roles "user" and "pending", for the control panel's
+# spend caps (docs/monitoring-spec.md, Spend caps). Run as root by the panel's SSM document.
+#
+#   ai-lab-set-role USER_ID ROLE      ROLE is "pending" (blocked: ends the user's sessions in
+#                                     Open WebUI) or "user" (restored)
+#
+# Prints one JSON line: {"ok":true,"userId":..,"previousRole":..,"role":..,"changed":bool}
+# or {"ok":false,"error":..}. An administrator is never changed, and no other role is set:
+# the panel restores only to "user". The user is read first so the update keeps their name,
+# email and picture as they are. Roles and ids only; nothing else is read or printed.
+#
+# Exit: 0 done (changed or already in that role), 1 failed, 2 bad arguments, 3 password login is off.
+set -uo pipefail
+
+LIB="${AI_LAB_WEBUI_LIB:-/usr/local/lib/ai-lab/webui-lib.sh}"
+READY_FILE="${AI_LAB_READY_FILE:-/var/lib/ai-lab/ready}"
+user_id="${1:-}"
+role="${2:-}"
+
+emit() { jq -cn "$@"; }
+fail() { emit --arg m "$1" '{ok: false, error: $m}'; exit "${2:-1}"; }
+
+[[ "$user_id" =~ ^[A-Za-z0-9-]{1,64}$ ]] || fail "A valid Open WebUI user ID is required." 2
+[[ "$role" == pending || "$role" == user ]] || fail "The role must be pending or user." 2
+[[ -f "$READY_FILE" ]] || fail "Open WebUI is not set up yet."
+
+# shellcheck disable=SC1090
+. "$LIB" || fail "Cannot read the Open WebUI helper."
+
+change() {
+    local current previous body
+    current="$(webui_get "/api/v1/users/$user_id")" || { emit '{ok: false, error: "Open WebUI does not know that user."}'; return 1; }
+    previous="$(jq -r '.role // empty' <<<"$current" 2>/dev/null)"
+    [[ -n "$previous" ]] || { emit '{ok: false, error: "Open WebUI did not report the user'"'"'s role."}'; return 1; }
+    if [[ "$previous" == admin ]]; then
+        emit --arg p "$previous" '{ok: false, error: "That user is an administrator and is never changed.", previousRole: $p}'
+        return 1
+    fi
+    if [[ "$previous" == "$role" ]]; then
+        emit --arg u "$user_id" --arg p "$previous" --arg r "$role" '{ok: true, userId: $u, previousRole: $p, role: $r, changed: false}'
+        return 0
+    fi
+    body="$(jq -c --arg r "$role" '{role: $r, name: (.name // ""), email: (.email // ""), profile_image_url: (.profile_image_url // "/user.png")}' <<<"$current")" || return 1
+    printf '%s' "$body" | webui_post "/api/v1/users/$user_id/update" >/dev/null || { emit '{ok: false, error: "Open WebUI refused the change."}'; return 1; }
+    emit --arg u "$user_id" --arg p "$previous" --arg r "$role" '{ok: true, userId: $u, previousRole: $p, role: $r, changed: true}'
+}
+
+webui_load_settings || fail "No usable lab settings."
+webui_begin
+webui_login
+rc=$?
+if [[ $rc -eq 0 ]]; then
+    change
+    rc=$?
+elif [[ $rc -eq 3 ]]; then
+    webui_end
+    fail "Password login is off, so the role cannot be changed automatically." 3
+else
+    webui_end
+    fail "Could not sign in to Open WebUI."
+fi
+webui_end
+exit $rc

@@ -10,6 +10,12 @@ locals {
     "ai-lab-idle-check"        = "scripts/ai-lab-idle-check.sh"
     "ai-lab-register-vuln-mcp" = "scripts/ai-lab-register-vuln-mcp.sh"
     "alloy-config.alloy"       = "scripts/alloy-config.alloy"
+    "ai-lab-session-log"       = "scripts/ai-lab-session-log"
+    "ai-lab-usage"             = "scripts/ai-lab-usage"
+    "ai-lab-set-role"          = "scripts/ai-lab-set-role"
+    "ai-lab-chat-test"         = "scripts/ai-lab-chat-test"
+    "ai-lab-metrics"           = "scripts/ai-lab-metrics"
+    "ai-lab-webui-lib.sh"      = "scripts/ai-lab-webui-lib.sh"
   }
   lab_asset_content = { for name, source in local.lab_assets : name => replace(file("${path.module}/${source}"), "\r\n", "\n") }
   lab_asset_sha256  = { for name, content in local.lab_asset_content : name => sha256(content) }

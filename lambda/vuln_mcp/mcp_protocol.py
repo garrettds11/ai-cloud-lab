@@ -33,6 +33,26 @@ def _log(**fields):
     print(json.dumps({"event": "tool_call", **fields}, default=str))
 
 
+class Toolset:
+    """Several tool objects served as one server. Each part is (object, definitions); a tool is
+    found by name on the object that defines it, so the protocol layer needs no change per source."""
+
+    def __init__(self, *parts):
+        self._owner = {}
+        self.definitions = []
+        for owner, definitions in parts:
+            for definition in definitions:
+                self._owner[definition["name"]] = owner
+                self.definitions.append(definition)
+        self.names = set(self._owner)
+
+    def __getattr__(self, name):
+        owner = self.__dict__.get("_owner", {}).get(name)
+        if owner is None:
+            raise AttributeError(name)
+        return getattr(owner, name)
+
+
 def handle_message(message, tools):
     """Handle one JSON-RPC message. Returns a response dict, or None for notifications."""
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or "method" not in message:
@@ -57,7 +77,7 @@ def handle_message(message, tools):
     if method == "ping":
         return _result(request_id, {})
     if method == "tools/list":
-        return _result(request_id, {"tools": TOOLS})
+        return _result(request_id, {"tools": getattr(tools, "definitions", TOOLS)})
     if method == "tools/call":
         return _call_tool(request_id, params, tools)
     return _error(request_id, METHOD_NOT_FOUND, f"Method not found: {method}")
@@ -66,7 +86,7 @@ def handle_message(message, tools):
 def _call_tool(request_id, params, tools):
     name = params.get("name")
     arguments = params.get("arguments") or {}
-    if name not in TOOL_NAMES:
+    if name not in getattr(tools, "names", TOOL_NAMES):
         return _error(request_id, INVALID_PARAMS, f"Unknown tool: {name}")
     if not isinstance(arguments, dict):
         return _error(request_id, INVALID_PARAMS, "arguments must be an object")

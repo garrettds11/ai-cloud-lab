@@ -14,6 +14,11 @@
 # max(boot or launch time, reset time), so a reset left over from an earlier run is
 # ignored after the next start.
 #
+# auto_stop_absolute_max_minutes is a third limit, counted from boot only. No reset and no
+# panel setting moves it, and neither is read when it is checked, so a bad value written to them
+# cannot extend it. auto_stop_max_resets is how many times the Reset button may extend the hard
+# limit in one run (the count is runtime state in the reset-count parameter below).
+#
 # Layer 1 runs on the instance (scripts/ai-lab-idle-check.sh, installed by cloud-init)
 # and does both. Layer 2 is this independent watchdog (lambda/auto_stop_watchdog.py),
 # run by EventBridge every few minutes. It enforces the hard limit a few minutes late if
@@ -25,6 +30,12 @@ locals {
   auto_stop_parameter_name = "/${var.project_name}/auto-stop"
   # Runtime state, written by the control panel's reset button: epoch seconds, "0" = never.
   auto_stop_reset_parameter_name = "${local.auto_stop_parameter_name}/reset-at"
+  # Runtime state, written by the control panel's timer policy page: JSON with idle_minutes and
+  # max_uptime_minutes, each 0 or a value at or below the limits above. "{}" = no override.
+  auto_stop_policy_parameter_name = "${local.auto_stop_parameter_name}/policy"
+  # Runtime state, written by the control panel's reset button: "<launch epoch seconds>:<resets used>",
+  # so a count from an earlier run is ignored after the next start.
+  auto_stop_reset_count_parameter_name = "${local.auto_stop_parameter_name}/reset-count"
 }
 
 check "auto_stop_alert_email" {
@@ -34,6 +45,9 @@ check "auto_stop_alert_email" {
   }
 }
 
+# absolute_max_minutes is measured from boot only: no reset and no panel policy moves it (0 = off).
+# max_resets is how many times the Reset button may extend the hard limit in one run (0 = no limit);
+# the panel policy may only lower it.
 # Settings read by the instance-side agent every minute. Keeping them here, not in
 # user-data, means changing the toggle or the timeout updates in place and never
 # replaces the instance.
@@ -42,9 +56,11 @@ resource "aws_ssm_parameter" "auto_stop" {
   name = local.auto_stop_parameter_name
   type = "String"
   value = jsonencode({
-    enabled            = local.auto_stop_enabled
-    idle_minutes       = var.auto_stop_idle_minutes
-    max_uptime_minutes = var.auto_stop_max_uptime_minutes
+    enabled              = local.auto_stop_enabled
+    idle_minutes         = var.auto_stop_idle_minutes
+    max_uptime_minutes   = var.auto_stop_max_uptime_minutes
+    absolute_max_minutes = var.auto_stop_absolute_max_minutes
+    max_resets           = var.auto_stop_max_resets
   })
 }
 
@@ -63,6 +79,35 @@ resource "aws_ssm_parameter" "auto_stop_reset" {
   }
 }
 
+# How many times the hard limit was reset during this run, from the control panel ("<launch epoch>:<count>").
+# Only the parameter's existence is managed here; its value is runtime state.
+resource "aws_ssm_parameter" "auto_stop_reset_count" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
+  name        = local.auto_stop_reset_count_parameter_name
+  description = "Timer resets used in the current run, as <launch epoch seconds>:<count>. Runtime state; Terraform does not overwrite it."
+  type        = "String"
+  value       = "0:0"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# The timer policy set from the control panel. It can only make the limits above shorter, never
+# longer or off; the instance monitor takes the lower of the two. Only the parameter's existence
+# is managed here, its value is runtime state, so Terraform never reverts it.
+resource "aws_ssm_parameter" "auto_stop_policy" {
+  #checkov:skip=CKV2_AWS_34:The value is not secret (an ID, URL, JSON rule or timestamp); SecureString would only add a KMS dependency for every reader
+  name        = local.auto_stop_policy_parameter_name
+  description = "Timer policy set from the control panel (idle and session minutes, at or below the Terraform limits). Runtime state; Terraform does not overwrite it."
+  type        = "String"
+  value       = "{}"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
 # Lets the agent read its settings and the last reset, and publish its idle state for the watchdog.
 resource "aws_iam_role_policy" "auto_stop_agent" {
   name = "${var.project_name}-auto-stop-agent"
@@ -74,7 +119,7 @@ resource "aws_iam_role_policy" "auto_stop_agent" {
       {
         Effect   = "Allow"
         Action   = "ssm:GetParameter"
-        Resource = [aws_ssm_parameter.auto_stop.arn, aws_ssm_parameter.auto_stop_reset.arn]
+        Resource = [aws_ssm_parameter.auto_stop.arn, aws_ssm_parameter.auto_stop_reset.arn, aws_ssm_parameter.auto_stop_policy.arn]
       },
       {
         Effect    = "Allow"
@@ -165,7 +210,7 @@ resource "aws_iam_role_policy" "auto_stop_watchdog" {
       {
         Effect   = "Allow"
         Action   = "ssm:GetParameter"
-        Resource = aws_ssm_parameter.auto_stop_reset.arn
+        Resource = [aws_ssm_parameter.auto_stop_reset.arn, aws_ssm_parameter.auto_stop_policy.arn]
       },
       {
         Effect   = "Allow"
@@ -204,13 +249,15 @@ resource "aws_lambda_function" "auto_stop_watchdog" {
 
   environment {
     variables = {
-      INSTANCE_ID        = aws_instance.ai_lab.id
-      IDLE_MINUTES       = tostring(var.auto_stop_idle_minutes)
-      MAX_UPTIME_MINUTES = tostring(var.auto_stop_max_uptime_minutes)
-      CHECK_MINUTES      = tostring(local.auto_stop_check_minutes)
-      SNS_TOPIC_ARN      = aws_sns_topic.auto_stop[each.key].arn
-      ALB_DIMENSION      = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
-      RESET_PARAMETER    = aws_ssm_parameter.auto_stop_reset.name
+      INSTANCE_ID          = aws_instance.ai_lab.id
+      IDLE_MINUTES         = tostring(var.auto_stop_idle_minutes)
+      MAX_UPTIME_MINUTES   = tostring(var.auto_stop_max_uptime_minutes)
+      ABSOLUTE_MAX_MINUTES = tostring(var.auto_stop_absolute_max_minutes)
+      CHECK_MINUTES        = tostring(local.auto_stop_check_minutes)
+      SNS_TOPIC_ARN        = aws_sns_topic.auto_stop[each.key].arn
+      ALB_DIMENSION        = var.enable_domain_access ? aws_lb.domain["domain"].arn_suffix : ""
+      RESET_PARAMETER      = aws_ssm_parameter.auto_stop_reset.name
+      POLICY_PARAMETER     = aws_ssm_parameter.auto_stop_policy.name
     }
   }
 

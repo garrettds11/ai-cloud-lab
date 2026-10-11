@@ -32,6 +32,17 @@ variable "instance_type" {
   default     = "c7i.4xlarge"
 }
 
+variable "instance_hourly_cost_usd" {
+  description = "What the instance costs per running hour, in US dollars. The usage and cost page, the spend caps and the Grafana tokenomics dashboard use it to price each session. Use the on-demand list price for the instance type in your region (about 0.8048 for g6.xlarge in us-east-1), or your effective rate if you have a savings plan. null means unknown: usage is still recorded but nothing is priced."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.instance_hourly_cost_usd == null || (var.instance_hourly_cost_usd >= 0 && var.instance_hourly_cost_usd <= 1000)
+    error_message = "instance_hourly_cost_usd must be null or a number from 0 through 1000."
+  }
+}
+
 variable "root_volume_size" {
   description = "Size of encrypted gp3 root volume in GiB."
   type        = number
@@ -464,6 +475,28 @@ variable "auto_stop_max_uptime_minutes" {
   }
 }
 
+variable "auto_stop_absolute_max_minutes" {
+  description = "Absolute time limit. 0 (default) means none. 15 or more stops the instance this many minutes after it boots, whatever the control panel does: a timer reset or the panel's timer policy cannot extend it or switch it off. The instance monitor and the watchdog both enforce it. Use it to cap the total length of one run when operators may reset the hard limit (auto_stop_max_uptime_minutes)."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.auto_stop_absolute_max_minutes == 0 || (var.auto_stop_absolute_max_minutes >= 15 && var.auto_stop_absolute_max_minutes <= 20160 && floor(var.auto_stop_absolute_max_minutes) == var.auto_stop_absolute_max_minutes)
+    error_message = "auto_stop_absolute_max_minutes must be 0 (no limit) or a whole number from 15 through 20160."
+  }
+}
+
+variable "auto_stop_max_resets" {
+  description = "How many times the control panel's Reset button may extend the hard limit during one run. 0 (default) means no limit on the count. The panel's timer policy may set a lower number, never a higher one."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.auto_stop_max_resets >= 0 && var.auto_stop_max_resets <= 50 && floor(var.auto_stop_max_resets) == var.auto_stop_max_resets
+    error_message = "auto_stop_max_resets must be a whole number from 0 (no limit) through 50."
+  }
+}
+
 variable "auto_stop_alert_email" {
   description = "Email address for auto-stop alerts (instance running too long, or the idle monitor not reporting). AWS sends a confirmation link that must be clicked once. Leave null only if you accept having no alerts."
   type        = string
@@ -517,6 +550,39 @@ variable "grafana_credentials_secret_arn" {
   validation {
     condition     = var.grafana_credentials_secret_arn == null || can(regex("-[A-Za-z0-9]{6}$", var.grafana_credentials_secret_arn))
     error_message = "grafana_credentials_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name. Copy it with: aws secretsmanager describe-secret --secret-id <secret name> --query ARN --output text"
+  }
+}
+
+variable "grafana_cloudwatch_account_id" {
+  description = "The AWS account ID Grafana Cloud assumes roles from, shown in the instructions box on the Settings tab of the CloudWatch data source in Grafana (Connections, Data sources, Add, CloudWatch, Assume Role ARN). Together with grafana_cloudwatch_external_id it creates a read-only IAM role that Grafana uses to read the lab's Lambda logs and AWS metrics. Leave both null to create no role."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_cloudwatch_account_id == null || can(regex("^[0-9]{12}$", var.grafana_cloudwatch_account_id))
+    error_message = "grafana_cloudwatch_account_id must be a 12-digit AWS account ID."
+  }
+}
+
+variable "grafana_cloudwatch_external_id" {
+  description = "The external ID that Grafana Cloud shows next to the account ID on the CloudWatch data source's Settings tab. It is unique to your Grafana stack and stops other Grafana customers from using the role. Not a secret, but required with grafana_cloudwatch_account_id."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_cloudwatch_external_id == null || can(regex("^[A-Za-z0-9+=,.@:/_-]{2,1224}$", var.grafana_cloudwatch_external_id))
+    error_message = "grafana_cloudwatch_external_id may contain only letters, digits and + = , . @ : / _ - (2 to 1224 characters)."
+  }
+}
+
+variable "grafana_dashboard_url" {
+  description = "Address of the Lab overview dashboard in Grafana, for example https://yourstack.grafana.net/d/ai-lab-overview. The control panel shows a Grafana link in its sidebar when this is set. Terraform only copies it into config.js."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.grafana_dashboard_url == null || can(regex("^https://[a-z0-9.-]+(/[^\\s]*)?$", var.grafana_dashboard_url))
+    error_message = "grafana_dashboard_url must be an https:// address."
   }
 }
 
@@ -610,5 +676,49 @@ variable "vuln_mcp_token_secret_arn" {
   validation {
     condition     = var.vuln_mcp_token_secret_arn == null || can(regex("-[A-Za-z0-9]{6}$", var.vuln_mcp_token_secret_arn))
     error_message = "vuln_mcp_token_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name. Copy it with: aws secretsmanager describe-secret --secret-id <secret name> --query ARN --output text"
+  }
+}
+
+variable "log_mcp_loki_url" {
+  description = "Base address of the Grafana Cloud Loki endpoint the log search tools read (for example https://logs-prod-012.grafana.net; copy it from the Loki data source's Settings tab in Grafana). Together with log_mcp_loki_user and log_mcp_loki_token_secret_arn it adds read-only log tools (search, count, error summary, sign-in events) to the vulnerability MCP server, so the Security Analyst can answer questions about the lab's logs. Needs vuln_mcp_table_name. Leave null to add no log tools."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.log_mcp_loki_url == null || can(regex("^https://[A-Za-z0-9.-]+(:[0-9]+)?$", var.log_mcp_loki_url))
+    error_message = "log_mcp_loki_url must be an https address with no path, for example https://logs-prod-012.grafana.net."
+  }
+}
+
+variable "log_mcp_loki_user" {
+  description = "The numeric Loki user (instance ID) shown on the Loki data source's Settings tab in Grafana. It is the basic-auth user name for log_mcp_loki_url. Required with log_mcp_loki_url."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.log_mcp_loki_user == null || can(regex("^[0-9]{1,12}$", var.log_mcp_loki_user))
+    error_message = "log_mcp_loki_user must be the numeric Loki user ID (digits only)."
+  }
+}
+
+variable "log_mcp_loki_token_secret_arn" {
+  description = "ARN of a pre-created Secrets Manager secret that holds only a Grafana Cloud access policy token with the logs:read scope, either as plain text or as a one-key key/value secret. Required with log_mcp_loki_url. The function reads it at run time, so the token is never in Terraform state."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.log_mcp_loki_token_secret_arn == null || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+-[A-Za-z0-9]{6}$", var.log_mcp_loki_token_secret_arn))
+    error_message = "log_mcp_loki_token_secret_arn must be the secret's full ARN, ending in a hyphen and the six random characters Secrets Manager adds to the name."
+  }
+}
+
+variable "log_mcp_stream_selector" {
+  description = "The Loki stream selector (without braces) that picks the lab's logs. The default matches every stream that has a service_name, which is how logs arrive over OpenTelemetry. If Grafana's Explore shows the lab's logs under other labels, put those here, for example job=~\"ai-lab-.*\"."
+  type        = string
+  default     = "service_name=~\".+\""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_]+(=~|=|!=|!~)\"[^\"\\\\{}\n]*\"(,\\s*[A-Za-z0-9_]+(=~|=|!=|!~)\"[^\"\\\\{}\n]*\")*$", var.log_mcp_stream_selector))
+    error_message = "log_mcp_stream_selector must be one or more label matchers like service_name=~\".+\", separated by commas."
   }
 }

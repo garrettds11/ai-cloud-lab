@@ -71,8 +71,10 @@ is the same edit in reverse (see [Clean up](#clean-up)).
 ### P3. A model that can call tools
 
 Open WebUI sends the tool definitions with the chat request ("native" function calling, the
-default in the pinned Open WebUI). The lab's default model, `llama3.2:3b`, is small and may not
-call tools reliably. A test that fails because the model never asked for the tool is still a
+default in the pinned Open WebUI). The lab's default model is **Security Analyst**, created at boot
+on the lab's base model (`qwen3:14b` in the example) with these tools attached, Open WebUI's built-in
+tools off, and a system prompt that tells it to use the tools. Smaller base models may not call
+tools reliably. A test that fails because the model never asked for the tool is still a
 **Fail (no tool call)**; record the model name and try a larger one before concluding the
 integration is broken. The setup checks below separate integration faults from model faults.
 
@@ -227,11 +229,13 @@ the managed entry replaces any MCP entry with the same address (A2).
 
 PENDING MANUAL EXECUTION
 
-Start a **new** chat, choose the model, open the tools menu in the message box (the `+` or tools
-icon) and switch on **Vulnerability Findings**. A tool that is registered but not switched on in
-the chat is never offered to the model, which looks like "the model ignores the tool".
-**Pass:** the tool shows as enabled for the chat. Use this chat (or new ones set the same way)
-for every question.
+Start a **new** chat on **Security Analyst** (the default model) and open the **Integrations** menu
+in the message box (the icon next to **+**). **Pass:** **Vulnerability Findings** is already switched
+on without you touching it. **Fail:** it is listed but off, which means the model was not created or
+lost its tools; check the `[register-vuln-mcp]` lines in the bootstrap log. A tool that is
+registered but not switched on in the chat is never offered to the model, which looks like "the
+model ignores the tool". If you test another model, switch the tool on by hand. Use this chat (or
+new ones set the same way) for every question.
 
 <!-- setup-check -->
 

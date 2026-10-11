@@ -57,6 +57,18 @@ resource "aws_ssm_parameter" "control_panel_open_webui_image" {
   value       = var.open_webui_container_image
 }
 
+# The lab's Cognito user pool, so the spend caps job can disable a person who reached their cap.
+# Only when Cognito is on; without it the job blocks through Open WebUI alone.
+resource "aws_ssm_parameter" "control_panel_user_pool_id" {
+  for_each = var.control_panel_url != null ? local.cognito_resources : {}
+  #checkov:skip=CKV2_AWS_34:The value is not secret (a user pool ID); SecureString would only add a KMS dependency for every reader
+
+  name        = "${local.control_panel_lab_prefix}/user-pool-id"
+  description = "Cognito user pool of the lab, for the control panel's spend caps (block and unblock a user)."
+  type        = "String"
+  value       = aws_cognito_user_pool.lab[each.key].id
+}
+
 # One grant per demo user who has the operators role, for the lab instance, in the same
 # shape the panel writes. Needs the lab (this file's instance) and the table name. Without
 # a grant an operator sees nothing, because the panel shows only granted instances.

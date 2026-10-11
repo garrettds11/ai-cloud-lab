@@ -388,10 +388,10 @@ else
     echo "Skipping local demo-user provisioning (Cognito users, or local sign-in disabled)."
 fi
 
-# Vulnerability MCP connection in Open WebUI. The script is always installed. It adds the
-# connection when the vulnerability MCP is deployed and removes it when it is not. It reads the
-# bearer token from Secrets Manager itself, so the token is never in user-data, Terraform state or
-# logs; the settings file holds names, URLs and ARNs only. A failure is logged but never fails
+# Vulnerability MCP connection and Security Analyst model in Open WebUI. The script is always
+# installed. It adds both when the vulnerability MCP is deployed and removes them when it is not.
+# It reads the bearer token from Secrets Manager itself, so the token is never in user-data,
+# Terraform state or logs; the settings file holds names, URLs and ARNs only. A failure is logged but never fails
 # bootstrap; run `sudo ai-lab-register-vuln-mcp` to retry.
 mkdir -p /etc/ai-lab
 cat > /etc/ai-lab/vuln-mcp.env <<'EOF'
@@ -403,6 +403,7 @@ ADMIN_EMAIL='${open_webui_admin_email}'
 LOCAL_LOGIN='${open_webui_local_login_enabled}'
 PORT='${open_webui_host_port}'
 REGION='${aws_region}'
+MODEL_BASE='${llm_model}'
 EOF
 fetch_asset ai-lab-register-vuln-mcp /usr/local/sbin/ai-lab-register-vuln-mcp 0755 '${asset_sha_register_vuln_mcp}' || \
     echo "WARNING: the vulnerability MCP registration script could not be installed."
@@ -473,6 +474,37 @@ if [[ "${grafana_enabled}" == "true" ]]; then
     fi
 else
     echo "Skipping Grafana telemetry (disabled)."
+fi
+
+# Usage data for the control panel and Grafana: a session log (boot and stop times), hourly
+# token usage per user, and a metrics file for Alloy. Best effort: a failure is logged and never
+# fails bootstrap, because the lab must come up without them.
+install_usage_monitoring() {
+    install -d -m 0755 /usr/local/lib/ai-lab /var/lib/ai-lab /var/lib/ai-lab/metrics /etc/ai-lab
+    fetch_asset ai-lab-webui-lib.sh /usr/local/lib/ai-lab/webui-lib.sh 0644 '${asset_sha_webui_lib}' || return 1
+    fetch_asset ai-lab-session-log /usr/local/sbin/ai-lab-session-log 0755 '${asset_sha_session_log}' || return 1
+    fetch_asset ai-lab-usage /usr/local/sbin/ai-lab-usage 0755 '${asset_sha_usage}' || return 1
+    fetch_asset ai-lab-set-role /usr/local/sbin/ai-lab-set-role 0755 '${asset_sha_set_role}' || return 1
+    fetch_asset ai-lab-chat-test /usr/local/sbin/ai-lab-chat-test 0755 '${asset_sha_chat_test}' || return 1
+    fetch_asset ai-lab-metrics /usr/local/sbin/ai-lab-metrics 0755 '${asset_sha_metrics}' || return 1
+    printf "INSTANCE_TYPE='%s'\nINSTANCE_HOURLY_COST_USD='%s'\n" '${instance_type}' '${instance_hourly_cost_usd}' > /etc/ai-lab/metrics.env
+    local u="/etc/systemd/system/ai-lab"
+    # Session log: opens a session at boot, closes it at shutdown, notes a heartbeat every minute.
+    printf '[Unit]\nDescription=AI lab session log\nAfter=local-fs.target\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/local/sbin/ai-lab-session-log start\nExecStop=/usr/local/sbin/ai-lab-session-log stop\n[Install]\nWantedBy=multi-user.target\n' > $u-session-log.service
+    printf '[Unit]\nDescription=AI lab session heartbeat\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/ai-lab-session-log heartbeat\n' > $u-session-heartbeat.service
+    printf '[Unit]\nDescription=AI lab session heartbeat every minute\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec=1min\n[Install]\nWantedBy=timers.target\n' > $u-session-heartbeat.timer
+    # Usage: collect finished hours each hour, and the hour in progress at shutdown (before Docker stops).
+    printf '[Unit]\nDescription=AI lab hourly usage collection\nAfter=docker.service\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/ai-lab-usage collect\n' > $u-usage-collect.service
+    printf '[Unit]\nDescription=AI lab hourly usage collection\n[Timer]\nOnCalendar=*:05:00\nPersistent=false\n[Install]\nWantedBy=timers.target\n' > $u-usage-collect.timer
+    printf '[Unit]\nDescription=AI lab final usage collection at shutdown\nAfter=docker.service ai-lab-session-log.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nTimeoutStopSec=90\nExecStart=/bin/true\nExecStop=/usr/local/sbin/ai-lab-usage collect --final\n[Install]\nWantedBy=multi-user.target\n' > $u-usage-final.service
+    # Metrics for Alloy's textfile collector, every 30 seconds.
+    printf '[Unit]\nDescription=AI lab metrics for Grafana\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/ai-lab-metrics\n' > $u-metrics.service
+    printf '[Unit]\nDescription=AI lab metrics every 30 seconds\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=30s\nAccuracySec=5s\n[Install]\nWantedBy=timers.target\n' > $u-metrics.timer
+    systemctl daemon-reload
+    systemctl enable --now ai-lab-session-log.service ai-lab-usage-final.service ai-lab-session-heartbeat.timer ai-lab-usage-collect.timer ai-lab-metrics.timer
+}
+if ! install_usage_monitoring; then
+    echo "WARNING: usage and metrics collection could not be set up; continuing. See $LOG_FILE."
 fi
 
 # Idle-aware auto-stop: a systemd timer runs the idle monitor every minute. It does

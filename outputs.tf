@@ -124,3 +124,8 @@ output "vuln_mcp_log_group" {
   description = "CloudWatch log group of the vulnerability findings MCP Lambda (one JSON tool_call line per call) when vuln_mcp_table_name is set."
   value       = length(local.vuln_mcp_resources) > 0 ? aws_cloudwatch_log_group.vuln_mcp["vuln_mcp"].name : null
 }
+
+output "grafana_cloudwatch_role_arn" {
+  description = "ARN of the read-only role for Grafana Cloud's CloudWatch data source. Paste it into the data source's Assume Role ARN field. Null until grafana_cloudwatch_account_id and grafana_cloudwatch_external_id are set."
+  value       = length(aws_iam_role.grafana_cloudwatch) > 0 ? aws_iam_role.grafana_cloudwatch["grafana"].arn : null
+}

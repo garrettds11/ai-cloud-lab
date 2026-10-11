@@ -15,3 +15,8 @@ bootstrap_admins = ["garrettds11@gmail.com"]
 # are imported with their data (or are already in this stack's state, where it does nothing).
 # false only on a new account where those tables do not exist yet.
 adopt_existing_tables = true
+
+# Spend cap emails through Amazon SNS, only to people whose Cognito identity has a verified email
+# address. Each person gets one confirmation link from SNS and must click it. false = no cap emails
+# (the caps themselves still work).
+spend_emails_enabled = false

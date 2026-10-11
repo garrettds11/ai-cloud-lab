@@ -45,6 +45,7 @@ now=$(date +%s)
 enabled=true
 IDLE_MINUTES=60
 MAX_UPTIME_MINUTES=0 # unreadable settings never apply a hard limit
+ABSOLUTE_MAX_MINUTES=0 # counts from boot only; no reset and no panel policy changes it
 imds_token=$(curl -s -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' || true)
 imds() { curl -s -m 3 -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"; }
 instance_id=$(imds instance-id || true)
@@ -55,6 +56,28 @@ if [[ -n $region ]] && config=$(aws ssm get-parameter --region "$region" --name 
   [[ $configured_idle =~ ^[0-9]+$ ]] && IDLE_MINUTES=$configured_idle
   configured_max=$(jq -r '.max_uptime_minutes' <<<"$config" 2>/dev/null || true)
   [[ $configured_max =~ ^[0-9]+$ ]] && MAX_UPTIME_MINUTES=$configured_max
+  configured_abs=$(jq -r '.absolute_max_minutes // 0' <<<"$config" 2>/dev/null || true)
+  [[ $configured_abs =~ ^[0-9]+$ ]] && ABSOLUTE_MAX_MINUTES=$configured_abs
+fi
+# Timer policy set from the control panel: shorter idle and hard-limit minutes, never longer.
+# The values above (Terraform) are the ceiling; 0 or a missing value means "use the ceiling".
+# A ceiling of 0 means that limit is off, and the policy may then switch it on. Unreadable or
+# malformed policy is ignored, so a bad value can never loosen a limit.
+apply_policy() { # $1 = ceiling, $2 = policy value; prints the minutes in force
+  local ceiling=$1 value=$2
+  if [[ ! $value =~ ^[0-9]{1,5}$ ]] || ((10#$value == 0)); then
+    echo "$ceiling"
+  elif ((ceiling > 0 && 10#$value > ceiling)); then
+    echo "$ceiling"
+  else
+    echo $((10#$value))
+  fi
+}
+if [[ -n $region && $enabled != "false" ]] && policy=$(aws ssm get-parameter --region "$region" --name "$AUTO_STOP_PARAMETER/policy" --query Parameter.Value --output text 2>/dev/null); then
+  policy_idle=$(jq -r '.idle_minutes // 0 | if type == "number" then floor else 0 end' <<<"$policy" 2>/dev/null || echo 0)
+  policy_max=$(jq -r '.max_uptime_minutes // 0 | if type == "number" then floor else 0 end' <<<"$policy" 2>/dev/null || echo 0)
+  IDLE_MINUTES=$(apply_policy "$IDLE_MINUTES" "$policy_idle")
+  MAX_UPTIME_MINUTES=$(apply_policy "$MAX_UPTIME_MINUTES" "$policy_max")
 fi
 if [[ $enabled == "false" ]]; then
   echo "$now" >"$STATE_DIR/last-activity" # a later re-enable gets a full idle window
@@ -112,7 +135,19 @@ if ((MAX_UPTIME_MINUTES > 0)); then
   hard_minutes=$(((now - hard_start) / 60))
 fi
 
-echo "active_users=$active_users busy_connections=$busy_connections idle_minutes=$idle_minutes/$IDLE_MINUTES uptime_minutes=$uptime_minutes hard_limit_minutes=$hard_minutes/$MAX_UPTIME_MINUTES"
+# Status for ai-lab-metrics (idle and hard-limit time left; -1 means that limit is off). Best effort.
+idle_left=-1
+((IDLE_MINUTES > 0)) && idle_left=$(((IDLE_MINUTES - idle_minutes) * 60))
+hard_left=-1
+((MAX_UPTIME_MINUTES > 0)) && hard_left=$(((MAX_UPTIME_MINUTES - hard_minutes) * 60))
+if ((ABSOLUTE_MAX_MINUTES > 0)); then
+  absolute_left=$(((ABSOLUTE_MAX_MINUTES * 60) - uptime_seconds))
+  ((MAX_UPTIME_MINUTES == 0 || absolute_left < hard_left)) && hard_left=$absolute_left
+fi
+{ printf '{"idle_seconds_remaining":%s,"hard_limit_seconds_remaining":%s,"updated":%s}\n' "$idle_left" "$hard_left" "$now" >"$STATE_DIR/status.json.tmp" &&
+  mv -f "$STATE_DIR/status.json.tmp" "$STATE_DIR/status.json"; } 2>/dev/null || true
+
+echo "active_users=$active_users busy_connections=$busy_connections idle_minutes=$idle_minutes/$IDLE_MINUTES uptime_minutes=$uptime_minutes hard_limit_minutes=$hard_minutes/$MAX_UPTIME_MINUTES$( ((ABSOLUTE_MAX_MINUTES > 0)) && echo " absolute_limit_minutes=$uptime_minutes/$ABSOLUTE_MAX_MINUTES")"
 
 if [[ -n ${AI_LAB_DRY_RUN:-} ]]; then
   exit 0
@@ -129,6 +164,14 @@ if [[ -n $instance_id && -n $region ]]; then
      | map(. + {Dimensions:[{Name:"InstanceId",Value:$id}]})')
   aws cloudwatch put-metric-data --region "$region" --namespace AILab --metric-data "$metrics" ||
     logger -t ai-lab-idle "could not publish metrics"
+fi
+
+# Absolute limit: counts from boot only, so nothing the panel writes can move it. It does not
+# depend on reading the timer reset, so it holds even when the reset parameter is unreadable.
+if ((ABSOLUTE_MAX_MINUTES > 0 && uptime_minutes >= ABSOLUTE_MAX_MINUTES)); then
+  logger -t ai-lab-idle "absolute limit reached: $uptime_minutes minutes since boot (maximum $ABSOLUTE_MAX_MINUTES); powering off"
+  systemctl poweroff
+  exit 0
 fi
 
 # Hard time limit: stop at the maximum even if people are active.

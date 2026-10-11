@@ -1,0 +1,371 @@
+{
+  "uid": "ai-lab-logs",
+  "title": "AI Lab: Logs",
+  "description": "Saved log searches for troubleshooting. Alloy sends the logs over OTLP, so its labels (job, unit, container) arrive as log attributes; change the stream selector at the top if your Loki indexes them differently.",
+  "tags": [
+    "ai-lab"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds_prom",
+        "label": "Metrics",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "type": "datasource",
+        "name": "ds_loki",
+        "label": "Logs",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "type": "datasource",
+        "name": "ds_cw",
+        "label": "CloudWatch",
+        "query": "cloudwatch",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "type": "textbox",
+        "name": "stream",
+        "label": "Log stream selector",
+        "query": "service_name=~\".+\"",
+        "current": {
+          "text": "service_name=~\".+\"",
+          "value": "service_name=~\".+\""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "service_name=~\".+\"",
+            "value": "service_name=~\".+\""
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Volume",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Log lines per minute, by source",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "queryType": "range",
+          "expr": "sum by (job) (count_over_time({$stream} | job=~\".+\" [1m]))",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 6
+      }
+    },
+    {
+      "id": 3,
+      "type": "row",
+      "title": "Searches",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "Bootstrap warnings and errors",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "expr": "{$stream} | job=\"ai-lab-bootstrap\" |~ \"(?i)warn|error|fail\"",
+          "queryType": "range"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Security Analyst and MCP registration",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "expr": "{$stream} | job=\"ai-lab-bootstrap\" |~ \"(?i)vuln|mcp|security analyst|registration\"",
+          "queryType": "range"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Ollama errors",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "expr": "{$stream} | job=\"ai-lab-journal\" | unit=~\"ollama.*\" |~ \"(?i)error|fail|panic|oom|out of memory\"",
+          "queryType": "range"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Open WebUI errors",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "expr": "{$stream} | job=\"ai-lab-containers\" | container=~\".*open-webui.*\" |~ \"(?i)error|exception|traceback| 5[0-9][0-9] \"",
+          "queryType": "range"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Sign-ins",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "expr": "{$stream} | job=\"ai-lab-containers\" | container=~\".*open-webui.*\" |~ \"(?i)signin|login|oauth\"",
+          "queryType": "range"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Services stopping or restarting",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "refId": "A",
+          "expr": "{$stream} | job=\"ai-lab-journal\" |~ \"(?i)stopped|stopping|failed|restart\"",
+          "queryType": "range"
+        }
+      ],
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 9
+      }
+    }
+  ]
+}

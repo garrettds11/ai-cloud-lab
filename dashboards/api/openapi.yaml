@@ -212,6 +212,25 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /spend:
+    get:
+      tags: [Activity]
+      operationId: getMySpend
+      summary: The caller's own spend cap, spend this month and cap emails
+      x-lambda: customer
+      x-required-roles: [any signed-in user]
+      responses:
+        "200":
+          description: The caller's figures for the current month (UTC).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonSpend"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /logs:
     get:
       tags: [Activity]
@@ -316,6 +335,198 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/Unavailable"
+
+  /admin/timer-policy:
+    get:
+      tags: [Admin]
+      operationId: getTimerPolicy
+      summary: The lab's auto-stop limits, the panel's shorter limits, and what applies
+      description: |
+        Administrators only. The lab's own setting (Terraform) is the ceiling. The panel may set
+        shorter idle and session-length limits inside it, never longer.
+      x-lambda: admin
+      x-required-roles: [admin]
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimerPolicy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Admin]
+      operationId: saveTimerPolicy
+      summary: Set shorter idle and session-length limits
+      description: |
+        Administrators only. 0 (or a missing field) means use the lab's value. A limit the lab
+        switched on cannot be switched off or lengthened. If the lab's limit is off the panel may
+        set one. Changes are written to the access changes history and take effect on the
+        instance within a minute. The watchdog still enforces the lab's own limit as a backstop.
+      x-lambda: admin
+      x-required-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerPolicyRequest"
+      responses:
+        "200":
+          description: The policy after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimerPolicy"
+        "400":
+          description: A value is out of range or longer than the lab's own limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Auto-stop is switched off for this lab.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/spend-caps:
+    get:
+      tags: [Admin]
+      operationId: getSpendCaps
+      summary: The lab cap, the per-person caps, and the spend against them this month
+      description: |
+        Administrators and user managers may read. Spend is the scheduled spend caps job's ledger
+        (docs/monitoring-spec.md, "Spend caps"), current to about five minutes.
+      x-lambda: admin
+      x-required-roles: [user_mgrs, admin]
+      responses:
+        "200":
+          description: The overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpendOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      tags: [Admin]
+      operationId: saveSpendCaps
+      summary: Set the lab cap, the default per-person cap and per-person overrides
+      description: |
+        Administrators only. A cap is a dollar amount per calendar month (UTC); 0 means no cap and
+        `null` clears it (for one person, the default applies again). Fields left out are not changed.
+        Every change is written to the access changes history. The spend caps job is started so a
+        raised cap lets blocked people back in at once.
+      x-lambda: admin
+      x-required-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpendCapsRequest"
+      responses:
+        "200":
+          description: The overview after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpendOverview"
+        "400":
+          description: A cap is not a dollar amount from 0 to 1,000,000.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /admin/spend-caps/lab-override:
+    post:
+      tags: [Admin]
+      operationId: allowLabStartOnce
+      summary: Let the lab run once past its monthly cap
+      description: |
+        Administrators only, and only while the lab is at or over its monthly cap. Changes nothing about the
+        cap. If the lab is stopped, the next start is allowed; if it is running, that run is allowed. The
+        permission ends when the lab next stops (or when the cap is raised or the month changes), and the
+        change is recorded in the access changes history.
+      x-lambda: admin
+      x-required-roles: [admin]
+      responses:
+        "200":
+          description: The updated overview, with `lab.override` set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpendOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The lab is under its cap, so there is nothing to override.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/spend-caps/{userId}/confirm-email:
+    post:
+      tags: [Admin]
+      operationId: confirmSpendEmail
+      summary: Ask for a person's email address to be confirmed again
+      description: |
+        Administrators only. The spend caps job subscribes the person's address to the spend topic if their
+        Cognito identity has a verified email (SNS emails them a confirmation link; this also sends it again
+        after it expired or they unsubscribed). Cap emails are sent only to confirmed addresses.
+      x-lambda: admin
+      x-required-roles: [admin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The person's email address.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The request was passed on.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /admin/changes:
     get:
@@ -525,6 +736,81 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /admin/webui/tool-tokens:
+    get:
+      tags: [Admin]
+      operationId: listWebuiToolTokens
+      summary: The secrets a tool server's token may be chosen from
+      description: Names only, never values. These are the secrets under the lab's tool token prefix.
+      x-lambda: admin
+      x-required-roles: [admin]
+      responses:
+        "200":
+          description: The prefix and the secret names (both empty when none are offered).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [prefix, names]
+                properties:
+                  prefix:
+                    type: string
+                  names:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/UpstreamFailed"
+
+  /admin/webui/desired-state:
+    get:
+      tags: [Admin]
+      operationId: getWebuiDesiredState
+      summary: The Open WebUI settings the panel keeps and puts back after an instance start
+      description: |
+        Each item is the confirmed request of a write action (a token is only the name of a secret).
+        `lastApplied` is the most recent automatic reapply after a start, or null if there has been none.
+      x-lambda: admin
+      x-required-roles: [admin]
+      responses:
+        "200":
+          description: The saved settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, configured]
+                properties:
+                  configured:
+                    type: boolean
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind]
+                      additionalProperties: true
+                      properties:
+                        kind:
+                          type: string
+                          enum: [default-model, model-params, feature, tool-server]
+                  lastApplied:
+                    type: [object, "null"]
+                    properties:
+                      launchMs:
+                        type: integer
+                      at:
+                        type: integer
+                      failed:
+                        type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /admin/webui/actions/{commandId}:
     get:
       tags: [Admin]
@@ -704,8 +990,11 @@ components:
 
     Instance:
       type: object
-      required: [id, name, type, region, url, phase, message, launchedAt, checks, rule, autoStop]
+      required: [id, name, type, region, url, phase, message, launchedAt, checks, rule, autoStop, budgetReached]
       properties:
+        budgetReached:
+          type: boolean
+          description: The lab's monthly budget cap is reached, so Start is refused (409) until an administrator raises the cap or the month resets.
         id:
           type: string
         name:
@@ -755,6 +1044,10 @@ components:
               type: integer
               minimum: 0
               description: Hard limit. 0 means off.
+            absoluteMaxMinutes:
+              type: integer
+              minimum: 0
+              description: Absolute limit from launch. No reset or panel policy changes it. 0 means off.
         autoStop:
           oneOf:
             - $ref: "#/components/schemas/AutoStop"
@@ -774,6 +1067,20 @@ components:
         maxUptimeMinutes:
           type: integer
           minimum: 0
+        absoluteMaxMinutes:
+          type: integer
+          minimum: 0
+          description: |
+            The lab stops this many minutes after `launchedAt` whatever the timer reset says. 0 means
+            off. The stop time is the earlier of this and the hard stop below.
+        resetsAllowed:
+          type: integer
+          minimum: 0
+          description: How many times the Reset button may be used in one run. 0 means no limit (or no hard limit to reset).
+        resetsUsed:
+          type: [integer, "null"]
+          minimum: 0
+          description: Resets used in this run. Null when there is no count limit, or the count could not be read.
         launchedAt:
           type: integer
           format: int64
@@ -814,6 +1121,13 @@ components:
       properties:
         ok:
           const: true
+        cappedByAbsoluteLimit:
+          type: boolean
+          description: True when the lab's absolute limit cut the new stop time short.
+        resetsLeft:
+          type: [integer, "null"]
+          minimum: 0
+          description: Resets left in this run after this one. Null when the count is not limited.
         resetAt:
           type: integer
           format: int64
@@ -920,6 +1234,197 @@ components:
         lastSeenAt:
           type: [integer, "null"]
           format: int64
+        spendBlock:
+          description: Set while the person is blocked by their monthly spend cap.
+          oneOf:
+            - $ref: "#/components/schemas/SpendBlock"
+            - type: "null"
+
+    TimerMinutes:
+      type: object
+      required: [idleMinutes, maxUptimeMinutes]
+      properties:
+        idleMinutes:
+          type: integer
+          description: Minutes with nobody active before the instance stops. 0 means off.
+        maxUptimeMinutes:
+          type: integer
+          description: Session length in minutes before the instance stops even if people are active. 0 means off.
+        absoluteMaxMinutes:
+          type: integer
+          description: Only in `ceiling` and `effective`. The lab's absolute limit from launch. The panel cannot change it. 0 means off.
+        maxResets:
+          type: integer
+          description: Resets of the session timer allowed per run. 0 means no limit (in `policy`, 0 means use the lab's value).
+
+    TimerPolicyRequest:
+      type: object
+      properties:
+        idleMinutes:
+          type: integer
+          description: 0, or 5 to 10080 and not above the lab's own idle limit.
+        maxUptimeMinutes:
+          type: integer
+          description: 0, or 30 to 10080 and not above the lab's own session limit.
+        maxResets:
+          type: integer
+          description: 0 to use the lab's value, or 1 to 50 and not above the lab's own limit when it has one.
+
+    TimerPolicy:
+      type: object
+      required: [enabled, ceiling, policy, effective, minimums, maximum]
+      properties:
+        enabled:
+          type: boolean
+          description: Whether auto-stop is on for the lab at all (Terraform).
+        ceiling:
+          $ref: "#/components/schemas/TimerMinutes"
+        policy:
+          $ref: "#/components/schemas/TimerMinutes"
+        effective:
+          $ref: "#/components/schemas/TimerMinutes"
+        minimums:
+          $ref: "#/components/schemas/TimerMinutes"
+        maximum:
+          type: integer
+        maximumResets:
+          type: integer
+
+    SpendBlock:
+      type: object
+      required: [reason, capUsd, spendUsd, blockedAt, liftsOn]
+      properties:
+        reason:
+          type: string
+          description: "The sentence to show, for example: Blocked for the rest of October, monthly AI spend cap of $5.00 reached on Oct 24, sign-in returns Nov 1."
+        capUsd:
+          type: number
+        spendUsd:
+          type: number
+        blockedAt:
+          type: integer
+          format: int64
+        liftsOn:
+          type: string
+          examples: [Nov 1]
+
+    PersonSpend:
+      type: object
+      required: [id, name, email, roles, capUsd, effectiveCapUsd, spendUsd, percent, emailsSent, emailStatus, blocked, period, resetsOn]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        capUsd:
+          type: [number, "null"]
+          description: This person's own cap; null when the default applies.
+        effectiveCapUsd:
+          type: [number, "null"]
+          description: The cap that applies (their own, else the default); null means no cap.
+        spendUsd:
+          type: number
+          description: Allocated cost this month. Completed hours are final; the current hour is provisional.
+        percent:
+          type: [number, "null"]
+        emailsSent:
+          type: array
+          description: Thresholds (50, 80, 98, 100) already emailed this month.
+          items:
+            type: integer
+        emailStatus:
+          type: string
+          enum: [unconfirmed, unverified, pending, confirmed, failed, expired, unsubscribed]
+        blocked:
+          oneOf:
+            - $ref: "#/components/schemas/SpendBlock"
+            - type: "null"
+        period:
+          type: string
+          description: The month, as YYYY-MM (UTC). Only on `GET /spend`.
+        resetsOn:
+          type: string
+          description: Only on `GET /spend`.
+
+    SpendOverview:
+      type: object
+      required: [period, resetsOn, canEdit, lab, defaultUserCapUsd, userCapsTotalUsd, users]
+      properties:
+        period:
+          type: string
+        resetsOn:
+          type: string
+        canEdit:
+          type: boolean
+          description: True for administrators.
+        lab:
+          type: object
+          required: [capUsd, spendUsd, percent, projectedUsd, emailsSent, stopped, override]
+          properties:
+            capUsd:
+              type: [number, "null"]
+            spendUsd:
+              type: number
+            percent:
+              type: [number, "null"]
+            projectedUsd:
+              type: [number, "null"]
+              description: Month-end spend at the current rate; null in the first day or with no spend.
+            emailsSent:
+              type: array
+              items:
+                type: integer
+            stopped:
+              type: boolean
+              description: The instance was stopped this month because the cap was reached.
+            override:
+              description: The administrator's one-time permission to run past the cap, or null.
+              oneOf:
+                - type: object
+                  required: [by, at, used]
+                  properties:
+                    by:
+                      type: string
+                    at:
+                      type: integer
+                      description: Milliseconds since the epoch.
+                    used:
+                      type: boolean
+                      description: True once a start (or the run in progress) has used it.
+                - type: "null"
+        defaultUserCapUsd:
+          type: [number, "null"]
+        userCapsTotalUsd:
+          type: number
+          description: The caps of everyone who has one, added up, to compare with the lab cap.
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonSpend"
+
+    SpendCapsRequest:
+      type: object
+      properties:
+        labCapUsd:
+          type: [number, "null"]
+        defaultUserCapUsd:
+          type: [number, "null"]
+        userCaps:
+          type: array
+          items:
+            type: object
+            required: [userId, capUsd]
+            properties:
+              userId:
+                type: string
+              capUsd:
+                type: [number, "null"]
 
     ManagedInstance:
       type: object
@@ -995,11 +1500,25 @@ components:
 
     WebuiActionName:
       type: string
-      enum: [status]
+      enum: [status, usage, chat-test, tool-servers, settings, export-config, set-default-model, set-model-params, set-feature, upsert-tool-server, remove-tool-server, import-skill, apply-desired]
       description: |
-        `status`: Open WebUI health and version, compared with the version the lab pins. More
-        actions arrive with phases 1 and 2 of issue #55; each one is added to the SSM document,
-        the instance script and this list together.
+        `status`: Open WebUI health and version, compared with the version the lab pins.
+        `usage`: hourly token usage per user and per model, the instance's session log, and the
+        hour in progress (provisional). Counts and names only; no prompt or answer text.
+        `chat-test`: sends one fixed test prompt to the model named in `model` through Open WebUI's
+        chat API and reports the reply, the time taken and the token counts.
+        `tool-servers`: every tool server Open WebUI knows, each asked to connect and list its tools
+        (the first five enabled ones per run). Names, types and addresses without any login or query;
+        never a key or header.
+        `settings`: a fixed list of Open WebUI settings, each marked `Global` or `User default`.
+        `export-config`: those settings, the tool servers and the models (numeric parameters only) as
+        one document with the secrets left out; the `omitted` field lists what is never included.
+        These three sign in to Open WebUI as its administrator on the instance and change nothing.
+        `set-default-model`, `set-model-params`, `set-feature`, `upsert-tool-server`,
+        `remove-tool-server` and `import-skill` change one thing, read it back from Open WebUI, and report success only
+        if it matches; a confirmed success is then kept in the desired-state table.
+        `apply-desired` puts all kept settings back (used after an instance start).
+        Each action is added to the SSM document, the instance script and this list together.
 
     WebuiActionRequest:
       type: object
@@ -1010,6 +1529,88 @@ components:
         instanceId:
           type: string
           pattern: "^i-[0-9a-f]+$"
+        sinceHour:
+          type: string
+          pattern: "^[0-9]{1,10}$"
+          description: For `usage` only. Return hours at or after this epoch time in seconds. Omit for all recorded hours.
+        model:
+          type: string
+          pattern: "^[A-Za-z0-9._:/-]{1,100}$"
+          description: |
+            For `chat-test`, and required there: the model to send the fixed test prompt to. For
+            `set-default-model` and `set-model-params`: the model to change (`security-analyst` is
+            refused for the latter, because the lab sets it up at every start).
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          description: For `set-model-params` only.
+        numCtx:
+          type: integer
+          minimum: 512
+          maximum: 131072
+          description: For `set-model-params` only. Context length.
+        feature:
+          type: string
+          enum: [api_keys, api_key_routes, message_rating, image_generation, memory]
+          description: For `set-feature` only. `memory` is a user default; the others are global.
+        value:
+          description: |
+            For `set-feature` only. A boolean, or for `api_key_routes` a list of up to 20 paths
+            (an empty list lifts the restriction).
+        id:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{1,40}$"
+          description: |
+            For `upsert-tool-server` and `remove-tool-server` (`vuln-findings` is refused), and for
+            `import-skill` (lower-case letters, digits, - and _ only).
+        name:
+          type: string
+          maxLength: 80
+          description: For `upsert-tool-server` (up to 60) and `import-skill` (up to 80).
+        description:
+          type: string
+          maxLength: 300
+          description: For `import-skill`.
+        content:
+          type: string
+          maxLength: 1800
+          description: |
+            For `import-skill`. The skill's text (a SKILL.md body), 1 to 1800 characters, plain text
+            only. It is stored by Open WebUI and never run. Longer skills, and skills with files, are
+            imported in Open WebUI itself. The skill is not kept for the next start.
+        models:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+          description: For `import-skill`. Installed models to attach the skill to. `security-analyst` is refused.
+        type:
+          type: string
+          enum: [mcp, openapi]
+          description: For `upsert-tool-server`.
+        url:
+          type: string
+          maxLength: 300
+          description: |
+            For `upsert-tool-server`. HTTPS only, no login, query or fragment. A name that resolves to a
+            private, loopback, link-local or metadata address is refused unless its host is listed in
+            the API stack's `private_tool_hosts`.
+        path:
+          type: string
+          maxLength: 100
+          description: For `upsert-tool-server`. The OpenAPI document's path, if the type needs one.
+        tokenSecret:
+          type: string
+          description: |
+            For `upsert-tool-server`. The name of a Secrets Manager secret under the lab's tool token
+            prefix (see `GET /admin/webui/tool-tokens`). A token is never sent to the browser or typed in.
+        enabled:
+          type: boolean
+          description: For `upsert-tool-server` and `import-skill`. Default true.
+        confirmed:
+          type: boolean
+          description: Required, as true, for `set-feature`, `upsert-tool-server`, `remove-tool-server` and `import-skill`.
 
     WebuiActionStarted:
       type: object
@@ -1057,6 +1658,11 @@ components:
           oneOf:
             - $ref: "#/components/schemas/WebuiStatusResult"
             - type: "null"
+        cost:
+          description: |
+            Only on a finished `usage` action: the session costs worked out from `result` by the
+            rules in docs/monitoring-spec.md ("Cost allocation"). Computed when read, not stored.
+          $ref: "#/components/schemas/UsageCost"
 
     WebuiStatusResult:
       type: object
@@ -1081,3 +1687,120 @@ components:
         versionMatches:
           type: [boolean, "null"]
           description: Null when either version is unknown.
+        ollama:
+          description: Models Ollama has installed and loaded (names and sizes), or null when Ollama did not answer. Only on `status`.
+          oneOf:
+            - type: "null"
+            - type: object
+              properties:
+                installed:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/OllamaModel"
+                loaded:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/OllamaModel"
+
+    OllamaModel:
+      type: object
+      required: [name, sizeBytes]
+      properties:
+        name:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        vramBytes:
+          type: integer
+          format: int64
+          description: For loaded models only, how much of the model is in GPU memory.
+
+    UsageCost:
+      type: object
+      required: [priced, sessions, users]
+      properties:
+        priced:
+          type: boolean
+          description: False when the lab has no `instance_hourly_cost_usd`; tokens are still counted, charges are null.
+        hourlyCostUsd:
+          type: [number, "null"]
+        instanceType:
+          type: [string, "null"]
+        truncated:
+          type: boolean
+          description: The oldest hours were left out to fit SSM's output limit.
+        sessions:
+          type: array
+          description: Newest first.
+          items:
+            $ref: "#/components/schemas/UsageSession"
+        users:
+          type: array
+          description: Totals per person across the sessions, largest charge first.
+          items:
+            type: object
+            required: [id, tokens, sessions]
+            properties:
+              id:
+                type: string
+              name:
+                type: [string, "null"]
+              email:
+                type: [string, "null"]
+              tokens:
+                type: integer
+              charge:
+                type: [number, "null"]
+              sessions:
+                type: integer
+
+    UsageSession:
+      type: object
+      required: [start, stop, running, hours, tokens, provisional, incomplete, users]
+      properties:
+        start:
+          type: integer
+          description: Epoch seconds.
+        stop:
+          type: [integer, "null"]
+          description: Null while the session is running.
+        running:
+          type: boolean
+        endedBy:
+          type: [string, "null"]
+        hours:
+          type: number
+        cost:
+          type: [number, "null"]
+        tokens:
+          type: integer
+        pricePerMillionTokens:
+          type: [number, "null"]
+        unallocatedCost:
+          type: [number, "null"]
+          description: Cost of hours nobody used, when the whole session had no tokens.
+        provisional:
+          type: boolean
+          description: The session is running, or its last hours have not been collected yet.
+        incomplete:
+          type: boolean
+          description: Older usage was left out (truncated), so the figures are low.
+        users:
+          type: array
+          items:
+            type: object
+            required: [id, tokens, share]
+            properties:
+              id:
+                type: string
+              name:
+                type: [string, "null"]
+              email:
+                type: [string, "null"]
+              tokens:
+                type: integer
+              share:
+                type: number
+              charge:
+                type: [number, "null"]

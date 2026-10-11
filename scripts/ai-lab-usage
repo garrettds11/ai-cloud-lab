@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# Hourly token usage per user and per model, kept on the instance for the control panel's
+# Usage and cost page (docs/monitoring-spec.md, Cost allocation).
+#
+#   ai-lab-usage collect [--final]   record every finished hour since the last run. --final (at
+#                                    shutdown) also records the hour in progress.
+#   ai-lab-usage show [--since HOUR] [--provisional]
+#                                    print one JSON line: the recorded hours from HOUR (an epoch
+#                                    hour start, default all), the sessions, and with --provisional
+#                                    the hour in progress read live (never stored).
+#
+# Source: Open WebUI's admin analytics API, one window per hour:
+#   GET /api/v1/analytics/users?start_date=H&end_date=H+3599&limit=1000
+#       -> {users: [{user_id, name, email, count, input_tokens, output_tokens, total_tokens}]}
+#   GET /api/v1/analytics/tokens?start_date=H&end_date=H+3599
+#       -> {models: [{model_id, input_tokens, output_tokens, total_tokens, message_count}]}
+# Written against Open WebUI's source on main; the shape is checked on every response and an
+# unexpected one stops the run without recording anything, so it never stores a wrong number.
+# Token counts and names only: no prompt or answer text is read.
+#
+# Records live in $DATA_DIR/usage.jsonl, one line per user or model per hour:
+#   {"hour":H,"kind":"user","id":..,"email":..,"name":..,"in":..,"out":..,"messages":..}
+#   {"hour":H,"kind":"model","id":..,"in":..,"out":..,"messages":..}
+# Re-collecting an hour replaces its lines, so repeated or overlapping runs are harmless.
+#
+# Exit: 0 done, 1 could not read the API (retry later), 3 password login is off (cannot automate).
+set -uo pipefail
+
+DATA_DIR="${AI_LAB_DATA_DIR:-/var/lib/ai-lab}"
+USAGE_FILE="$DATA_DIR/usage.jsonl"
+NEXT_FILE="$DATA_DIR/usage-next-hour"
+LIB="${AI_LAB_WEBUI_LIB:-/usr/local/lib/ai-lab/webui-lib.sh}"
+SESSION_LOG="${AI_LAB_SESSION_LOG:-/usr/local/sbin/ai-lab-session-log}"
+READY_FILE="${AI_LAB_READY_FILE:-/var/lib/ai-lab/ready}"
+MAX_CATCHUP_HOURS=72
+MAX_SHOW_CHARS=20000 # SSM returns at most 24000 characters of output
+log() { logger -t ai-lab-usage "$*" 2>/dev/null || true; echo "[usage] $*" >&2; }
+
+# shellcheck disable=SC1090
+. "$LIB" || { echo "cannot read $LIB" >&2; exit 1; }
+mkdir -p "$DATA_DIR"
+
+now="$(date +%s)"
+this_hour=$((now / 3600 * 3600))
+
+# One hour of data from the API, as a JSON object: {users: [...], models: [...]}. Fails on any
+# error or unexpected shape.
+fetch_hour() {
+    local h=$1 end=$(($1 + 3599)) users models
+    users="$(webui_get "/api/v1/analytics/users?start_date=$h&end_date=$end&limit=1000")" || return 1
+    models="$(webui_get "/api/v1/analytics/tokens?start_date=$h&end_date=$end")" || return 1
+    jq -ne --argjson u "$users" --argjson m "$models" '
+      if ($u | type) == "object" and ($u.users | type) == "array"
+         and ($m | type) == "object" and ($m.models | type) == "array"
+         and all($u.users[]; (.user_id | type) == "string" and ((.input_tokens // 0) | type) == "number" and ((.output_tokens // 0) | type) == "number")
+         and all($m.models[]; (.model_id | type) == "string" and ((.input_tokens // 0) | type) == "number" and ((.output_tokens // 0) | type) == "number")
+      then {users: [$u.users[] | select((.total_tokens // 0) > 0 or (.count // 0) > 0)
+                     | {id: .user_id, email: (.email // null), name: (.name // null),
+                        in: (.input_tokens // 0), out: (.output_tokens // 0), messages: (.count // 0)}],
+            models: [$m.models[] | select((.total_tokens // 0) > 0 or (.message_count // 0) > 0)
+                     | {id: .model_id, in: (.input_tokens // 0), out: (.output_tokens // 0), messages: (.message_count // 0)}]}
+      else error("unexpected analytics response") end' 2>/dev/null
+}
+
+# Replace the lines of hour $1 in the usage file with those from the fetched object on stdin.
+store_hour() {
+    local h=$1 data
+    data="$(cat)"
+    {
+        [[ -s "$USAGE_FILE" ]] && jq -c --argjson h "$h" 'select(.hour != $h)' "$USAGE_FILE"
+        jq -c --argjson h "$h" '(.users[] | {hour: $h, kind: "user"} + .), (.models[] | {hour: $h, kind: "model"} + .)' <<<"$data"
+    } >"$USAGE_FILE.tmp" && mv "$USAGE_FILE.tmp" "$USAGE_FILE"
+}
+
+# First hour worth collecting: where the last run stopped, but never before the current session
+# began (nothing can happen while the instance is off) and never more than MAX_CATCHUP_HOURS back.
+first_hour() {
+    local next="" start="" floor=$((this_hour - MAX_CATCHUP_HOURS * 3600))
+    [[ -r "$NEXT_FILE" ]] && next="$(<"$NEXT_FILE")"
+    [[ "$next" =~ ^[0-9]{1,10}$ ]] || next=$((this_hour - 24 * 3600))
+    if [[ -x "$SESSION_LOG" ]]; then
+        start="$("$SESSION_LOG" show 2>/dev/null | jq -r 'last | .start // empty' 2>/dev/null)"
+        [[ "$start" =~ ^[0-9]{1,10}$ ]] && ((start / 3600 * 3600 > next)) && next=$((start / 3600 * 3600))
+    fi
+    ((next < floor)) && next=$floor
+    printf '%s' "$next"
+}
+
+# Runs fn with the admin signed in and the admin's idle-clock footprint undone afterwards.
+with_webui() {
+    local rc=0
+    webui_load_settings || { log "no usable lab settings"; return 1; }
+    webui_begin
+    webui_login
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+        "$@"
+        rc=$?
+    fi
+    webui_end
+    return $rc
+}
+
+do_collect() {
+    local h final=$1
+    for ((h = $(first_hour); h < this_hour; h += 3600)); do
+        data="$(fetch_hour "$h")" || { log "could not read hour $h; will retry"; return 1; }
+        store_hour "$h" <<<"$data" || return 1
+        printf '%s\n' $((h + 3600)) >"$NEXT_FILE"
+    done
+    if [[ "$final" == true ]]; then
+        data="$(fetch_hour "$this_hour")" || { log "could not read the current hour"; return 1; }
+        store_hour "$this_hour" <<<"$data" || return 1
+        printf '%s\n' "$this_hour" >"$NEXT_FILE" # recorded in full only when it ends; collected again
+    fi
+    return 0
+}
+
+cmd="${1:-}"
+case "$cmd" in
+collect)
+    shift
+    final=false
+    [[ "${1:-}" == --final ]] && final=true
+    [[ -f $READY_FILE ]] || exit 0 # first-boot setup is not finished, Open WebUI may not exist yet
+    with_webui do_collect "$final"
+    rc=$?
+    [[ $rc -eq 3 ]] && log "password login is off, so usage cannot be collected"
+    exit $rc
+    ;;
+show)
+    shift
+    since=0
+    provisional=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --since)
+            since="${2:-}"
+            [[ "$since" =~ ^[0-9]{1,10}$ ]] || { echo "bad --since" >&2; exit 2; }
+            shift 2
+            ;;
+        --provisional) provisional=true; shift ;;
+        *) echo "Usage: ai-lab-usage show [--since HOUR] [--provisional]" >&2; exit 2 ;;
+        esac
+    done
+    live='null'
+    if [[ "$provisional" == true && -f $READY_FILE ]]; then
+        get_live() { live="$(fetch_hour "$this_hour")" || live='null'; }
+        with_webui get_live || true
+        [[ -n "$live" ]] || live='null'
+    fi
+    sessions='[]'
+    [[ -x "$SESSION_LOG" ]] && sessions="$("$SESSION_LOG" show 2>/dev/null)"
+    [[ -n "$sessions" ]] || sessions='[]'
+    hours='[]'
+    if [[ -s "$USAGE_FILE" ]]; then
+        hours="$(jq -cs --argjson since "$since" '
+          map(select(.hour >= $since)) | group_by(.hour)
+          | map({hour: .[0].hour,
+                 users: [.[] | select(.kind == "user") | del(.hour, .kind)],
+                 models: [.[] | select(.kind == "model") | del(.hour, .kind)]})' "$USAGE_FILE")"
+    fi
+    next="$(cat "$NEXT_FILE" 2>/dev/null)"
+    [[ "$next" =~ ^[0-9]{1,10}$ ]] || next=null
+    # The price per running hour and the instance type, written by cloud-init for the metrics script.
+    price=null
+    itype=""
+    metrics_env="${AI_LAB_METRICS_ENV:-/etc/ai-lab/metrics.env}"
+    if [[ -r "$metrics_env" ]]; then
+        p="$(sed -n "s/^INSTANCE_HOURLY_COST_USD='\([0-9]\{1,4\}\(\.[0-9]\{1,6\}\)\{0,1\}\)'\$/\1/p" "$metrics_env")"
+        [[ -n "$p" ]] && price="$p"
+        itype="$(sed -n "s/^INSTANCE_TYPE='\([A-Za-z0-9.-]\{1,32\}\)'\$/\1/p" "$metrics_env")"
+    fi
+    truncated=false
+    build() {
+        jq -nc --argjson g "$now" --argjson n "$next" --argjson s "$sessions" --argjson h "$1" \
+            --argjson l "$live" --argjson t "$truncated" --argjson hr "$this_hour" \
+            --argjson price "$price" --arg itype "$itype" \
+            '{ok: true, generatedAt: $g, nextHour: $n, currentHour: $hr, truncated: $t, sessions: $s, hours: $h,
+              hourlyCostUsd: $price, instanceType: (if $itype == "" then null else $itype end),
+              provisional: (if $l == null then null else ({hour: $hr} + $l) end)}'
+    }
+    out="$(build "$hours")"
+    # Over the output limit: drop the oldest hours until it fits.
+    while ((${#out} > MAX_SHOW_CHARS)) && [[ "$(jq 'length' <<<"$hours")" -gt 0 ]]; do
+        hours="$(jq -c '.[1:]' <<<"$hours")"
+        truncated=true
+        out="$(build "$hours")"
+    done
+    printf '%s\n' "$out"
+    ;;
+*)
+    echo "Usage: ai-lab-usage collect [--final] | show [--since HOUR] [--provisional]" >&2
+    exit 2
+    ;;
+esac

@@ -13,6 +13,25 @@
 locals {
   vuln_mcp_resources = var.vuln_mcp_table_name != null ? { vuln_mcp = true } : {}
 
+  # Log search tools (lambda/vuln_mcp/log_tools.py) are added only when all three Loki settings are given.
+  log_mcp_enabled = length(local.vuln_mcp_resources) > 0 && var.log_mcp_loki_url != null && var.log_mcp_loki_user != null && var.log_mcp_loki_token_secret_arn != null
+
+  log_mcp_statements = local.log_mcp_enabled ? [
+    {
+      Sid      = "ReadLogStoreToken"
+      Effect   = "Allow"
+      Action   = "secretsmanager:GetSecretValue"
+      Resource = var.log_mcp_loki_token_secret_arn
+    },
+  ] : []
+
+  log_mcp_environment = local.log_mcp_enabled ? {
+    LOKI_URL              = var.log_mcp_loki_url
+    LOKI_USER             = var.log_mcp_loki_user
+    LOKI_TOKEN_SECRET_ARN = var.log_mcp_loki_token_secret_arn
+    LOKI_STREAM_SELECTOR  = var.log_mcp_stream_selector
+  } : {}
+
   # The MCP endpoint (the Function URL already ends in a slash). The lab instance connects
   # Open WebUI to it at boot; see scripts/ai-lab-register-vuln-mcp.sh.
   vuln_mcp_url = length(local.vuln_mcp_resources) > 0 ? "${aws_lambda_function_url.vuln_mcp["vuln_mcp"].function_url}mcp" : null
@@ -23,6 +42,17 @@ check "vuln_mcp_registration_needs_local_login" {
   assert {
     condition     = var.vuln_mcp_table_name == null || var.open_webui_enable_local_login
     error_message = "The vulnerability MCP is on but open_webui_enable_local_login is false, so the instance cannot sign in to Open WebUI to register it. Add the connection by hand in Admin Settings > External Tools (see lambda/vuln_mcp/README.md), or turn local login on."
+  }
+}
+
+# The three Loki settings only work together, and only with the MCP server.
+check "log_mcp_settings_are_complete" {
+  assert {
+    condition = (
+      (var.log_mcp_loki_url == null && var.log_mcp_loki_user == null && var.log_mcp_loki_token_secret_arn == null) ||
+      local.log_mcp_enabled
+    )
+    error_message = "The log search tools need log_mcp_loki_url, log_mcp_loki_user and log_mcp_loki_token_secret_arn together, and vuln_mcp_table_name. Set all of them, or none."
   }
 }
 
@@ -73,7 +103,7 @@ resource "aws_iam_role_policy" "vuln_mcp" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid    = "ReadFindingsTable"
         Effect = "Allow"
@@ -89,7 +119,7 @@ resource "aws_iam_role_policy" "vuln_mcp" {
         Action   = "secretsmanager:GetSecretValue"
         Resource = var.vuln_mcp_token_secret_arn == null ? "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:not-configured" : var.vuln_mcp_token_secret_arn
       }
-    ]
+    ], local.log_mcp_statements)
   })
 }
 
@@ -100,6 +130,35 @@ resource "aws_cloudwatch_log_group" "vuln_mcp" {
 
   name              = "/aws/lambda/${var.project_name}-vuln-mcp"
   retention_in_days = 14
+}
+
+# Counts for the Tool calls dashboard and the tool alerts, taken from the function's JSON log
+# lines (one per tool call, and one per refused request). Metrics carry the tool's name only,
+# never arguments or results. Namespace AILab/Tools is separate from the idle monitor's AILab.
+locals {
+  vuln_mcp_metric_filters = {
+    calls        = { pattern = "{ $.event = \"tool_call\" }", name = "ToolCalls", value = "1", unit = "Count", by_tool = true }
+    errors       = { pattern = "{ $.event = \"tool_call\" && $.ok = false }", name = "ToolErrors", value = "1", unit = "Count", by_tool = true }
+    latency      = { pattern = "{ $.event = \"tool_call\" && $.ms = * }", name = "ToolLatencyMs", value = "$.ms", unit = "Milliseconds", by_tool = true }
+    unauthorized = { pattern = "{ $.event = \"unauthorized\" }", name = "Unauthorized", value = "1", unit = "Count", by_tool = false }
+  }
+  vuln_mcp_metric_filter_resources = length(local.vuln_mcp_resources) > 0 ? local.vuln_mcp_metric_filters : {}
+}
+
+resource "aws_cloudwatch_log_metric_filter" "vuln_mcp" {
+  for_each = local.vuln_mcp_metric_filter_resources
+
+  name           = "${var.project_name}-vuln-mcp-${each.key}"
+  log_group_name = aws_cloudwatch_log_group.vuln_mcp["vuln_mcp"].name
+  pattern        = each.value.pattern
+
+  metric_transformation {
+    namespace  = "AILab/Tools"
+    name       = each.value.name
+    value      = each.value.value
+    unit       = each.value.unit
+    dimensions = each.value.by_tool ? { Tool = "$.tool" } : null
+  }
 }
 
 resource "aws_lambda_function" "vuln_mcp" {
@@ -121,10 +180,10 @@ resource "aws_lambda_function" "vuln_mcp" {
   memory_size      = 256
 
   environment {
-    variables = {
+    variables = merge({
       TABLE_NAME            = var.vuln_mcp_table_name
       AUTH_TOKEN_SECRET_ARN = coalesce(var.vuln_mcp_token_secret_arn, "")
-    }
+    }, local.log_mcp_environment)
   }
 
   lifecycle {

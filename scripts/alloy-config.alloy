@@ -8,7 +8,13 @@
 // ---- Metrics: host health plus the state of the lab's services ----
 
 prometheus.exporter.unix "host" {
-	enable_collectors = ["systemd"]
+	enable_collectors = ["systemd", "textfile"]
+
+	// The lab's own metrics (GPU, tokens, model load, idle timers), written every 30 seconds by
+	// ai-lab-metrics. Names and meanings: docs/monitoring-spec.md.
+	textfile {
+		directory = "/var/lib/ai-lab/metrics"
+	}
 
 	systemd {
 		unit_include = "(ollama|docker|alloy|amazon-ssm-agent|snap.amazon-ssm-agent.amazon-ssm-agent|ai-lab-.*)\\.(service|timer)"

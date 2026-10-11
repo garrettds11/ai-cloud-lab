@@ -2,6 +2,7 @@
 
 import datetime
 import importlib.util
+import json
 import os
 import pathlib
 import unittest
@@ -33,7 +34,7 @@ def point(value, stat):
 
 class WatchdogTest(unittest.TestCase):
     def run_handler(self, *, state="running", uptime=120, agent=None, alb=None, alb_dimension="app/lab/abc", idle=60, cap=0,
-                    reset_minutes_ago=None, reset_value=None, reset_error=None):
+                    reset_minutes_ago=None, reset_value=None, reset_error=None, policy=None, absolute=0):
         """agent: None for silent, else dict(idle=, users=). alb: request count, None for no data.
         idle: idle shutdown minutes (0 = off). cap: hard limit minutes (0 = none).
         reset_minutes_ago: the control panel's timer reset happened that many minutes ago
@@ -71,8 +72,21 @@ class WatchdogTest(unittest.TestCase):
             value = reset_value if reset_value is not None else str(int((NOW - datetime.timedelta(minutes=reset_minutes_ago)).timestamp()))
             ssm.get_parameter.return_value = {"Parameter": {"Value": value}}
 
+        reset_read = ssm.get_parameter
+        missing = ClientError({"Error": {"Code": "ParameterNotFound", "Message": "x"}}, "GetParameter")
+
+        def read(Name):  # policy: the panel's timer policy parameter value, None = it does not exist
+            if Name == "/proj/auto-stop/policy":
+                if policy is None:
+                    raise missing
+                return {"Parameter": {"Value": policy}}
+            return reset_read(Name=Name)
+
+        ssm = mock.Mock(get_parameter=read)
+
         with mock.patch.multiple(
             watchdog,
+            POLICY_PARAMETER="/proj/auto-stop/policy",
             ec2=ec2,
             cloudwatch=cloudwatch,
             sns=sns,
@@ -82,6 +96,7 @@ class WatchdogTest(unittest.TestCase):
             ALB_DIMENSION=alb_dimension,
             IDLE_MINUTES=idle,
             MAX_UPTIME_MINUTES=cap,
+            ABSOLUTE_MAX_MINUTES=absolute,
         ):
             result = watchdog.lambda_handler({}, None)
         return result, ec2, sns
@@ -252,6 +267,107 @@ class WatchdogTest(unittest.TestCase):
             ssm.get_parameter.side_effect = AssertionError("must not be read")
             result, _, _ = self.run_handler(uptime=200, agent={"idle": 0, "users": 3}, idle=0, cap=0)
         self.assertEqual(result["action"], "none")
+
+    # --- the panel's timer policy (shorter limits only)
+    def test_a_shorter_session_policy_stops_at_the_shorter_limit(self):
+        # Terraform limit 90, policy 60: 66 minutes in is past 60 + 5 grace.
+        result, ec2, _ = self.run_handler(uptime=66, agent={"idle": 0, "users": 3}, idle=0, cap=90, policy='{"max_uptime_minutes": 60}')
+        self.assertEqual(result["action"], "stop")
+        self.assertEqual(result["policy_limits"]["max_uptime_minutes"], 60)
+        ec2.stop_instances.assert_called_once()
+
+    def test_the_warning_counts_from_the_shorter_limit(self):
+        # 60 minute limit warns 30 minutes ahead, at 30 minutes; the Terraform 90 would warn at 60.
+        result, ec2, sns = self.run_handler(uptime=32, agent={"idle": 0, "users": 3}, idle=0, cap=90, policy='{"max_uptime_minutes": 60}')
+        self.assertTrue(result.get("alerted"))
+        self.assertIn("60 minutes", sns.publish.call_args.kwargs["Message"])
+        ec2.stop_instances.assert_not_called()
+
+    def test_a_longer_policy_never_loosens_the_limit(self):
+        result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, policy='{"max_uptime_minutes": 600}')
+        self.assertEqual(result["action"], "stop")
+        self.assertNotIn("policy_limits", result)
+
+    def test_a_policy_cannot_switch_a_limit_on_that_terraform_left_off(self):
+        result, ec2, _ = self.run_handler(uptime=600, agent={"idle": 0, "users": 3}, idle=0, cap=0, policy='{"max_uptime_minutes": 60}')
+        self.assertEqual(result["action"], "none")
+        ec2.stop_instances.assert_not_called()
+
+    def test_a_shorter_idle_policy_applies_to_the_failed_shutdown_check(self):
+        # Idle limit 60 -> 30; the agent reports 36 idle minutes, past 30 + 5 grace.
+        result, ec2, _ = self.run_handler(uptime=200, agent={"idle": 36, "users": 0}, idle=60, cap=0, policy='{"idle_minutes": 30}')
+        self.assertEqual(result["action"], "stop")
+        ec2.stop_instances.assert_called_once()
+
+    def test_bad_policy_values_are_ignored(self):
+        for bad in ('not json', '[]', '{"max_uptime_minutes": "30"}', '{"max_uptime_minutes": 0}', '{"max_uptime_minutes": -5}',
+                    '{"max_uptime_minutes": true}', '{"max_uptime_minutes": 30.5}', '{}'):
+            with self.subTest(policy=bad):
+                result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, policy=bad)
+                self.assertEqual(result["action"], "stop")
+                self.assertNotIn("policy_limits", result)
+
+    def test_an_unreadable_policy_keeps_the_lab_limits(self):
+        with mock.patch.object(watchdog, "_limits", wraps=watchdog._limits):
+            result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, policy="{")
+        self.assertEqual(result["action"], "stop")
+
+    def test_the_policy_is_not_read_when_both_limits_are_off(self):
+        result, _, _ = self.run_handler(uptime=200, agent={"idle": 0, "users": 3}, idle=0, cap=0, policy="{")
+        self.assertEqual(result["action"], "none")
+
+    # --- the absolute limit: from launch only, nothing the panel writes moves it
+    def test_the_absolute_limit_alone_stops_just_after_it(self):
+        result, ec2, _ = self.run_handler(uptime=106, agent={"idle": 0, "users": 3}, idle=0, cap=0, absolute=100)
+        self.assertEqual(result["action"], "stop")
+        ec2.stop_instances.assert_called_once_with(InstanceIds=["i-0123"])
+
+    def test_the_agent_gets_a_few_minutes_to_stop_first(self):
+        result, ec2, _ = self.run_handler(uptime=103, agent={"idle": 0, "users": 3}, idle=0, cap=0, absolute=100)
+        self.assertEqual(result["action"], "none")
+        ec2.stop_instances.assert_not_called()
+
+    def test_a_reset_does_not_extend_it(self):
+        result, ec2, _ = self.run_handler(uptime=500, agent={"idle": 0, "users": 3}, idle=0, cap=1000, reset_minutes_ago=10, absolute=480)
+        self.assertEqual(result["action"], "stop")
+        ec2.stop_instances.assert_called_once()
+
+    def test_a_malformed_reset_or_policy_cannot_extend_it(self):
+        for kwargs in ({"reset_value": "garbage"}, {"reset_value": "9" * 30}, {"reset_error": "AccessDeniedException"}, {"reset_error": "network"},
+                       {"policy": "not json"}, {"policy": "[]"}, {"policy": json.dumps({"max_uptime_minutes": 99999, "absolute_max_minutes": 99999})}):
+            result, ec2, _ = self.run_handler(uptime=500, agent={"idle": 0, "users": 3}, idle=0, cap=0, absolute=480, **kwargs)
+            self.assertEqual(result["action"], "stop", kwargs)
+            ec2.stop_instances.assert_called_once()
+
+    def test_the_nearer_of_the_two_limits_wins(self):
+        result, ec2, _ = self.run_handler(uptime=106, agent={"idle": 0, "users": 3}, idle=0, cap=1000, absolute=100)
+        self.assertEqual(result["action"], "stop")
+        result, ec2, _ = self.run_handler(uptime=96, agent={"idle": 0, "users": 3}, idle=0, cap=90, absolute=1000)
+        self.assertEqual(result["action"], "stop")
+
+    def test_it_warns_thirty_minutes_ahead_once(self):
+        result, ec2, sns = self.run_handler(uptime=72, agent={"idle": 0, "users": 3}, idle=0, cap=0, absolute=100)
+        self.assertTrue(result.get("alerted"))
+        sns.publish.assert_called_once()
+        self.assertIn("absolute time limit", sns.publish.call_args.kwargs["Message"])
+        ec2.stop_instances.assert_not_called()
+        _, _, sns = self.run_handler(uptime=80, agent={"idle": 0, "users": 3}, idle=0, cap=0, absolute=100)
+        sns.publish.assert_not_called()
+
+    def test_both_warnings_in_one_run_send_one_email(self):
+        _, _, sns = self.run_handler(uptime=72, agent={"idle": 0, "users": 3}, idle=0, cap=100, absolute=100)
+        sns.publish.assert_called_once()
+
+    def test_off_means_off(self):
+        result, ec2, _ = self.run_handler(uptime=5000, agent={"idle": 0, "users": 3}, idle=0, cap=0, absolute=0)
+        self.assertEqual(result["action"], "none")
+        ec2.stop_instances.assert_not_called()
+        self.assertNotIn("absolute_limit_minutes", result)
+
+    def test_it_does_not_stop_a_stopped_instance(self):
+        result, ec2, _ = self.run_handler(state="stopped", uptime=5000, idle=0, cap=0, absolute=100)
+        self.assertEqual(result["action"], "none")
+        ec2.stop_instances.assert_not_called()
 
 
 if __name__ == "__main__":

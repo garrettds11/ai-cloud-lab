@@ -35,7 +35,7 @@ locals {
   cloudflare_resources    = var.enable_cloudflare_access ? { domain = true } : {}
   http_redirect_resources = var.enable_domain_access && var.enable_alb_http_redirect ? { domain = true } : {}
   cognito_resources       = var.enable_cognito ? { domain = true } : {}
-  auto_stop_enabled       = var.auto_stop_idle_minutes > 0 || var.auto_stop_max_uptime_minutes > 0
+  auto_stop_enabled       = var.auto_stop_idle_minutes > 0 || var.auto_stop_max_uptime_minutes > 0 || var.auto_stop_absolute_max_minutes > 0
   auto_stop_resources     = local.auto_stop_enabled ? { auto_stop = true } : {}
   cognito_cloudflare_idp  = var.enable_cognito && var.enable_cloudflare_access ? { domain = true } : {}
   # Everyone who can sign in through Cognito: the Open WebUI administrator, the demo
@@ -298,7 +298,10 @@ resource "aws_iam_role_policy" "open_webui_admin_password" {
         var.open_webui_demo_user_password_secret_arn == null ? [] : [data.aws_secretsmanager_secret.open_webui_demo_password[0].arn],
         var.enable_grafana_telemetry && var.grafana_credentials_secret_arn != null ? [var.grafana_credentials_secret_arn] : [],
         # Only the instance (not the Lambda) reads the MCP token, to put it in Open WebUI at boot.
-        var.vuln_mcp_table_name != null && var.vuln_mcp_token_secret_arn != null ? [var.vuln_mcp_token_secret_arn] : []
+        var.vuln_mcp_table_name != null && var.vuln_mcp_token_secret_arn != null ? [var.vuln_mcp_token_secret_arn] : [],
+        # Tokens for tool servers the control panel adds are read here, at the moment Open WebUI is told about them.
+        # The panel can only choose secrets under this prefix; it cannot read any other.
+        ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/tool-tokens/*"]
       )
     }]
   })
@@ -343,6 +346,14 @@ locals {
     asset_sha_idle_check                 = local.lab_asset_sha256["ai-lab-idle-check"]
     asset_sha_register_vuln_mcp          = local.lab_asset_sha256["ai-lab-register-vuln-mcp"]
     asset_sha_alloy_config               = local.lab_asset_sha256["alloy-config.alloy"]
+    asset_sha_session_log                = local.lab_asset_sha256["ai-lab-session-log"]
+    asset_sha_usage                      = local.lab_asset_sha256["ai-lab-usage"]
+    asset_sha_set_role                   = local.lab_asset_sha256["ai-lab-set-role"]
+    asset_sha_chat_test                  = local.lab_asset_sha256["ai-lab-chat-test"]
+    asset_sha_metrics                    = local.lab_asset_sha256["ai-lab-metrics"]
+    asset_sha_webui_lib                  = local.lab_asset_sha256["ai-lab-webui-lib.sh"]
+    instance_type                        = var.instance_type
+    instance_hourly_cost_usd             = var.instance_hourly_cost_usd == null ? "" : var.instance_hourly_cost_usd
     grafana_enabled                      = var.enable_grafana_telemetry ? "true" : "false"
     grafana_otlp_instance_id             = var.grafana_otlp_instance_id == null ? "" : var.grafana_otlp_instance_id
     grafana_otlp_endpoint                = var.grafana_otlp_endpoint == null ? "" : var.grafana_otlp_endpoint

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -111,6 +112,30 @@ class CoverageTests(unittest.TestCase):
             self.assertEqual(status["blocking_findings"], 1)
             self.assertTrue((output / "reports/repository/results.sarif").is_file())
             self.assertNotIn("sensitive value", (output / "reports/repository/results.sarif").read_text())
+
+    def test_registry_failure_retries_same_digest_and_preserves_success(self):
+        target = {"id": "image", "kind": "image", "name": "registry/app:1",
+                  "scan_ref": "registry/app:1", "platform": "linux/amd64",
+                  "origins": [{"file": "compose.yaml", "line": 1}]}
+        with tempfile.TemporaryDirectory(dir=scan.ROOT / ".security-scan") as temporary:
+            output = Path(temporary)
+            (output / "inventory.json").write_text(json.dumps({"commit": "abc", "targets": [target]}))
+            calls = []
+            def run(command, **kwargs):
+                calls.append(command)
+                if len(calls) < 3:
+                    raise subprocess.CalledProcessError(1, command)
+                (output / "image.raw.json").write_text('{"SchemaVersion":2,"Results":[]}')
+            with patch("scan.OUT", output), patch("scan.os.getuid", return_value=1000, create=True), \
+                    patch("scan.os.getgid", return_value=1000, create=True), \
+                    patch("scan.resolve_image", return_value="registry/app@sha256:" + "a" * 64), \
+                    patch("scan.subprocess.check_output", return_value='{"Version":"0.75.0"}'), \
+                    patch("scan.subprocess.run", side_effect=run), patch("scan.time.sleep"):
+                self.assertEqual(scan.scan("image"), 0)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(calls[0], calls[1])
+            self.assertEqual(calls[1], calls[2])
+            self.assertEqual(json.loads((output / "reports/image/status.json").read_text())["scan_attempts"], 3)
 
 
 class InventoryTests(unittest.TestCase):

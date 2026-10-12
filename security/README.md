@@ -37,6 +37,9 @@ so one matrix upload cannot replace another target's results.
 - Scanner errors, unresolved digests, missing reports and failed SARIF uploads
   fail `Security assessment gate`. Findings and available partial evidence are
   uploaded even when the scan gate fails.
+- Transient scanner/registry process failures retry at most three times against
+  the same resolved image digest with a shared timeout. Findings never trigger
+  retries. Artifact names support reruns without upload conflicts.
 
 SARIF appears under the repository's **Security → Code scanning**. Each run also
 retains sanitized JSON/SARIF artifacts and a `security-evidence` artifact for 90

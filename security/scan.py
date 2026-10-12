@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,10 +135,23 @@ def scan(target_id):
         else:
             command = ["fs", "--scanners", "vuln,secret,misconfig", "/work/" + target["scan_ref"]]
         # Findings don't determine the process exit code until reports are persisted.
-        subprocess.run(docker + command[:-1] + ["--cache-dir", "/cache", "--timeout", "45m",
+        scan_command = docker + command[:-1] + ["--cache-dir", "/cache", "--timeout", "45m",
                        "--format", "json", "--list-all-pkgs", "--exit-code", "0",
-                       "--output", "/output/" + raw.name, command[-1]],
-                       check=True, timeout=3000)
+                       "--output", "/output/" + raw.name, command[-1]]
+        # Registry streams can fail mid-layer. Retry the same immutable target,
+        # with a shared time budget; CVE/secret findings never trigger retries.
+        deadline = time.monotonic() + 3000
+        for attempt in range(1, 4):
+            status["scan_attempts"] = attempt
+            try:
+                subprocess.run(scan_command, check=True,
+                               timeout=max(1, int(deadline - time.monotonic())))
+                break
+            except subprocess.CalledProcessError:
+                if attempt == 3 or time.monotonic() >= deadline:
+                    raise
+                raw.unlink(missing_ok=True)
+                time.sleep(5)
         report = json.loads(raw.read_text())
         if report.get("SchemaVersion") != 2:
             raise ValueError("Unexpected Trivy report schema")

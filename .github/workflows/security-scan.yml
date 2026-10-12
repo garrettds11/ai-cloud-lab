@@ -38,6 +38,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: security-inputs
+          overwrite: true
           path: |
             .security-scan/inventory.json
             .security-scan/inputs/
@@ -82,6 +83,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: security-report-${{ matrix.id }}
+          overwrite: true
           path: .security-scan/reports/${{ matrix.id }}/
           include-hidden-files: true
           if-no-files-found: error
@@ -128,6 +130,7 @@ jobs:
             .security-scan/coverage.json
             .security-scan/SHA256SUMS
           include-hidden-files: true
+          overwrite: true
           if-no-files-found: error
           retention-days: 90
 

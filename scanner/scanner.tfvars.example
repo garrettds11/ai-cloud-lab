@@ -1,0 +1,36 @@
+aws_region                         = "us-east-1"
+name                               = "ai-lab-scanner"
+lab_instance_id                    = "i-0123456789abcdef0"
+lab_private_ip                     = "172.31.1.10"
+lab_vpc_id                         = "vpc-0123456789abcdef0"
+lab_route_table_ids                = ["rtb-0123456789abcdef0"]
+lab_security_group_id              = "sg-0123456789abcdef0"
+lab_events_table_name              = "control_panel_events"
+public_hostname                    = "lab.example.com"
+control_panel_hostname             = "cp.aiwebdemo.click"
+control_panel_api_id               = "abc123def4"
+control_panel_jwt_issuer           = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_REPLACE"
+control_panel_jwt_audiences        = ["REPLACE_WITH_ACTIVE_APP_CLIENT_ID"]
+# Get this map with terraform output -json scanner_functions in dashboards/api/terraform.
+control_panel_functions = {
+  customer = {
+    arn      = "arn:aws:lambda:us-east-1:123456789012:function:control-panel-customer"
+    role_arn = "arn:aws:iam::123456789012:role/control-panel-customer"
+  }
+  admin = {
+    arn      = "arn:aws:lambda:us-east-1:123456789012:function:control-panel-admin"
+    role_arn = "arn:aws:iam::123456789012:role/control-panel-admin"
+  }
+  spend = {
+    arn      = "arn:aws:lambda:us-east-1:123456789012:function:control-panel-spend"
+    role_arn = "arn:aws:iam::123456789012:role/control-panel-spend"
+  }
+}
+# Populate if any configured functions use layers or managed IAM policies/boundaries.
+control_panel_layer_version_arns = []
+control_panel_policy_arns        = []
+open_webui_image_digest            = "ghcr.io/open-webui/open-webui@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+open_webui_container_name          = "open-webui"
+ssh_public_key                     = "ssh-rsa AAAA... scanner-only"
+ssh_private_key_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:scanner-ssh-AbCdEf"
+greenbone_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:greenbone-admin-AbCdEf"

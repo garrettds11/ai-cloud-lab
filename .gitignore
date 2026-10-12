@@ -34,3 +34,5 @@ OLD-terraform-smoke-test-plan.md
 
 # Control API Terraform stack build output
 dashboards/api/terraform/.build/
+scanner/orchestrator.zip
+.security-scan/

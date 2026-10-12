@@ -497,6 +497,20 @@ Terraform asks to copy the existing local state to S3; answer `yes`. Afterwards,
 
 Versioning lets you recover an earlier state file if one is damaged or overwritten.
 
+## Vulnerability scanning
+
+The [scanner stack](scanner/README.md) adds scheduled and on-demand Greenbone
+host/public scans plus Trivy image and deployed Lambda artifact scanning. It
+includes the control-panel public target and live Lambda/IAM/HTTP API checks.
+It uses a separate Terraform state
+and records scan-initiated lab starts under a scanner identity in the control
+panel's cost ledger.
+
+The [CI security assessment](security/README.md) scans repository source,
+Terraform-defined Lambda packages, logging packages, and all referenced container
+images. It publishes SARIF to GitHub code scanning and signs an evidence bundle
+on trusted `dev`/`main` runs, including hashes, scan versions and coverage status.
+
 ## Stop Or Destroy
 
 Stop the instance when not in use:

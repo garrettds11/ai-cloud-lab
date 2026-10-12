@@ -58,3 +58,14 @@ output "lab_tfvars" {
     control_panel_entitlements_table = "${aws_dynamodb_table.entitlements.name}"
   EOT
 }
+output "scanner_functions" {
+  description = "Explicit function and execution-role inventory for scanner.control_panel_functions."
+  value = merge({
+    for name, function in aws_lambda_function.function : name => {
+      arn      = function.arn
+      role_arn = aws_iam_role.function[name].arn
+    }
+    }, {
+    spend = { arn = aws_lambda_function.spend.arn, role_arn = aws_iam_role.spend.arn }
+  })
+}

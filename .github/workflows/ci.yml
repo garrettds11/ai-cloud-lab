@@ -48,6 +48,13 @@ jobs:
           terraform validate
           terraform test
 
+      - name: Scanner stack - init, validate, test
+        working-directory: scanner
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
   scripts:
     name: Shell scripts and Lambda
     runs-on: ubuntu-latest
@@ -88,6 +95,9 @@ jobs:
         run: |
           pip install pytest pyyaml openapi-spec-validator
           python -m pytest -q
+
+      - name: Scanner controller and assessment tests
+        run: python -m unittest discover -s scanner -p 'test_*.py' -v
 
   # Blocking. Every checkov finding is either fixed or skipped inline, next to the resource,
   # with the reason (search for "checkov:skip"). A new finding fails the build: fix it, or add

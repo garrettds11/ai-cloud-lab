@@ -1,0 +1,178 @@
+name: Security assessment
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  schedule:
+    - cron: '15 19 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-assessment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    name: Inventory and package deployable assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.inventory.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r security/requirements.txt
+      - name: Test coverage, report redaction and failure handling
+        run: python -m unittest discover -s security -p 'test_*.py' -v
+      - name: Derive inventory and package inputs
+        id: inventory
+        run: python security/inventory.py
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-inputs
+          path: |
+            .security-scan/inventory.json
+            .security-scan/inputs/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  scan:
+    name: Trivy / ${{ matrix.id }}
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.inventory.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: security-inputs
+          path: .security-scan
+      - name: Scan immutable image or packaged filesystem
+        env:
+          TARGET_ID: ${{ matrix.id }}
+        run: python3 security/scan.py "$TARGET_ID"
+      # Publish even when the scan policy fails; findings are useful evidence.
+      - name: Publish SARIF to repository code scanning
+        if: ${{ !cancelled() && hashFiles(format('.security-scan/reports/{0}/results.sarif', matrix.id)) != '' }}
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        with:
+          sarif_file: .security-scan/reports/${{ matrix.id }}/results.sarif
+          category: trivy/${{ matrix.id }}
+          wait-for-processing: true
+      - name: Retain sanitized scan evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-report-${{ matrix.id }}
+          path: .security-scan/reports/${{ matrix.id }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+
+  evidence:
+    name: Publish assessment evidence
+    if: ${{ !cancelled() && needs.inventory.result == 'success' }}
+    needs: [inventory, scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      policy_passed: ${{ steps.bundle.outputs.policy_passed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: security-inputs
+          path: .security-scan
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: security-report-*
+          path: .security-scan/reports
+          # Each download lives in security-report-ID; normalize below without merging
+          # identically named status.json/results.sarif files from different targets.
+      - name: Normalize report directories
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('.security-scan/reports')
+          for path in root.glob('security-report-*'):
+              path.rename(root / path.name.removeprefix('security-report-'))
+          PY
+      - name: Reconcile coverage and create evidence bundle
+        id: bundle
+        run: python3 security/bundle.py
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-evidence
+          path: |
+            .security-scan/security-evidence.tar.gz
+            .security-scan/coverage.json
+            .security-scan/SHA256SUMS
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+
+  attest:
+    name: Attest trusted branch scan evidence
+    needs: evidence
+    # No signing tokens are granted to PRs, including same-repository PRs.
+    if: ${{ !cancelled() && needs.evidence.result == 'success' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      # This privileged job never checks out or executes repository source.
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: security-evidence
+          path: evidence
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: evidence/security-evidence.tar.gz
+
+  security-gate:
+    name: Security assessment gate
+    if: ${{ always() }}
+    needs: [inventory, scan, evidence, attest]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require complete assessment, policy and publication
+        env:
+          INVENTORY: ${{ needs.inventory.result }}
+          SCAN: ${{ needs.scan.result }}
+          EVIDENCE: ${{ needs.evidence.result }}
+          ATTEST: ${{ needs.attest.result }}
+          POLICY_PASSED: ${{ needs.evidence.outputs.policy_passed }}
+          REQUIRE_ATTESTATION: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        run: |
+          test "$INVENTORY" = success
+          test "$SCAN" = success
+          test "$EVIDENCE" = success
+          test "$POLICY_PASSED" = true
+          if [ "$REQUIRE_ATTESTATION" = true ]; then
+            test "$ATTEST" = success
+          fi

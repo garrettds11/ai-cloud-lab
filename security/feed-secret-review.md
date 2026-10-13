@@ -1,7 +1,7 @@
 # Greenbone feed secret review
 
 Reviewed 13 October 2026 against completed assessment
-[38342215823](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38342215823).
+[38436885181](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38436885181).
 
 ## Disposition
 
@@ -13,7 +13,7 @@ No CVE finding or PostgreSQL TLS key is covered by this review.
 
 The machine-readable [review](feed-secret-review.json) records every exact path,
 rule, line, verified file SHA256 and rationale. It applies only to
-`registry.community.greenbone.net/community/vulnerability-tests@sha256:c165a094faa041b30f66f20b1a7966f8f411e05347487c4a20262da4755c3da0`
+`registry.community.greenbone.net/community/vulnerability-tests@sha256:3439f12de7fe33d36648808ba37aab8d00ed7557c8e5ca12cb573fca9ff3d4e6`
 on linux/amd64, and expires **12 November 2026 at 00:00 UTC**. Changed image digests,
 rules, paths or line numbers require new review. A registry tag or path pattern
 alone never grants a disposition. This is a test-data classification, not
@@ -25,8 +25,14 @@ The OCI index/manifest and all four compressed image layer hashes were verified
 against their registry SHA256 digests. Only the flagged regular files were read
 from the tar archives; no image or NASL code was executed. Each file's complete
 bytes were hashed. All flagged files occurred in layer
-`sha256:f63f3a554c6203a31c7be7a9895b79f022e7e60ba2e079263c57f049ec08758b`.
+`sha256:9197879eeb214d70265dcec9370270b5cfb85cb750a6174650cb135079e90ec9`.
 Matched key/token values are excluded from this document and published evidence.
+
+The feed image changed after the first review of digest `c165a094...`. The new
+index/manifest and all four compressed layers were independently verified. All
+28 flagged files have exactly the previously reviewed full-file SHA256 hashes;
+all 72 paths, rules and line numbers are unchanged. The review was renewed for
+the new exact image digest without extending its expiry or changing its scope.
 
 | File within each feed's NASL directory | Matches per copy | Evidence from file contents |
 | --- | ---: | --- |
@@ -50,10 +56,10 @@ All other secrets and HIGH/CRITICAL CVEs remain blocking, including unfixed CVEs
 Invalid review manifests fail the scan. Unit tests cover digest/path/line/rule
 drift, other images, CVEs, expiry, invalid reviews and replayed dispositions.
 
-## PostgreSQL keys remain open
+## PostgreSQL service keys
 
-Both PostgreSQL images contain `/etc/ssl/private/ssl-cert-snakeoil.key`.
-These are actual bundled service-key material, unlike the feed test payloads.
-They remain blocking pending an image rebuild that removes the shared key and
-uses a newly generated key if TLS is required. Suppressing the filename would
-hide a different class of risk and is not justified by this feed review.
+The original PostgreSQL server and migrator images contained a shared
+`/etc/ssl/private/ssl-cert-snakeoil.key`. Those service keys were never covered
+by this review. Both [managed rebuilds](../scanner/image_builds/README.md) now
+remove the bundled key and generate a unique runtime key. Their fresh CI scans
+report zero secret detections; residual vulnerabilities remain blocking.

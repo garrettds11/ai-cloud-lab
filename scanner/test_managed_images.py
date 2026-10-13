@@ -14,8 +14,10 @@ def setUpModule():
 class ManagedImageTests(unittest.TestCase):
     def test_recipe_matches_digest_pinned_base(self):
         images = managed_images.definitions(Path(__file__).parent / "image_builds")
-        self.assertEqual(len(images), 1)
-        self.assertEqual(len(images[0]["recipe_files"]), 2)
+        self.assertEqual({image["context"] for image in images},
+                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas"})
+        for image in images:
+            self.assertTrue(image["recipe_files"])
 
     def test_changed_compose_fails_before_build(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent.parent / ".security-scan") as temporary:
@@ -27,20 +29,21 @@ class ManagedImageTests(unittest.TestCase):
                 build.assert_not_called()
 
     def test_compose_uses_built_id_and_preserves_other_images(self):
-        image = managed_images.definitions(Path(__file__).parent / "image_builds")[0]
+        images = managed_images.definitions(Path(__file__).parent / "image_builds")
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent.parent / ".security-scan") as temporary:
             compose = Path(temporary) / "compose.yaml"
-            compose.write_text("services:\n  pg:\n    image: '" + image["reference"] + "' # upstream\n"
-                               "  migrator:\n    image: " + managed_images.pins(Path(__file__).parent / "image_builds")[0]["reference"] + "\n"
-                               "  feed:\n    image: other/feed:latest\n")
-            result = dict(image, image_id="sha256:" + "1" * 64)
-            with patch("managed_images.build", return_value=result):
+            compose.write_text("services:\n" + "".join(
+                "  " + image["context"] + ":\n    image: '" + image["reference"] + "' # upstream\n"
+                for image in images) + "  feed:\n    image: other/feed:latest\n")
+            results = [dict(image, image_id="sha256:" + str(index + 1) * 64)
+                       for index, image in enumerate(images)]
+            with patch("managed_images.build", side_effect=results):
                 records = managed_images.prepare(compose, Path(__file__).parent / "image_builds")
-            self.assertEqual(records[0]["image_id"], result["image_id"])
-            self.assertIn(managed_images.pins(Path(__file__).parent / "image_builds")[0]["image"], compose.read_text())
-            self.assertIn(result["image_id"] + " # upstream", compose.read_text())
+            self.assertEqual([record["image_id"] for record in records], [result["image_id"] for result in results])
+            for result in results:
+                self.assertIn(result["image_id"] + " # upstream", compose.read_text())
+                self.assertNotIn(result["reference"], compose.read_text())
             self.assertIn("other/feed:latest", compose.read_text())
-            self.assertNotIn(image["reference"], compose.read_text())
 
     def test_mutable_base_or_mismatched_dockerfile_fails(self):
         for base, recipe in (("registry/app:latest", "FROM registry/app:latest\n"),

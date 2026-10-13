@@ -1,17 +1,36 @@
 {
   "schema_version": 1,
-  "pins": [
-    {
-      "reference": "registry.community.greenbone.net/community/pg-gvm-migrator:stable",
-      "image": "registry.community.greenbone.net/community/pg-gvm-migrator@sha256:201da953f12dd26c84db8aa0117465de0aac9916f4e1d2d60b4fcb6f86176d4e"
-    }
-  ],
+  "pins": [],
   "images": [
     {
       "reference": "registry.community.greenbone.net/community/pg-gvm:stable",
       "base": "registry.community.greenbone.net/community/pg-gvm@sha256:b81bc5d7a750203ea25c6e4dd086751ecee8e388d1cb2501c60b3805e0056204",
       "context": "pg-gvm",
       "tag": "ai-cloud-lab/pg-gvm:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/pg-gvm-migrator:stable",
+      "base": "registry.community.greenbone.net/community/pg-gvm-migrator@sha256:201da953f12dd26c84db8aa0117465de0aac9916f4e1d2d60b4fcb6f86176d4e",
+      "context": "pg-gvm-migrator",
+      "tag": "ai-cloud-lab/pg-gvm-migrator:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/redis-server",
+      "base": "registry.community.greenbone.net/community/redis-server@sha256:6da6a7c7221aa3ab231961fd6ca001d552b6a2c7727ac6201c6d8a360baa963a",
+      "context": "redis-server",
+      "tag": "ai-cloud-lab/redis-server:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/gvm-tools",
+      "base": "registry.community.greenbone.net/community/gvm-tools@sha256:a3ec2b8d2281e1a0bea147f1a6fbe00d22eab26db1c114bebf7bb2beed0a5619",
+      "context": "gvm-tools",
+      "tag": "ai-cloud-lab/gvm-tools:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/ospd-openvas:stable",
+      "base": "registry.community.greenbone.net/community/ospd-openvas@sha256:31a85272abc77521c98451ce6834ed7d2f887e98ff1b26ff3fd94f00d000b169",
+      "context": "ospd-openvas",
+      "tag": "ai-cloud-lab/ospd-openvas:patched"
     }
   ]
 }

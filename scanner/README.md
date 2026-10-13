@@ -156,10 +156,12 @@ perform state-changing API operations or use an operator's login credentials.
 
 ## Offline verification
 
-The scanner uses a [managed PostgreSQL rebuild](image_builds/README.md) to apply
-available Debian updates and generate unique TLS keys instead of using the
-upstream shared key. It builds before starting Greenbone and reports the exact
-runtime image ID and vulnerability scan. CI assesses the same build recipe.
+The scanner uses [managed image rebuilds](image_builds/README.md) for PostgreSQL,
+its migrator, Redis, gvm-tools and OSPD to apply available Debian updates. Both
+PostgreSQL images generate unique runtime TLS keys instead of retaining upstream
+shared keys. It builds before starting Greenbone and reports each exact runtime
+image ID and vulnerability scan. CI assesses the same recipes. Approved ECR
+releases and patched Ubuntu AMIs are tracked in issue #90.
 
 ```powershell
 python -m unittest discover -s scanner -p 'test_*.py' -v

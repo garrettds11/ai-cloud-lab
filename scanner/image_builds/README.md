@@ -14,13 +14,30 @@ a unique RSA key/certificate on first container start, restricts key permissions
 to root and the upstream `ssl-cert` group, then runs the original entrypoint.
 The upstream command, health check, database volumes and Greenbone extensions
 are retained. No production database migration was performed by this change.
-The paired migrator is pinned to its assessed digest so a moving upstream tag
-cannot silently change its target PostgreSQL major independently of this base.
-Pinning does not remediate the migrator's existing CVEs or shared-key detection.
+The paired migrator now has its own managed rebuild from a coordinated pinned
+base. Available patches update its PostgreSQL 13–17 binaries without changing
+the default target major (17). Its wrapper generates a unique runtime TLS key
+before dispatching the original `tini` and upgrade command, so old clusters that
+reference Debian's certificate paths can still start for recovery. The shared
+upstream private key is absent from the final image.
 
 The self-signed certificate is for the internal scanner database. It does not
 establish a public trust chain or add a public database endpoint. Container
 recreation generates another fresh key; normal restarts retain the existing key.
+
+## Scanner services and tools
+
+`redis-server`, `gvm-tools` and `ospd-openvas` also receive available Debian
+package updates from digest-pinned bases. Redis returns to its original `redis`
+user after the build. The tools and OSPD retain their upstream entrypoints,
+which select the `gvm` and `ospd-openvas` service users. Scanner capability
+handling is inherited because raw network checks require it. These recipes do
+not claim a complete container configuration hardening baseline.
+
+The previously assessed OSPD digest was no longer available upstream on 13
+October. Its replacement, version 22.10.6 with OpenVAS 23.51.0, is recorded in
+the manifest and independently assessed; comparisons with the previous CI
+report include both upstream changes and the additional package updates.
 
 ## CI and runtime
 
@@ -34,12 +51,12 @@ the final image is the deployable asset assessed by the gate.
 
 Terraform uploads a checksum-verified ZIP of the build contexts plus the builder
 to the scanner's existing private assets bucket. At scan time the instance builds
-the same recipe, rewrites the exact PostgreSQL Compose reference to that built
-image ID and scans a static archive of the exact runtime image for vulnerabilities.
-`scanner-image-builds.json` and `scanner-image-pg-gvm.json` are published with run
+the recipes, rewrites each managed Compose reference to its built image ID and
+scans a static archive of each exact runtime image for vulnerabilities.
+`scanner-image-builds.json` and `scanner-image-<context>.json` are published with run
 reports. Building neither starts PostgreSQL nor reads AWS credentials into the
-build. The paired migrator uses its coordinated digest; other Greenbone images
-continue to use their upstream references.
+build. Greenbone images without a managed recipe continue to use their upstream
+references.
 
 CI and runtime resolve repository updates independently. They can produce
 different image IDs; runtime reports identify the actual deployed rebuild.
@@ -59,4 +76,16 @@ PostgreSQL **17.11**, TLS enabled, and `pg-gvm`, `pgcrypto`, `plpgsql` and
 fresh containers produced different certificate fingerprints. Compose startup
 using the immutable built image ID also passed. These checks do not establish
 acceptance of the entire Greenbone stack or compatibility with every legacy
-database migration path. The separate migrator image remains an open finding.
+database migration path. Residual image findings remain blocking.
+
+The patched migrator additionally passed a network-isolated PostgreSQL 13-to-17
+upgrade using disposable data. A test row and the `pgcrypto` extension survived
+the upgrade, and the health marker was written. Redis passed a Unix-socket PING
+as its non-root service user; `gvm-tools` passed its CLI/import checks as `gvm`.
+OpenVAS/OSPD passed version and import checks as `ospd-openvas`, sharing only a
+Redis Unix socket with another network-isolated container. These checks do not
+replace a complete feed-backed Greenbone acceptance scan.
+
+ECR publication of approved artifacts and patched Ubuntu AMI automation are
+tracked in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
+CI and runtime still build independently until that follow-up is implemented.

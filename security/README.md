@@ -14,7 +14,7 @@ commit pins; Trivy 0.75.0 uses the same immutable image as the runtime scanner.
 | Watchdog, vulnerability MCP, control API (customer/admin/spend), scanner controller | Assemble ZIP contents from **every** Terraform `archive_file` definition, honoring exclusions and filenames; scan unpacked contents and record ZIP/member SHA256 hashes |
 | Logging Distributor packages | Run the copied package builder, scan each ZIP's contents and record its exact SHA256 |
 | Logging backend images, Wazuh initialization images | Discover all Compose image declarations, including all optional backends and upstream Wazuh Compose at the bootstrap's pinned revision; deduplicate and scan each digest |
-| Greenbone stack | Fetch and hash upstream Compose; scan every unique deployable image, including feed/data and initialization containers. PostgreSQL, its migrator, Redis, gvm-tools and OSPD use [managed rebuilds](../scanner/image_builds/README.md), scanned as static image archives with base/recipe/image hashes recorded. |
+| Greenbone stack | Fetch and hash upstream Compose; scan every unique deployable image, including feed/data and initialization containers. PostgreSQL, its migrator, Redis, gvm-tools, OSPD and OpenVAS use [managed rebuilds](../scanner/image_builds/README.md), scanned as static image archives with base/recipe/image hashes recorded. |
 | Terraform policy | Existing blocking Checkov job; Trivy misconfiguration findings are additional advisory SARIF evidence |
 
 The current working tree contains **38 unique images and 11 packages**, plus a

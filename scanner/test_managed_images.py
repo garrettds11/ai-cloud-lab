@@ -15,7 +15,7 @@ class ManagedImageTests(unittest.TestCase):
     def test_recipe_matches_digest_pinned_base(self):
         images = managed_images.definitions(Path(__file__).parent / "image_builds")
         self.assertEqual({image["context"] for image in images},
-                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas"})
+                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas", "openvas-scanner"})
         for image in images:
             self.assertTrue(image["recipe_files"])
 

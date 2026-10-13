@@ -31,6 +31,12 @@
       "base": "registry.community.greenbone.net/community/ospd-openvas@sha256:31a85272abc77521c98451ce6834ed7d2f887e98ff1b26ff3fd94f00d000b169",
       "context": "ospd-openvas",
       "tag": "ai-cloud-lab/ospd-openvas:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/openvas-scanner:stable",
+      "base": "registry.community.greenbone.net/community/openvas-scanner@sha256:525c48bb93e39218d4de360a90d991a2ff735e1fe08f97ef35c5cbc375a08408",
+      "context": "openvas-scanner",
+      "tag": "ai-cloud-lab/openvas-scanner:patched"
     }
   ]
 }

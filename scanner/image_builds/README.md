@@ -27,7 +27,7 @@ recreation generates another fresh key; normal restarts retain the existing key.
 
 ## Scanner services and tools
 
-`redis-server`, `gvm-tools` and `ospd-openvas` also receive available Debian
+`redis-server`, `gvm-tools`, `ospd-openvas` and `openvas-scanner` receive available Debian
 package updates from digest-pinned bases. Redis returns to its original `redis`
 user after the build. The tools and OSPD retain their upstream entrypoints,
 which select the `gvm` and `ospd-openvas` service users. Scanner capability
@@ -85,6 +85,26 @@ as its non-root service user; `gvm-tools` passed its CLI/import checks as `gvm`.
 OpenVAS/OSPD passed version and import checks as `ospd-openvas`, sharing only a
 Redis Unix socket with another network-isolated container. These checks do not
 replace a complete feed-backed Greenbone acceptance scan.
+
+Additional local Trivy 0.75.0 scans of the final static image archives, using the
+13 October vulnerability database, produced the following blocking counts:
+
+| Image | Previous CI | Patched image | Removed CVE/package pairs | Secrets remaining |
+|---|---:|---:|---:|---:|
+| PostgreSQL migrator | 202 | 78 | 123 | 0 |
+| OSPD/OpenVAS | 397 | 177 | 220 | 0 |
+| Redis | 75 | 52 | 23 | 0 |
+| gvm-tools | 73 | 69 | 4 | 0 |
+| Standalone OpenVAS | 178 | 177 | 1 | 0 |
+
+The migrator's previous count included one shared-key secret detection. This
+iteration removes 371 HIGH/CRITICAL CVE/package pairs and that secret detection;
+no new HIGH/CRITICAL pairs were observed in these comparisons. OSPD's reduction
+includes the upstream replacement described above. All remaining findings stay
+blocking. CI must refresh these counts and publish the final SARIF evidence.
+The standalone OpenVAS and openvasd binaries also passed their version checks
+with an isolated Redis socket. None of the residual HIGH/CRITICAL findings in
+these five patched images reports an available fixed version in this scan.
 
 ECR publication of approved artifacts and patched Ubuntu AMI automation are
 tracked in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).

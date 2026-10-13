@@ -10,6 +10,8 @@ import sys
 import time
 from urllib.parse import quote
 
+from dispositions import classify, load
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
 TRIVY_IMAGE = "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
@@ -42,7 +44,8 @@ def findings(report):
 
 
 def gate(items):
-    return sum(item["kind"] == "secret" or
+    return sum((item["kind"] == "secret" and
+                item.get("disposition", {}).get("classification") != "false_positive") or
                (item["kind"] == "vulnerability" and item["severity"] in {"HIGH", "CRITICAL"})
                for item in items)
 
@@ -75,9 +78,12 @@ def sarif(target, items, version):
                         f"fixed: {item['FixedVersion'] or 'not available'}")
         elif item["kind"] == "secret":
             message += "; matching value redacted"
+            if item.get("disposition"):
+                message += ("; reviewed false positive: " + item["disposition"]["justification"] +
+                            "; review expires " + item["disposition"]["expires"])
         fingerprint = hashlib.sha256(json.dumps(
             [target["id"], rule_id, item["path"], item.get("PkgName"),
-             item.get("InstalledVersion"), line], separators=(",", ":")
+             item.get("InstalledVersion"), item["line"]], separators=(",", ":")
         ).encode()).hexdigest()
         results.append({"ruleId": rule_id,
                         "level": "error" if item["severity"] in {"CRITICAL", "HIGH"} else "warning",
@@ -88,6 +94,13 @@ def sarif(target, items, version):
                         "partialFingerprints": {"primaryLocationLineHash": fingerprint},
                         "properties": {"target": target["id"], "kind": item["kind"],
                                        "severity": item["severity"]}})
+        if item.get("disposition"):
+            disposition = item["disposition"]
+            results[-1]["suppressions"] = [{
+                "kind": "external", "status": "accepted",
+                "justification": disposition["justification"],
+            }]
+            results[-1]["properties"]["disposition"] = disposition
     return {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
             "runs": [{"tool": {"driver": {"name": "Trivy", "version": version,
                       "informationUri": "https://github.com/aquasecurity/trivy",
@@ -156,6 +169,12 @@ def scan(target_id):
         if report.get("SchemaVersion") != 2:
             raise ValueError("Unexpected Trivy report schema")
         items = findings(report)
+        status["raw_blocking_findings"] = gate(items)
+        review_path = ROOT / "security" / "feed-secret-review.json"
+        items = classify(items, status.get("resolved_image"), load(review_path),
+                         platform=target.get("platform"))
+        status["secret_review_sha256"] = hashlib.sha256(review_path.read_bytes()).hexdigest()
+        status["reviewed_false_positives"] = sum(bool(item.get("disposition")) for item in items)
         # Preserve DB timestamps/version after the scan, not just before first download.
         status["scanner_version_after"] = json.loads(subprocess.check_output(
             docker + ["--cache-dir", "/cache", "--version", "--format", "json"],

@@ -30,7 +30,13 @@ so one matrix upload cannot replace another target's results.
 ## Policy and publication
 
 - HIGH and CRITICAL CVEs block, including findings without fixes.
-- All detected secrets block. Evidence contains rule/path/line information and
+- Detected secrets block except the exact, expiring immutable-feed test-data
+  false positives documented in [the feed secret review](feed-secret-review.md).
+  Reviewed findings remain in JSON/SARIF with rationale and expiry; the review
+  manifest is included in the evidence bundle. GitHub may continue to display
+  reviewed alerts because its supported SARIF subset does not guarantee automatic
+  dismissal from suppression metadata. The CI gate uses the explicit review.
+  Evidence contains rule/path/line information and
   redacts matched values and source excerpts.
 - Trivy misconfiguration findings are advisory; Checkov remains the blocking
   Terraform policy. No blanket vulnerability ignores are introduced.

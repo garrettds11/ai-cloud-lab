@@ -1,8 +1,13 @@
 # Merge readiness and finding remediation
 
-Assessment: [run 38219813465](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38219813465), 12 October 2026.
+Assessment: [run 38342215823](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38342215823), reviewed 13 October 2026.
 Coverage is complete for the committed tree: 21 images, four Lambda ZIPs and source.
 There are 2,029 blocking finding instances, not 2,029 unique vulnerabilities.
+The verified [feed secret review](feed-secret-review.md) classifies 72 test-data
+detections as false positives for this exact immutable image. Replaying this
+assessment with the review leaves **1,957 blocking instances**: 1,955 CVEs and two
+PostgreSQL service-key detections. A new CI run must confirm the current digests
+and findings before using that count for a merge decision.
 
 ## Corrections in this PR
 
@@ -57,13 +62,15 @@ Trivy v0.75.0. Updating these version tags alone does not resolve the findings.
 3. **Greenbone:** review updated upstream image builds and scan their exact digests.
    Prioritize PostgreSQL, ospd-openvas and Redis fixable instances. Unfixed findings
    need vendor/reachability review and an explicit disposition.
-4. **Secret detections:** inspect the two PostgreSQL detections and the 72 feed
-   detections. NASL test payloads can contain intentional test credentials, but
-   evidence must establish that for each disposition before adding a narrow
-   exception. Matching values remain redacted from published evidence.
+4. **Secret detections:** the 72 feed detections are now reviewed with verified
+   file hashes and exact digest/path/rule/line dispositions, expiring 12 November.
+   The two PostgreSQL detections are bundled `ssl-cert-snakeoil.key` private keys
+   and remain blocking. Rebuild those images without shared service-key material;
+   generate fresh keys at runtime if TLS is required. Matching values remain
+   redacted from published evidence.
 
 The gate remains blocking. No vulnerability baselines, ignore-unfixed option,
-blanket secret suppression or risk acceptances have been added. Merge requires
+blanket secret suppression or CVE risk acceptances have been added. Merge requires
 remediation or reviewed, explicit exceptions for the residual blockers.
 
 Dockle can be tracked as a separate optional image-hardening follow-up. It does

@@ -10,11 +10,14 @@ import shutil
 import subprocess
 import urllib.request
 import zipfile
+import sys
 
 import hcl2
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
+sys.path.insert(0, str(ROOT / "scanner"))
+import managed_images
 
 
 def digest(data):
@@ -148,6 +151,9 @@ def main():
     files = sorted(set(files))
     known_files = set(files)
     targets, images, external = [], {}, []
+    managed = {image["reference"]: image for image in managed_images.definitions(ROOT / "scanner" / "image_builds")}
+    pins = {pin["reference"]: pin["image"] for pin in managed_images.pins(ROOT / "scanner" / "image_builds")}
+    dockerfiles = {"scanner/image_builds/" + image["context"] + "/Dockerfile" for image in managed.values()}
     snapshot = OUT / "inputs" / "repository"
     snapshot.mkdir(parents=True)
     sources = []
@@ -155,7 +161,7 @@ def main():
         path = ROOT / filename
         if not path.is_file() or path.is_symlink():
             raise ValueError(f"Missing or unsupported checkout entry: {filename}")
-        if path.name.startswith("Dockerfile"):
+        if path.name.startswith("Dockerfile") and filename not in dockerfiles:
             raise ValueError(f"Add a build-and-scan strategy for {filename}")
         destination = snapshot / filename
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -226,8 +232,23 @@ def main():
                        "scan_ref": snapshot.relative_to(ROOT).as_posix(),
                        "origins": [{"file": "README.md", "line": 1}]})
     for image, origins in sorted(images.items()):
-        targets.append({"id": identifier("image", image), "kind": "image", "name": image,
-                        "scan_ref": image, "origins": origins, "platform": "linux/amd64"})
+        target = {"id": identifier("image", image), "kind": "image", "name": image,
+                  "scan_ref": image, "origins": origins, "platform": "linux/amd64"}
+        if image in pins:
+            target["scan_ref"] = pins[image]
+            target["coordinated_pin"] = True
+        if image in managed:
+            definition = managed[image]
+            target["name"] = "Managed rebuild of " + image
+            target["build"] = definition
+            target["build_root"] = (snapshot / "scanner" / "image_builds").relative_to(ROOT).as_posix()
+            target["origins"] = [{"file": "scanner/image_builds/" + definition["context"] + "/Dockerfile", "line": 1}] + origins
+            for entry in definition["recipe_files"]:
+                if "scanner/image_builds/" + entry["file"] not in known_files:
+                    raise ValueError("Managed image contains ignored build input")
+        targets.append(target)
+    if (set(managed) | set(pins)) - set(images):
+        raise ValueError("Managed-image manifest no longer matches the deployable image inventory")
     if not images or not any(t["kind"] == "package" for t in targets):
         raise ValueError("Image/package inventory is unexpectedly empty")
     inventory = {"schema_version": 1, "commit": os.environ.get("GITHUB_SHA") or
@@ -236,6 +257,7 @@ def main():
                  "limitations": [
                      "CI scans committed defaults, not private tfvars overrides or live deployments",
                      "Upstream Compose and image tags are resolved at scan time; deployment may differ",
+                     "Managed scanner images use reviewed recipes and pinned bases; CI and runtime independently resolve signed Debian updates and record their built IDs",
                      "ZIP hashes identify CI repackaging; deployed ZIP byte identity is assessed by the runtime scanner",
                      "Lambda AWS-managed runtime/SDK are not in source ZIPs and cannot be assessed here",
                      "Host packages and plugins downloaded at boot require runtime assessment",

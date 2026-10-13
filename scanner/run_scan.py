@@ -2,6 +2,7 @@
 """Scanner host runner. Invoked by Systems Manager; secrets never enter SSM parameters."""
 
 import json
+import hashlib
 import os
 import pathlib
 import re
@@ -10,6 +11,7 @@ import sys
 import time
 
 from assess_aws import assess
+from managed_images import prepare
 
 
 ROOT = pathlib.Path("/opt/ai-scanner")
@@ -110,6 +112,22 @@ def run(run_id):
     cmd("curl", "--fail", "--location", "--silent", "--show-error", COMPOSE_URL,
         "--output", str(compose), timeout=60)
     cmd("docker", "compose", "-f", str(compose), "pull", timeout=7200)
+    built = prepare(compose, ROOT / "image_builds")
+    for image in built:
+        archive = work / ("scanner-image-" + image["context"] + ".tar")
+        try:
+            cmd("docker", "image", "save", "--output", str(archive), image["image_id"], timeout=300)
+            with archive.open("rb") as stream:
+                image["image_archive_sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+            # Assess the exact runtime rebuild independently of CI's earlier build.
+            cmd("docker", "run", "--rm", "-v", f"{archive}:/image.tar:ro",
+                "-v", f"{output}:/reports", TRIVY_IMAGE, "image", "--input", "/image.tar",
+                "--scanners", "vuln", "--format", "json", "--output",
+                "/reports/scanner-image-" + image["context"] + ".json", timeout=3600)
+        finally:
+            archive.unlink(missing_ok=True)
+    (output / "scanner-image-builds.json").write_text(json.dumps(built, indent=2))
+    upload_reports(env, run_id, output)
     cmd("docker", "compose", "-f", str(compose), "up", "-d", timeout=600)
     auth = wait_for_manager(compose, config, initial, min(deadline, time.time() + 5400))
     if auth == "initial":

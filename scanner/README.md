@@ -156,6 +156,11 @@ perform state-changing API operations or use an operator's login credentials.
 
 ## Offline verification
 
+The scanner uses a [managed PostgreSQL rebuild](image_builds/README.md) to apply
+available Debian updates and generate unique TLS keys instead of using the
+upstream shared key. It builds before starting Greenbone and reports the exact
+runtime image ID and vulnerability scan. CI assesses the same build recipe.
+
 ```powershell
 python -m unittest discover -s scanner -p 'test_*.py' -v
 terraform -chdir=scanner init -backend=false

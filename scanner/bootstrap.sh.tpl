@@ -31,6 +31,13 @@ echo '${assessment_sha256}  /opt/ai-scanner/assess_aws.py' | sha256sum -c -
 aws s3 cp "s3://${bucket}/assets/assessment.json" /opt/ai-scanner/assessment.json --region "${region}"
 echo '${assessment_config_sha256}  /opt/ai-scanner/assessment.json' | sha256sum -c -
 chmod 0700 /opt/ai-scanner/run_scan.py
+aws s3 cp "s3://${bucket}/assets/managed-images.py" /opt/ai-scanner/managed_images.py --region "${region}"
+echo '${managed_images_sha256}  /opt/ai-scanner/managed_images.py' | sha256sum -c -
+aws s3 cp "s3://${bucket}/assets/image-builds.zip" /opt/ai-scanner/image-builds.zip --region "${region}"
+echo '${image_builds_sha256}  /opt/ai-scanner/image-builds.zip' | sha256sum -c -
+install -d -m 0700 /opt/ai-scanner/image_builds
+unzip -q /opt/ai-scanner/image-builds.zip -d /opt/ai-scanner/image_builds
+rm /opt/ai-scanner/image-builds.zip
 
 # The settings file contains resource names only. Secrets are fetched by the instance role
 # during the scan and never embedded in user data or Terraform state.

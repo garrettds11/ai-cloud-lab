@@ -46,7 +46,10 @@ class RunnerTests(unittest.TestCase):
 
             def command(*args, **kwargs):
                 if args[:2] == ("docker", "run"):
-                    (output / "trivy.json").write_text("{}")
+                    report = args[args.index("--output") + 1].rsplit("/", 1)[-1]
+                    (output / report).write_text("{}")
+                if args[:3] == ("docker", "image", "save"):
+                    Path(args[args.index("--output") + 1]).write_bytes(b"image archive")
                 if "gvm-script" in args:
                     captured.update(json.loads((output.parent / "scan.json").read_text()))
                     for name in ("host.xml", "public.xml", "control-panel.xml", "greenbone.json"):
@@ -59,6 +62,7 @@ class RunnerTests(unittest.TestCase):
                  patch.object(run_scan, "assess", assess), patch.object(run_scan, "cmd", command), \
                  patch.object(run_scan, "secret", side_effect=lambda arn, region: "private-key" if arn == "key" else "password"), \
                  patch.object(run_scan, "wait_for_manager", return_value="configured"), \
+                 patch.object(run_scan, "prepare", return_value=[{"image_id": "sha256:test", "context": "pg-gvm"}]), \
                  patch.object(run_scan.os, "chown", create=True):
                 status = run_scan.run(run_id)
             manifest = json.loads((output / "manifest.json").read_text())
@@ -68,6 +72,11 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("gvm.conf", uploaded)
             self.assertEqual(captured["control_panel_hostname"], "cp.aiwebdemo.click")
             self.assertEqual(uploaded[0], "aws-assessment.json")
+            self.assertIn("scanner-image-pg-gvm.json", uploaded)
+            self.assertFalse((output.parent / "scanner-image-pg-gvm.tar").exists())
+            builds = json.loads((output / "scanner-image-builds.json").read_text())
+            self.assertEqual(builds[0]["image_id"], "sha256:test")
+            self.assertEqual(len(builds[0]["image_archive_sha256"]), 64)
             return status, manifest
 
     def test_incomplete_aws_assessment_fails_run_after_other_scans(self):

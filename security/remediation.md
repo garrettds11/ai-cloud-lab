@@ -9,6 +9,13 @@ assessment with the review leaves **1,957 blocking instances**: 1,955 CVEs and t
 PostgreSQL service-key detections. A new CI run must confirm the current digests
 and findings before using that count for a merge decision.
 
+[Run 38352152872](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38352152872)
+confirmed complete coverage, 72 reviewed false positives and 1,957 blockers.
+The next change adds a [managed PostgreSQL rebuild](../scanner/image_builds/README.md).
+Local verification reduced its 213 blockers to 74: **138 CVE instances fixed and
+one shared private key removed**. Applying that delta to the previous assessment
+would leave 1,818 blockers; fresh CI results must establish the actual total.
+
 ## Corrections in this PR
 
 - **CKV_AWS_355 / Grafana IAM:** restrict `logs:GetQueryResults` to the lab's Lambda log groups;
@@ -37,7 +44,7 @@ and findings before using that count for a merge decision.
 | Greenbone gsad | 71 | 0 | 0 |
 | Greenbone nginx | 70 | 0 | 0 |
 | Greenbone pg-gvm-migrator | 201 | 1 | 123 |
-| Greenbone pg-gvm | 212 | 1 | 138 |
+| Greenbone pg-gvm (previous upstream image) | 212 | 1 | 138 |
 | Greenbone ospd-openvas | 397 | 0 | 220 |
 | Greenbone redis-server | 75 | 0 | 23 |
 | Greenbone openvas-scanner | 178 | 0 | 1 |
@@ -60,13 +67,16 @@ Trivy v0.75.0. Updating these version tags alone does not resolve the findings.
 2. **Trivy:** use an upstream release rebuilt with patched Go/x/net, or build and
    test an explicitly maintained scanner image. Do not silently switch to canary.
 3. **Greenbone:** review updated upstream image builds and scan their exact digests.
-   Prioritize PostgreSQL, ospd-openvas and Redis fixable instances. Unfixed findings
+   PostgreSQL now uses a tested managed rebuild with Debian updates and unique
+   runtime TLS keys; its local rescan has 74 unfixed CVEs and zero secrets.
+   Prioritize the migrator, ospd-openvas and Redis fixable instances. Unfixed findings
    need vendor/reachability review and an explicit disposition.
 4. **Secret detections:** the 72 feed detections are now reviewed with verified
    file hashes and exact digest/path/rule/line dispositions, expiring 12 November.
-   The two PostgreSQL detections are bundled `ssl-cert-snakeoil.key` private keys
-   and remain blocking. Rebuild those images without shared service-key material;
-   generate fresh keys at runtime if TLS is required. Matching values remain
+   The PostgreSQL server's bundled `ssl-cert-snakeoil.key` is removed in the
+   managed rebuild and generated uniquely at startup. The separate migrator
+   image's bundled key remains blocking and needs its own rebuild.
+   Matching values remain
    redacted from published evidence.
 
 The gate remains blocking. No vulnerability baselines, ignore-unfixed option,

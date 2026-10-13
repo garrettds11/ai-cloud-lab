@@ -137,6 +137,37 @@ class CoverageTests(unittest.TestCase):
             self.assertEqual(calls[1], calls[2])
             self.assertEqual(json.loads((output / "reports/image/status.json").read_text())["scan_attempts"], 3)
 
+    def test_managed_image_scans_archive_without_docker_socket(self):
+        image = scan.managed_images.definitions(scan.ROOT / "scanner/image_builds")[0]
+        target = {"id": "managed", "kind": "image", "name": "managed PG", "scan_ref": image["reference"],
+                  "build": image, "platform": "linux/amd64", "build_root": ".security-scan/inputs/test",
+                  "origins": [{"file": "scanner/image_builds/pg-gvm/Dockerfile", "line": 1}]}
+        with tempfile.TemporaryDirectory(dir=scan.ROOT / ".security-scan") as temporary:
+            output = Path(temporary)
+            target["build_root"] = (output / "inputs/test").relative_to(scan.ROOT).as_posix()
+            (output / "inventory.json").write_text(json.dumps({"commit": "abc", "targets": [target]}))
+            calls = []
+            def run(command, **kwargs):
+                calls.append(command)
+                if command[:3] == ["docker", "image", "save"]:
+                    (output / "managed.image.tar").write_bytes(b"image bytes")
+                else:
+                    (output / "managed.raw.json").write_text('{"SchemaVersion":2,"Results":[]}')
+            with patch("scan.OUT", output), patch("scan.os.getuid", return_value=1000, create=True), \
+                    patch("scan.os.getgid", return_value=1000, create=True), \
+                    patch("scan.managed_images.definitions", return_value=[image]), \
+                    patch("scan.managed_images.build", return_value=dict(image, image_id="sha256:" + "1" * 64)), \
+                    patch("scan.subprocess.check_output", return_value='{"Version":"0.75.0"}'), \
+                    patch("scan.subprocess.run", side_effect=run):
+                self.assertEqual(scan.scan("managed"), 0)
+            scanner_command = calls[-1]
+            self.assertIn("--input", scanner_command)
+            self.assertNotIn("remote", scanner_command)
+            self.assertNotIn("/var/run/docker.sock", " ".join(scanner_command))
+            self.assertFalse((output / "managed.image.tar").exists())
+            status = json.loads((output / "reports/managed/status.json").read_text())
+            self.assertEqual(status["image_build"]["image_id"], "sha256:" + "1" * 64)
+
 
 class InventoryTests(unittest.TestCase):
     def setUp(self):

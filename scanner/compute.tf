@@ -93,6 +93,8 @@ resource "aws_instance" "scanner" {
     gmp_script_sha256        = filesha256("${path.module}/gmp_scan.py")
     assessment_sha256        = filesha256("${path.module}/assess_aws.py")
     assessment_config_sha256 = sha256(local.assessment_config)
+    managed_images_sha256    = filesha256("${path.module}/managed_images.py")
+    image_builds_sha256      = data.archive_file.image_builds.output_sha256
     hostname                 = var.public_hostname
     control_panel_hostname   = var.control_panel_hostname
     lab_ip                   = var.lab_private_ip
@@ -114,7 +116,7 @@ resource "aws_instance" "scanner" {
     http_put_response_hop_limit = 1
   }
   tags       = { Name = var.name, Purpose = "vulnerability-scanner" }
-  depends_on = [aws_s3_object.scanner_script, aws_s3_object.assessment_config, aws_iam_role_policy.scanner, aws_iam_role_policy.assessment, aws_iam_role_policy_attachment.ssm]
+  depends_on = [aws_s3_object.scanner_script, aws_s3_object.assessment_config, aws_s3_object.image_builds, aws_iam_role_policy.scanner, aws_iam_role_policy.assessment, aws_iam_role_policy_attachment.ssm]
 
   lifecycle {
     precondition {

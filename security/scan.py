@@ -15,6 +15,8 @@ from dispositions import classify, load
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
 TRIVY_IMAGE = "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
+sys.path.insert(0, str(ROOT / "scanner"))
+import managed_images
 
 
 def findings(report):
@@ -130,6 +132,7 @@ def scan(target_id):
               "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "scanner_image": TRIVY_IMAGE, "blocking_findings": None}
     raw = OUT / (target_id + ".raw.json")
+    image_archive = OUT / (target_id + ".image.tar")
     cache = OUT / "cache"
     cache.mkdir(exist_ok=True)
     # No Docker socket, AWS credentials, or execution of scanned images/packages.
@@ -141,16 +144,32 @@ def scan(target_id):
                                                      text=True, timeout=180))
         status["scanner_version_before"] = version
         if target["kind"] == "image":
-            reference = resolve_image(target["scan_ref"])
-            status["resolved_image"] = reference
-            command = ["image", "--image-src", "remote", "--platform", target["platform"],
-                       "--scanners", "vuln,secret", reference]
+            if target.get("build"):
+                root = (ROOT / target["build_root"]).resolve()
+                root.relative_to(OUT / "inputs")
+                definition = next(image for image in managed_images.definitions(root)
+                                  if image["reference"] == target["scan_ref"])
+                if definition != target["build"]:
+                    raise ValueError("Managed image recipe differs from inventoried input")
+                record = managed_images.build(root, definition)
+                subprocess.run(["docker", "image", "save", "--output", str(image_archive), record["image_id"]],
+                               check=True, timeout=300)
+                status["image_build"] = record
+                with image_archive.open("rb") as stream:
+                    status["image_archive_sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+                # Read a static archive: the scanner still gets no Docker socket.
+                command = ["image", "--scanners", "vuln,secret", "--input", "/output/" + image_archive.name]
+            else:
+                reference = resolve_image(target["scan_ref"])
+                status["resolved_image"] = reference
+                command = ["image", "--image-src", "remote", "--platform", target["platform"],
+                           "--scanners", "vuln,secret", reference]
         else:
             command = ["fs", "--scanners", "vuln,secret,misconfig", "/work/" + target["scan_ref"]]
         # Findings don't determine the process exit code until reports are persisted.
-        scan_command = docker + command[:-1] + ["--cache-dir", "/cache", "--timeout", "45m",
+        scan_command = docker + [command[0], "--cache-dir", "/cache", "--timeout", "45m",
                        "--format", "json", "--list-all-pkgs", "--exit-code", "0",
-                       "--output", "/output/" + raw.name, command[-1]]
+                       "--output", "/output/" + raw.name] + command[1:]
         # Registry streams can fail mid-layer. Retry the same immutable target,
         # with a shared time budget; CVE/secret findings never trigger retries.
         deadline = time.monotonic() + 3000
@@ -165,7 +184,7 @@ def scan(target_id):
                     raise
                 raw.unlink(missing_ok=True)
                 time.sleep(5)
-        report = json.loads(raw.read_text())
+        report = json.loads(raw.read_text(encoding="utf-8"))
         if report.get("SchemaVersion") != 2:
             raise ValueError("Unexpected Trivy report schema")
         items = findings(report)
@@ -197,6 +216,7 @@ def scan(target_id):
         print(f"Scan incomplete for {target_id}: {type(error).__name__}", file=sys.stderr)
     finally:
         raw.unlink(missing_ok=True)
+        image_archive.unlink(missing_ok=True)
         status["finished_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         (destination / "status.json").write_text(json.dumps(status, indent=2) + "\n")
     return 0 if status["complete"] and not status["blocking_findings"] else 1

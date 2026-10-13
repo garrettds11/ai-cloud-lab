@@ -74,15 +74,30 @@ resource "aws_s3_bucket_policy" "reports" {
 
 resource "aws_s3_object" "scanner_script" {
   for_each = {
-    "run-scan.py"   = "run_scan.py"
-    "gmp-scan.py"   = "gmp_scan.py"
-    "assess-aws.py" = "assess_aws.py"
+    "run-scan.py"       = "run_scan.py"
+    "gmp-scan.py"       = "gmp_scan.py"
+    "assess-aws.py"     = "assess_aws.py"
+    "managed-images.py" = "managed_images.py"
   }
   bucket       = aws_s3_bucket.reports.id
   key          = "assets/${each.key}"
   content      = file("${path.module}/${each.value}")
   etag         = filemd5("${path.module}/${each.value}")
   content_type = "text/plain"
+}
+
+data "archive_file" "image_builds" {
+  type        = "zip"
+  source_dir  = "${path.module}/image_builds"
+  output_path = "${path.module}/.terraform/image-builds.zip"
+}
+
+resource "aws_s3_object" "image_builds" {
+  bucket       = aws_s3_bucket.reports.id
+  key          = "assets/image-builds.zip"
+  source       = data.archive_file.image_builds.output_path
+  etag         = data.archive_file.image_builds.output_md5
+  content_type = "application/zip"
 }
 
 locals {

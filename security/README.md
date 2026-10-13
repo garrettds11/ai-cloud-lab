@@ -14,14 +14,16 @@ commit pins; Trivy 0.75.0 uses the same immutable image as the runtime scanner.
 | Watchdog, vulnerability MCP, control API (customer/admin/spend), scanner controller | Assemble ZIP contents from **every** Terraform `archive_file` definition, honoring exclusions and filenames; scan unpacked contents and record ZIP/member SHA256 hashes |
 | Logging Distributor packages | Run the copied package builder, scan each ZIP's contents and record its exact SHA256 |
 | Logging backend images, Wazuh initialization images | Discover all Compose image declarations, including all optional backends and upstream Wazuh Compose at the bootstrap's pinned revision; deduplicate and scan each digest |
-| Greenbone stack | Fetch the runner's upstream Compose URL, hash that definition and scan every unique image, including feed/data and initialization containers |
+| Greenbone stack | Fetch and hash upstream Compose; scan every unique deployable image, including feed/data and initialization containers. PostgreSQL uses a [managed rebuild](../scanner/image_builds/README.md), scanned as a static image archive with base/recipe/image hashes recorded. |
 | Terraform policy | Existing blocking Checkov job; Trivy misconfiguration findings are additional advisory SARIF evidence |
 
-The current working tree contains **38 unique images and 10 packages**, plus a
+The current working tree contains **38 unique images and 11 packages**, plus a
 repository scan. Counts change as asset definitions change. Dynamic Compose image
-expressions, unsupported archive expressions, missing inputs, and new Dockerfiles
+expressions, unsupported archive expressions, missing inputs, and unregistered Dockerfiles
 fail inventory until their packaging/build strategy is implemented. There is no
-placeholder Docker build or hand-maintained Lambda file list.
+placeholder Docker build or hand-maintained Lambda file list. The managed image
+manifest registers exact build contexts and digest-pinned bases; all other
+Dockerfiles fail inventory.
 
 Images are scanned as `linux/amd64`, matching this lab's x86 instances. No scanned
 image or Lambda is executed. Every target has a distinct stable SARIF category,

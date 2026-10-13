@@ -58,8 +58,15 @@ resource "aws_iam_role_policy" "grafana_cloudwatch" {
         # Metric reads have no resource-level control in IAM.
         Sid      = "ReadMetrics"
         Effect   = "Allow"
-        Action   = ["cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics", "cloudwatch:DescribeAlarms"]
+        Action   = ["cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics"]
         Resource = "*"
+      },
+      {
+        # DescribeAlarms supports alarm ARNs; keep Grafana reads on this lab's alarms.
+        Sid      = "ReadLabAlarms"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:DescribeAlarms"]
+        Resource = "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.project_name}-*"
       },
       {
         # The metric picker lists instances and their tags; read only.
@@ -71,14 +78,14 @@ resource "aws_iam_role_policy" "grafana_cloudwatch" {
       {
         Sid      = "ListLogGroups"
         Effect   = "Allow"
-        Action   = ["logs:DescribeLogGroups", "logs:GetQueryResults", "logs:StopQuery"]
+        Action   = ["logs:DescribeLogGroups", "logs:StopQuery"]
         Resource = "*"
       },
       {
         # Queries run only on this lab's Lambda log groups.
         Sid    = "QueryLabLambdaLogs"
         Effect = "Allow"
-        Action = ["logs:StartQuery", "logs:GetLogGroupFields", "logs:GetLogEvents", "logs:FilterLogEvents"]
+        Action = ["logs:StartQuery", "logs:GetQueryResults", "logs:GetLogGroupFields", "logs:GetLogEvents", "logs:FilterLogEvents"]
         Resource = [
           "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*",
           "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*:*"

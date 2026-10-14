@@ -44,6 +44,7 @@ class ManagedImageTests(unittest.TestCase):
         caps = [fixture[i + 1] for i, flag in enumerate(fixture) if flag == "--cap-add"]
         self.assertEqual(caps, ["NET_ADMIN", "NET_RAW"])
         self.assertNotIn("--cap-add", run.call_args_list[1].args[0])
+        self.assertIn("/var/log:rw,noexec,nosuid,nodev,size=8m", fixture)
 
     def test_nasl_failure_cleans_only_generated_resources(self):
         commands = []

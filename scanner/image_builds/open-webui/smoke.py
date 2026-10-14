@@ -14,6 +14,7 @@ import pyarrow as pa
 from pypdf import PdfReader, PdfWriter
 import sentence_transformers
 import transformers
+import torch
 from unstructured.partition.text import partition_text
 
 test_key = "compatibility-check-only-never-a-production-key"
@@ -23,6 +24,7 @@ assert rsa.generate_private_key(public_exponent=65537, key_size=2048).key_size =
 assert fsspec.filesystem("memory").protocol == "memory"
 assert pa.table({"value": [1]}).num_rows == 1
 assert Dataset.from_dict({"value": [1]})[0]["value"] == 1
+assert (torch.tensor([[2.0]]) @ torch.tensor([[3.0]])).item() == 6.0
 writer = PdfWriter()
 writer.add_blank_page(width=72, height=72)
 stream = io.BytesIO()

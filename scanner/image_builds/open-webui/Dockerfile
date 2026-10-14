@@ -4,6 +4,10 @@ COPY requirements.txt /tmp/security-requirements.txt
 RUN python3 -m pip install --no-cache-dir --only-binary=:all: -r /tmp/security-requirements.txt \
     && python3 -m pip check \
     && rm /tmp/security-requirements.txt
+COPY remove-build-deps.py /opt/security-remove-build-deps.py
+RUN python3 /opt/security-remove-build-deps.py \
+    && python3 -m pip check \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY smoke.py /opt/security-dependency-smoke.py
 RUN python3 /opt/security-dependency-smoke.py
 # Candidate only: production remains on its configured image until promotion.

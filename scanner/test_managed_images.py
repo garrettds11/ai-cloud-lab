@@ -1,6 +1,7 @@
 import json
 import copy
 import subprocess
+import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,16 @@ def setUpModule():
 
 
 class ManagedImageTests(unittest.TestCase):
+    def test_candidate_pruning_refuses_removal_of_runtime_libraries(self):
+        path = Path(__file__).parent / "image_builds/open-webui/remove-build-deps.py"
+        spec = importlib.util.spec_from_file_location("prune_candidate", path)
+        prune = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(prune)
+        with self.assertRaisesRegex(RuntimeError, "libmariadb3"):
+            prune.planned_removals("Remv libmariadb-dev [10.11]\nRemv libmariadb3 [10.11]\n")
+        self.assertEqual(prune.planned_removals("Purg linux-libc-dev:amd64 [6.1]\n"),
+                         {"linux-libc-dev"})
+
     def test_failed_candidate_check_removes_only_its_disposable_container(self):
         container = "a" * 64
         calls = []

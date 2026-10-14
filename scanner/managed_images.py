@@ -37,7 +37,8 @@ cp "$(command -v openvas-nasl)" /tmp/nasl-check
 cmp "$(command -v openvas-nasl)" /tmp/nasl-check
 printf 'display("security-nasl-fixture-ok");\\n' > /tmp/fixture.nasl
 /tmp/nasl-check -p -X /tmp/fixture.nasl
-/tmp/nasl-check -X /tmp/fixture.nasl > /tmp/fixture-result
+/tmp/nasl-check -X /tmp/fixture.nasl > /tmp/fixture-result 2>&1 || { cat /tmp/fixture-result; exit 1; }
+cat /tmp/fixture-result
 grep -q 'security-nasl-fixture-ok' /tmp/fixture-result
 echo 'Redis readiness, NASL parsing and fixture execution passed'
 '''

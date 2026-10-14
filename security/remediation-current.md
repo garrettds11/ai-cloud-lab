@@ -16,6 +16,15 @@ requires scanner binary loading and NASL parsing checks. Results are pending;
 no additional finding reduction is claimed yet. These checks do not replace
 full feed-backed scanner acceptance or patch the EC2 host kernel.
 
+Assessment 38604484723 confirms the new candidate dependency/retrieval check
+and backend/authentication checks pass; its complete candidate scan still has
+277 blockers. The initial OpenVAS header-removal build check failed because
+the original capability-bearing executable cannot run in Docker's build
+sandbox. Header removal itself passed its runtime-package guard. The corrected
+check uses byte-identical temporary executable copies without file capabilities;
+the original binaries and capabilities are retained. This correction still
+requires CI verification. No header-related reduction has been accepted yet.
+
 [Assessment 38576332719](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38576332719)
 restores complete coverage for all 28 targets after replacing the deleted
 gvm-tools base. It reports **1,663 HIGH/CRITICAL instances**, **364 distinct

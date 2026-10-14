@@ -75,11 +75,12 @@ class CoverageTests(unittest.TestCase):
     def test_missing_or_partial_report_never_passes(self):
         target = {"id": "one"}
         valid = {"target": target, "commit": "abc", "complete": True}
-        self.assertTrue(bundle.reconcile(target, valid, "abc", True, True))
-        self.assertFalse(bundle.reconcile(target, {}, "abc", True, True))
-        self.assertFalse(bundle.reconcile(target, valid, "wrong", True, True))
-        self.assertFalse(bundle.reconcile(target, valid, "abc", False, True))
-        self.assertFalse(bundle.reconcile({"id": "different"}, valid, "abc", True, True))
+        self.assertTrue(bundle.reconcile(target, valid, "abc", True, True, True))
+        self.assertFalse(bundle.reconcile(target, {}, "abc", True, True, True))
+        self.assertFalse(bundle.reconcile(target, valid, "wrong", True, True, True))
+        self.assertFalse(bundle.reconcile(target, valid, "abc", False, True, True))
+        self.assertFalse(bundle.reconcile({"id": "different"}, valid, "abc", True, True, True))
+        self.assertFalse(bundle.reconcile(target, valid, "abc", True, True, False))
 
     def test_scan_error_keeps_incomplete_status_and_deletes_raw_output(self):
         target = {"id": "repository", "kind": "repository", "name": "source",

@@ -1,5 +1,8 @@
 # Open WebUI vulnerability scanner
 
+Start with the [container catalogue](CONTAINERS.md) for component names,
+purposes, image/container distinctions and SBOM locations.
+
 This is a separate Terraform stack for issue 82. It creates a normally stopped
 Greenbone Community Edition EC2 instance, a dedicated security VPC, private
 peering to the lab, encrypted report storage, a demand queue, and a controller.

@@ -7,18 +7,22 @@ from pathlib import Path
 import tarfile
 
 from cve_report import write_report
+from sbom import write_sboms
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
 
 
-def reconcile(target, status, commit, has_sarif, has_findings):
+def reconcile(target, status, commit, has_sarif, has_findings, has_sbom):
     return (status.get("complete") is True and status.get("commit") == commit
-            and status.get("target") == target and has_sarif and has_findings)
+            and status.get("target") == target and has_sarif and has_findings and has_sbom)
 
 
 def main():
     inventory = json.loads((OUT / "inventory.json").read_text())
+    sbom_root = OUT / "sboms"
+    sboms = write_sboms(OUT, sbom_root, inventory)
+    available_sboms = {entry["target_id"] for entry in sboms["targets"] if entry["available"]}
     coverage = []
     for target in inventory["targets"]:
         directory = OUT / "reports" / target["id"]
@@ -26,7 +30,7 @@ def main():
         status = json.loads(path.read_text()) if path.exists() else {}
         complete = reconcile(target, status, inventory["commit"],
                              (directory / "results.sarif").is_file(),
-                             (directory / "findings.json").is_file())
+                             (directory / "findings.json").is_file(), target["id"] in available_sboms)
         coverage.append({"id": target["id"], "complete": complete,
                          "blocking_findings": status.get("blocking_findings"),
                          "reviewed_false_positives": status.get("reviewed_false_positives", 0)})
@@ -40,6 +44,7 @@ def main():
                           "Trivy misconfiguration advisory; Checkov separate blocking gate"}
     (OUT / "coverage.json").write_text(json.dumps(manifest, indent=2) + "\n")
     evidence = [OUT / "inventory.json", OUT / "coverage.json"]
+    evidence += sorted(sbom_root.rglob("*.json")) + [sbom_root / "sboms.md"]
     evidence += write_report(OUT, inventory, manifest)
     review = OUT / "feed-secret-review.json"
     shutil.copyfile(ROOT / "security" / "feed-secret-review.json", review)
@@ -59,6 +64,7 @@ def main():
                        for item in coverage)
     summary += "\nAttestation proves report provenance; consult coverage and findings for assessment status.\n"
     summary += "\nDownload `security-evidence` for `remaining-cves.md` and the sortable `remaining-cves.csv` (asset, CVE, package and fixed version).\n"
+    summary += "\nDownload `security-sboms` for the readable index and per-target CycloneDX files; the same files are checksummed under `sboms/` in `security-evidence`.\n"
     print(summary)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:

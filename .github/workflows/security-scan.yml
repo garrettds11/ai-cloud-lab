@@ -122,6 +122,15 @@ jobs:
       - name: Reconcile coverage and create evidence bundle
         id: bundle
         run: python3 security/bundle.py
+      - name: Publish software bills of materials
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-sboms
+          path: .security-scan/sboms/
+          include-hidden-files: true
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: security-evidence

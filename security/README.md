@@ -105,6 +105,40 @@ Mutable upstream Compose definitions and image tags are resolved and recorded at
 scan time; later deployments may select different content. All these limitations
 also appear in the evidence inventory.
 
+## Software bills of materials
+
+Evidence bundles include a CycloneDX 1.6 SBOM for each successfully assessed
+target, including images, packaged Lambda/source artifacts and repository
+dependencies that Trivy detected. `sboms.md` provides a readable index and
+`sbom-index.json` records exact assessed identities, component counts and file
+SHA256 hashes. Download the dedicated `security-sboms` artifact to read these
+files directly, or find the identical files under `sboms/` in the checksummed
+`security-evidence` archive. SBOMs are generated from the existing `--list-all-pkgs` inventory
+at bundle time, with no extra image build, pull or vulnerability scan.
+
+This exporter publishes package names, detected versions/PURLs/licenses and
+their locations. It does not infer dependency edges, supplier information or
+undetected versions. CycloneDX compositions explicitly remain incomplete;
+these are detected-package SBOMs, not a claim that every software dependency
+was found. Failed/missing assessments produce unavailable entries, not clean
+empty SBOMs. Missing SBOM coverage prevents the assessment gate from passing.
+
+The existing evidence checksum/provenance chain includes the SBOMs. Trusted
+dev/main workflows attest the complete evidence archive; PR archives are
+unsigned. Neither an SBOM nor an attestation approves an image or waives CVEs.
+
+To export SBOMs from an older extracted evidence bundle without rescanning:
+
+```sh
+python security/sbom.py /path/to/extracted-security-evidence /path/to/sbom-output
+```
+
+The exporter verifies the source bundle's file checksums before reading its
+inventories. It preserves that assessment's commit/image/archive identities;
+it does not pretend the export came from a new scan. The output is separate
+from the original evidence. See the [container catalogue](../scanner/CONTAINERS.md)
+for what each Greenbone component does.
+
 ## Local verification
 
 ```sh

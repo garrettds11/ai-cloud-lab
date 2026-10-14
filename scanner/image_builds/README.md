@@ -167,6 +167,8 @@ jaraco.context, MCP, PyArrow, pypdf, sentence-transformers, transformers,
 unstructured and wheel. Datasets is upgraded to 5.1.0 with PyArrow 24.0.0 because
 the existing datasets 4.x upper bound rejects the patched fsspec version.
 Transformers uses the non-yanked 5.10.1 fix instead of yanked 5.10.0.
+Setuptools 84.0.0 replaces its bundled vulnerable jaraco.context/wheel copies;
+updating only the separately installed packages leaves those copies unchanged.
 Binary-only package installation and `pip check` reject
 unavailable wheels or dependency conflicts. Offline smoke checks exercise JWT,
 crypto, in-memory storage, Arrow and PDF APIs and import the NLP/MCP APIs without

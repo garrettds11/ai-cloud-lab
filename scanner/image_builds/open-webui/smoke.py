@@ -31,5 +31,5 @@ stream.seek(0)
 assert len(PdfReader(stream).pages) == 1
 # Import its parser API without downloading NLTK/model resources in a build.
 assert callable(partition_text)
-for name in ("PyJWT", "cryptography", "mcp", "pyarrow", "pypdf", "sentence-transformers", "transformers", "unstructured"):
+for name in ("PyJWT", "cryptography", "mcp", "pyarrow", "pypdf", "sentence-transformers", "transformers", "unstructured", "setuptools"):
     print(name, importlib.metadata.version(name))

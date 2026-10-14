@@ -30,6 +30,9 @@ class ManagedImageTests(unittest.TestCase):
         volume = commands[0][-1]
         redis = commands[1]
         self.assertEqual(redis[redis.index("--user") + 1], "redis")
+        fixture = commands[2]
+        self.assertIn("exec", fixture[fixture.index("--tmpfs") + 1].split(","))
+        self.assertIn("noexec", redis[redis.index("--tmpfs") + 1].split(","))
         self.assertEqual(commands[-1], ["docker", "volume", "rm", volume])
         self.assertEqual(result["network"], "none")
         self.assertFalse(result["production_targets_scanned"])

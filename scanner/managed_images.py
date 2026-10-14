@@ -55,7 +55,7 @@ echo 'Redis readiness, NASL parsing and fixture execution passed'
         subprocess.run(["docker", "run", "--rm", "--name", name, *isolation,
                         "--user", "0:0",
                         "--memory", "512m", "--mount", f"type=volume,source={volume},target=/run/redis",
-                        "--tmpfs", "/tmp:rw,nosuid,size=16m", "--entrypoint", "/bin/sh",
+                        "--tmpfs", "/tmp:rw,exec,nosuid,nodev,size=16m", "--entrypoint", "/bin/sh",
                         image_id, "-c", script], check=True, timeout=120)
     except Exception:
         # Only the ephemeral fixture's logs; no application data or credentials.

@@ -4,10 +4,10 @@ COPY remove-headers.py /tmp/remove-headers.py
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade --with-new-pkgs \
     && python3 /tmp/remove-headers.py \
-    && cp "$(command -v openvas)" /tmp/openvas-check \
-    && cmp "$(command -v openvas)" /tmp/openvas-check \
-    && /tmp/openvas-check --version && ospd-openvas --version \
-    && rm /tmp/remove-headers.py /tmp/openvas-check \
+    && cp "$(command -v openvas)" /tmp/openvas \
+    && cmp "$(command -v openvas)" /tmp/openvas \
+    && /tmp/openvas --version && PATH="/tmp:$PATH" ospd-openvas --version \
+    && rm /tmp/remove-headers.py /tmp/openvas \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 # Inherit scanner startup and its runtime privilege handling unchanged.
 # Temporary byte-identical copies omit file capabilities for build-only checks.

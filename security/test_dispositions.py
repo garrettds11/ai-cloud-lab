@@ -15,7 +15,7 @@ class SecretReviewTests(unittest.TestCase):
         match = entry["matches"][0]
         self.item = {"kind": "secret", "path": entry["path"], "id": match["rule"],
                      "line": match["line"], "severity": "HIGH"}
-        self.today = datetime.date(2026, 10, 13)
+        self.today = datetime.date.fromisoformat(self.review["reviewed"])
 
     def classify(self, items=None, image=None, today=None, review=None):
         return dispositions.classify(items or [self.item], image or self.review["image"],
@@ -45,7 +45,8 @@ class SecretReviewTests(unittest.TestCase):
         self.assertEqual(scan.gate(items), 1)
 
     def test_expiration_and_future_review_fail_closed(self):
-        for today in (datetime.date(2026, 11, 12), datetime.date(2026, 10, 12)):
+        for today in (datetime.date.fromisoformat(self.review["expires"]),
+                      self.today - datetime.timedelta(days=1)):
             self.assertEqual(scan.gate(self.classify(today=today)), 1)
 
     def test_changed_path_line_or_rule_requires_review(self):
@@ -59,7 +60,8 @@ class SecretReviewTests(unittest.TestCase):
 
     def test_replayed_disposition_does_not_bypass_expiration(self):
         items = self.classify()
-        self.assertEqual(scan.gate(self.classify(items=items, today=datetime.date(2026, 11, 12))), 1)
+        self.assertEqual(scan.gate(self.classify(
+            items=items, today=datetime.date.fromisoformat(self.review["expires"]))), 1)
 
     def test_invalid_review_fails_instead_of_ignoring_findings(self):
         for change in (lambda r: r.update(image="registry/app:latest"),

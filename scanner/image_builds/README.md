@@ -184,7 +184,7 @@ unavailable wheels or dependency conflicts. Offline smoke checks exercise JWT,
 crypto, in-memory storage, Arrow and PDF APIs and import the NLP/MCP APIs without
 model downloads or persistent account/database state.
 
-The candidate removes native compilers, build tools and development headers
+The candidate removes native compilers, selected build tools and development headers
 after wheel installation. An apt simulation rejects any removal outside the
 explicit build-package list; runtime shared libraries are retained and apt
 autoremove is disabled. CPU tensor execution, dependency imports, backend
@@ -193,6 +193,8 @@ extensions at runtime is outside this candidate's supported scope. Removing
 `linux-libc-dev` removes headers and their image findings; it does not patch or
 assess the host kernel. The image is reassessed without deleting package
 metadata or suppressing findings.
+Binutils and its shared libraries are retained because removing its common
+package also removes shared libraries outside the reviewed build-package list.
 
 After building, CI starts the candidate without networking or host mounts, with
 CPU/memory limits and disposable data. It checks backend health, signup, signin

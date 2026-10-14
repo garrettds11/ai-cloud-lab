@@ -10,7 +10,6 @@ BUILD_PACKAGES = {
     "libgcc-12-dev", "libstdc++-12-dev", "libc6-dev", "linux-libc-dev",
     "libcrypt-dev", "libnsl-dev", "libtirpc-dev", "libmariadb-dev",
     "libmariadb-dev-compat", "libssl-dev", "zlib1g-dev",
-    "binutils", "binutils-common", "binutils-x86-64-linux-gnu",
 }
 
 

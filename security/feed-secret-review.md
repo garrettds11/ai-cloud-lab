@@ -1,7 +1,7 @@
 # Greenbone feed secret review
 
-Reviewed 13 October 2026 against completed assessment
-[38436885181](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38436885181).
+Reviewed 14 October 2026 against completed assessment
+[38533402718](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38533402718).
 
 ## Disposition
 
@@ -13,7 +13,7 @@ No CVE finding or PostgreSQL TLS key is covered by this review.
 
 The machine-readable [review](feed-secret-review.json) records every exact path,
 rule, line, verified file SHA256 and rationale. It applies only to
-`registry.community.greenbone.net/community/vulnerability-tests@sha256:3439f12de7fe33d36648808ba37aab8d00ed7557c8e5ca12cb573fca9ff3d4e6`
+`registry.community.greenbone.net/community/vulnerability-tests@sha256:bc7d28cfdee969aff58cdffce1cdccb8aa17657297f94cc7e6b03b6a9f68c83d`
 on linux/amd64, and expires **12 November 2026 at 00:00 UTC**. Changed image digests,
 rules, paths or line numbers require new review. A registry tag or path pattern
 alone never grants a disposition. This is a test-data classification, not
@@ -25,7 +25,7 @@ The OCI index/manifest and all four compressed image layer hashes were verified
 against their registry SHA256 digests. Only the flagged regular files were read
 from the tar archives; no image or NASL code was executed. Each file's complete
 bytes were hashed. All flagged files occurred in layer
-`sha256:9197879eeb214d70265dcec9370270b5cfb85cb750a6174650cb135079e90ec9`.
+`sha256:784abc0a7b30047046789311756900e9b805c0687fe07ffff6f53b73a5384040`.
 Matched key/token values are excluded from this document and published evidence.
 
 The feed image changed after the first review of digest `c165a094...`. The new
@@ -33,6 +33,14 @@ index/manifest and all four compressed layers were independently verified. All
 28 flagged files have exactly the previously reviewed full-file SHA256 hashes;
 all 72 paths, rules and line numbers are unchanged. The review was renewed for
 the new exact image digest without extending its expiry or changing its scope.
+
+On 14 October the digest changed again, from `3439f12d...` to `bc7d28cf...`.
+The new OCI index/manifest and all four compressed layers were verified against
+their registry digests. Every one of the 28 full-file hashes and all 72
+path/rule/line matches equal the previous review. Only the exact image and
+verified layer identities and review date changed; expiry remains 12 November.
+The completed assessment above predates this renewal and reports zero applied
+dispositions. A subsequent scan must confirm use of this review.
 
 | File within each feed's NASL directory | Matches per copy | Evidence from file contents |
 | --- | ---: | --- |

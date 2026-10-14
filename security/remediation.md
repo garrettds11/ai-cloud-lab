@@ -1,4 +1,8 @@
-# Merge readiness and finding remediation
+# Historical remediation baseline (13 October 2026)
+
+See [current remediation status](remediation-current.md) for subsequent patched
+images, verified results and remaining blockers. Counts and next steps below
+describe the earlier assessment and are not the current merge decision.
 
 Assessment: [run 38342215823](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38342215823), reviewed 13 October 2026.
 Coverage is complete for the committed tree: 21 images, four Lambda ZIPs and source.

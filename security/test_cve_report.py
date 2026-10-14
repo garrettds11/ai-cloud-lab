@@ -42,4 +42,4 @@ class CveReportTests(unittest.TestCase):
                          {"complete": False, "policy_passed": False})
             report = (root / "remaining-cves.md").read_text()
             self.assertIn("Coverage complete: **False**", report)
-            self.assertIn("| missing | 0 | 0 | False |", report)
+            self.assertIn("| missing | configured | 0 | 0 | False |", report)

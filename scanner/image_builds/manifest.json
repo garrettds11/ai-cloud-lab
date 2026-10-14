@@ -44,6 +44,13 @@
       "context": "trivy",
       "tag": "ai-cloud-lab/trivy:patched",
       "scope": "tool"
+    },
+    {
+      "reference": "ghcr.io/open-webui/open-webui:v0.12.0",
+      "base": "ghcr.io/open-webui/open-webui@sha256:1565038903151ced924b5a3226f73f40f16963df4b910441f6391f10144afdaa",
+      "context": "open-webui",
+      "tag": "ai-cloud-lab/open-webui:patched",
+      "scope": "candidate"
     }
   ]
 }

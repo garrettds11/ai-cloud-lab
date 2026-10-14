@@ -151,9 +151,11 @@ def main():
     files = sorted(set(files))
     known_files = set(files)
     targets, images, external = [], {}, []
-    managed = {image["reference"]: image for image in managed_images.definitions(ROOT / "scanner" / "image_builds")}
+    recipes = managed_images.definitions(ROOT / "scanner" / "image_builds")
+    managed = {image["reference"]: image for image in recipes if image.get("scope") != "candidate"}
+    candidates = [image for image in recipes if image.get("scope") == "candidate"]
     pins = {pin["reference"]: pin["image"] for pin in managed_images.pins(ROOT / "scanner" / "image_builds")}
-    dockerfiles = {"scanner/image_builds/" + image["context"] + "/Dockerfile" for image in managed.values()}
+    dockerfiles = {"scanner/image_builds/" + image["context"] + "/Dockerfile" for image in recipes}
     snapshot = OUT / "inputs" / "repository"
     snapshot.mkdir(parents=True)
     sources = []
@@ -247,6 +249,18 @@ def main():
                 if "scanner/image_builds/" + entry["file"] not in known_files:
                     raise ValueError("Managed image contains ignored build input")
         targets.append(target)
+    for candidate in candidates:
+        if candidate["reference"] not in images:
+            raise ValueError("Candidate no longer matches a configured upstream asset")
+        for entry in candidate["recipe_files"]:
+            if "scanner/image_builds/" + entry["file"] not in known_files:
+                raise ValueError("Candidate contains ignored build input")
+        targets.append({"id": identifier("image", candidate["reference"] + ":patched-candidate"),
+                        "kind": "image", "name": "Candidate (not deployed): " + candidate["reference"],
+                        "scan_ref": candidate["reference"], "build": candidate, "platform": "linux/amd64",
+                        "deployment_status": "candidate",
+                        "build_root": (snapshot / "scanner/image_builds").relative_to(ROOT).as_posix(),
+                        "origins": [{"file": "scanner/image_builds/" + candidate["context"] + "/Dockerfile", "line": 1}]})
     if (set(managed) | set(pins)) - set(images):
         raise ValueError("Managed-image manifest no longer matches the deployable image inventory")
     if not images or not any(t["kind"] == "package" for t in targets):

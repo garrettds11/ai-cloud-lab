@@ -73,7 +73,7 @@ def definitions(root):
         repository = image["reference"].split("@", 1)[0]
         if ":" in repository.rsplit("/", 1)[-1]:
             repository = repository.rsplit(":", 1)[0]
-        if image.get("scope", "compose") not in {"compose", "tool"}:
+        if image.get("scope", "compose") not in {"compose", "tool", "candidate"}:
             raise ValueError("Unsupported managed-image scope")
         if not re.fullmatch(re.escape(repository) + r"@sha256:[a-f0-9]{64}", image["base"]):
             raise ValueError("Managed image must use a digest-pinned base from its upstream repository")

@@ -151,3 +151,21 @@ The deployed runner builds the same recipe before any assessment, uses its
 immutable ID for all Trivy scans, and assesses the exact runtime tool archive
 alongside the other managed images. `scanner-tool-build.json` records the tool
 identity even when later assessments fail. ECR promotion remains tracked in #90.
+
+## Open WebUI dependency candidate
+
+The `open-webui` context is a candidate build from the assessed v0.12.0 digest.
+It pins the reported fixed versions for PyJWT, cryptography, fsspec,
+jaraco.context, MCP, PyArrow, pypdf, sentence-transformers, transformers,
+unstructured and wheel. Binary-only package installation and `pip check` reject
+unavailable wheels or dependency conflicts. Offline smoke checks exercise JWT,
+crypto, in-memory storage, Arrow and PDF APIs and import the NLP/MCP APIs without
+model downloads or persistent account/database state.
+
+CI assesses this candidate separately. It does **not** replace the original
+configured Open WebUI image in inventory, and the Greenbone runner never builds
+or deploys it. Reports label it `candidate` to prevent interpreting its results
+as remediation of an unchanged live deployment. Application startup, retrieval,
+MCP registration and authentication acceptance plus approved ECR publication in
+#90 are required before promotion. No candidate is automatically approved or
+exempted from the vulnerability policy.

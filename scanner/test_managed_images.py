@@ -15,6 +15,22 @@ def setUpModule():
 
 
 class ManagedImageTests(unittest.TestCase):
+    def test_scanner_header_pruning_preserves_runtime_libraries(self):
+        for context in ("openvas-scanner", "ospd-openvas"):
+            path = Path(__file__).parent / "image_builds" / context / "remove-headers.py"
+            spec = importlib.util.spec_from_file_location("prune_headers", path)
+            prune = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(prune)
+            self.assertEqual(prune.planned_removals("Purg linux-libc-dev:amd64 [6.12]\n"),
+                             {"linux-libc-dev"})
+            inventory = "linux-libc-dev installed\nlibc6 installed\n"
+            with patch.object(prune.subprocess, "check_output", side_effect=[
+                    inventory, "Remv linux-libc-dev [6.12]\nRemv libc6 [2.41]\n"]), \
+                    patch.object(prune.subprocess, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, "libc6"):
+                    prune.main()
+                run.assert_not_called()
+
     def test_candidate_pruning_refuses_removal_of_runtime_libraries(self):
         path = Path(__file__).parent / "image_builds/open-webui/remove-build-deps.py"
         spec = importlib.util.spec_from_file_location("prune_candidate", path)

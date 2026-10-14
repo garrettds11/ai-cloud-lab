@@ -2,6 +2,20 @@
 
 ## Latest complete assessment
 
+The [27-finding patch ledger](open-webui-patch-ledger.md) verifies every reported
+fix against the original and candidate in the complete assessment below. All 27
+IDs are absent in the candidate; they remain in the configured original.
+
+Assessment 38598894942 stopped before scanning because a Go dependency download
+failed with an HTTP/2 stream error while building Trivy. It produced no new
+complete assessment. The next batch adds bounded dependency-download retries,
+an offline Chroma vector storage/query compatibility check, and removal of
+reviewed development headers from OpenVAS/OSPD images. Header removal refuses
+any proposed runtime library removal, disables automatic package removal, and
+requires scanner binary loading and NASL parsing checks. Results are pending;
+no additional finding reduction is claimed yet. These checks do not replace
+full feed-backed scanner acceptance or patch the EC2 host kernel.
+
 [Assessment 38576332719](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38576332719)
 restores complete coverage for all 28 targets after replacing the deleted
 gvm-tools base. It reports **1,663 HIGH/CRITICAL instances**, **364 distinct

@@ -15,6 +15,7 @@ from pypdf import PdfReader, PdfWriter
 import sentence_transformers
 import transformers
 import torch
+import chromadb
 from unstructured.partition.text import partition_text
 
 test_key = "compatibility-check-only-never-a-production-key"
@@ -25,6 +26,15 @@ assert fsspec.filesystem("memory").protocol == "memory"
 assert pa.table({"value": [1]}).num_rows == 1
 assert Dataset.from_dict({"value": [1]})[0]["value"] == 1
 assert (torch.tensor([[2.0]]) @ torch.tensor([[3.0]])).item() == 6.0
+# Exercise retrieval storage without a model download or persistent database.
+# This checks dependency compatibility; it does not mitigate Chroma advisories.
+collection = chromadb.EphemeralClient().create_collection(
+    "security-compatibility", embedding_function=None)
+collection.add(ids=["first", "second"], embeddings=[[1.0, 0.0], [0.0, 1.0]],
+               documents=["first document", "second document"])
+retrieved = collection.query(query_embeddings=[[1.0, 0.0]], n_results=1)
+assert retrieved["ids"] == [["first"]]
+assert retrieved["documents"] == [["first document"]]
 writer = PdfWriter()
 writer.add_blank_page(width=72, height=72)
 stream = io.BytesIO()

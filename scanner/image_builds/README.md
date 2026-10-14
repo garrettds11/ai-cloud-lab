@@ -169,10 +169,16 @@ unavailable wheels or dependency conflicts. Offline smoke checks exercise JWT,
 crypto, in-memory storage, Arrow and PDF APIs and import the NLP/MCP APIs without
 model downloads or persistent account/database state.
 
+After building, CI starts the candidate without networking or host mounts, with
+CPU/memory limits and disposable data. It checks backend health, signup, signin
+and authenticated token use with a public test-only identity/key. It then removes
+the container and its anonymous volumes, retaining only pass/fail metadata. The
+tested image itself is unchanged; no test database or credentials are baked in.
+
 CI assesses this candidate separately. It does **not** replace the original
 configured Open WebUI image in inventory, and the Greenbone runner never builds
 or deploys it. Reports label it `candidate` to prevent interpreting its results
-as remediation of an unchanged live deployment. Application startup, retrieval,
-MCP registration and authentication acceptance plus approved ECR publication in
+as remediation of an unchanged live deployment. Retrieval and MCP registration
+acceptance plus approved ECR publication in
 #90 are required before promotion. No candidate is automatically approved or
 exempted from the vulnerability policy.

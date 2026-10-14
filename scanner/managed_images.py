@@ -7,6 +7,55 @@ import re
 import subprocess
 
 
+def candidate_smoke(image_id):
+    """Exercise a candidate backend in disposable storage, with no network access."""
+    container = subprocess.check_output([
+        "docker", "run", "--detach", "--network", "none", "--memory", "4g", "--cpus", "2",
+        "--security-opt", "no-new-privileges:true", "--label", "ai-cloud-lab.verification=candidate",
+        "-e", "HF_HUB_OFFLINE=1", "-e", "TRANSFORMERS_OFFLINE=1",
+        "-e", "RAG_EMBEDDING_MODEL_AUTO_UPDATE=false", "-e", "ENABLE_SIGNUP=true",
+        "-e", "WEBUI_SECRET_KEY=compatibility-check-only-never-a-production-key", image_id],
+        text=True, timeout=60).strip()
+    if not re.fullmatch(r"[a-f0-9]{64}", container):
+        raise ValueError("Candidate test lacks a disposable container identity")
+    script = '''
+import json, time, urllib.request
+base = "http://127.0.0.1:8080"
+for attempt in range(90):
+    try:
+        urllib.request.urlopen(base + "/health", timeout=2).read()
+        break
+    except Exception:
+        time.sleep(2)
+else:
+    raise RuntimeError("Candidate backend health check timed out")
+def post(path, data):
+    req = urllib.request.Request(base + path, json.dumps(data).encode(), {"Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=15))
+account = {"email": "compatibility-check@example.test", "name": "Compatibility check",
+           "password": "compatibility-check-only-never-a-production-password"}
+created = post("/api/v1/auths/signup", account)
+assert created.get("token")
+signed_in = post("/api/v1/auths/signin", {key: account[key] for key in ("email", "password")})
+req = urllib.request.Request(base + "/api/v1/auths/", headers={"Authorization": "Bearer " + signed_in["token"]})
+assert json.load(urllib.request.urlopen(req, timeout=15))["email"] == account["email"]
+try:
+    urllib.request.urlopen(urllib.request.Request(base + "/api/v1/auths/", headers={"Authorization": "Bearer invalid-test-token"}), timeout=15)
+except urllib.error.HTTPError as error:
+    assert error.code in (401, 403)
+else:
+    raise AssertionError("Candidate accepted an invalid token")
+print("Backend health, signup, signin and token round-trip passed")
+'''
+    try:
+        subprocess.run(["docker", "exec", container, "python3", "-c", script], check=True, timeout=240)
+    finally:
+        subprocess.run(["docker", "rm", "--force", "--volumes", container], check=True, timeout=60,
+                       stdout=subprocess.DEVNULL)
+    return {"dependency_checks": "passed", "backend_health": "passed", "signup_signin_token": "passed",
+            "network": "none", "storage": "disposable", "production_deployed": False}
+
+
 def isolated_services(config):
     """Restrict socket-only services; retain networking for actual scanners/UI."""
     config = copy.deepcopy(config)
@@ -94,6 +143,8 @@ def definitions(root):
 
 
 def build(root, image, timeout=1800):
+    if image.get("scope") == "candidate" and image["context"] != "open-webui":
+        raise ValueError("Register candidate acceptance checks before building another application")
     # No build secrets, SSH forwarding, host mounts or privileged build flags.
     subprocess.run(["docker", "build", "--platform", "linux/amd64", "--no-cache", "--pull",
                     "--tag", image["tag"], str(Path(root) / image["context"])],
@@ -102,7 +153,10 @@ def build(root, image, timeout=1800):
                                         "--format", "{{.Id}}"], text=True, timeout=60).strip()
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
         raise ValueError("Built image lacks an immutable ID")
-    return dict(image, image_id=image_id)
+    record = dict(image, image_id=image_id)
+    if image.get("scope") == "candidate":
+        record["compatibility_checks"] = candidate_smoke(image_id)
+    return record
 
 
 def build_tool(root):

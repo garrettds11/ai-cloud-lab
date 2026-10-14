@@ -1,5 +1,6 @@
 import json
 import copy
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +14,19 @@ def setUpModule():
 
 
 class ManagedImageTests(unittest.TestCase):
+    def test_failed_candidate_check_removes_only_its_disposable_container(self):
+        container = "a" * 64
+        calls = []
+        def run(command, **kwargs):
+            calls.append(command)
+            if command[:2] == ["docker", "exec"]:
+                raise subprocess.CalledProcessError(1, command)
+        with patch("managed_images.subprocess.check_output", return_value=container), \
+                patch("managed_images.subprocess.run", side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                managed_images.candidate_smoke("sha256:" + "1" * 64)
+        self.assertEqual(calls[-1], ["docker", "rm", "--force", "--volumes", container])
+
     def socket_config(self):
         mounts = {
             "pg-gvm": [("pg-data", "/var/lib/postgresql"), ("pg-socket", "/var/run/postgresql")],

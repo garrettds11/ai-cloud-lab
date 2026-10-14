@@ -140,6 +140,13 @@ compiler/source/cache packages from the final image. Build metadata remains in
 `/usr/local/share/trivy-build.txt`. This is a custom patched build, not a new
 upstream release. Its final archive still must pass vulnerability assessment.
 
+Alpine package updates also address reported OS fixes. A linked-package list is
+recorded in `/usr/local/share/trivy-packages.txt`; the build rejects the
+unmaintained `golang.org/x/crypto/openpgp` package and its subpackages. Go advisory
+[GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932) affects those specific APIs,
+not every package in the x/crypto module. A module-level UNKNOWN finding may
+remain visible in Trivy's report; this guard does not suppress that finding.
+
 CI builds the tool once in the inventory job and distributes a checksummed image
 archive with its inputs. Each job verifies the archive hash and loaded image ID
 before execution. The tool's own assessment uses that exact same archive without

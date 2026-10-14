@@ -52,6 +52,14 @@ so one matrix upload cannot replace another target's results.
 SARIF appears under the repository's **Security → Code scanning**. Each run also
 retains sanitized JSON/SARIF artifacts and a `security-evidence` artifact for 90
 days (subject to the repository's retention cap). The evidence archive contains
+`remaining-cves.md` with readable asset names and `remaining-cves.csv` with every
+HIGH/CRITICAL vulnerability instance, assessed artifact identity, package,
+installed/fixed versions and advisory link. These files are checksummed and enter
+the same trusted-run attestation bundle. They distinguish repeated instances
+from distinct IDs; mitigation status is explicitly unassessed, not accepted.
+Per-target `findings.json` and SARIF also include lower severities and secrets.
+
+The archive additionally contains
 inventory, scan statuses, package lists, resolved image digests, scanner/DB versions
 and timestamps, source/package hashes, coverage reconciliation and `SHA256SUMS`.
 Intermediate input artifacts expire after one day; they contain checkout/package

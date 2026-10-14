@@ -63,6 +63,7 @@ class RunnerTests(unittest.TestCase):
                  patch.object(run_scan, "secret", side_effect=lambda arn, region: "private-key" if arn == "key" else "password"), \
                  patch.object(run_scan, "wait_for_manager", return_value="configured"), \
                  patch.object(run_scan, "prepare", return_value=[{"image_id": "sha256:test", "context": "pg-gvm"}]), \
+                 patch.object(run_scan, "harden", return_value={"pg-gvm": {"network_mode": "none"}}), \
                  patch.object(run_scan.os, "chown", create=True):
                 status = run_scan.run(run_id)
             manifest = json.loads((output / "manifest.json").read_text())
@@ -73,6 +74,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(captured["control_panel_hostname"], "cp.aiwebdemo.click")
             self.assertEqual(uploaded[0], "aws-assessment.json")
             self.assertIn("scanner-image-pg-gvm.json", uploaded)
+            self.assertIn("scanner-hardening.json", uploaded)
             self.assertFalse((output.parent / "scanner-image-pg-gvm.tar").exists())
             builds = json.loads((output / "scanner-image-builds.json").read_text())
             self.assertEqual(builds[0]["image_id"], "sha256:test")

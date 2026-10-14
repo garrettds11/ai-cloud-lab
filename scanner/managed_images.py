@@ -1,9 +1,61 @@
 """Build reviewed scanner images and replace their exact Compose references."""
 import hashlib
+import copy
 import json
 from pathlib import Path
 import re
 import subprocess
+
+
+def isolated_services(config):
+    """Restrict socket-only services; retain networking for actual scanners/UI."""
+    config = copy.deepcopy(config)
+    services = config["services"]
+    selected = ("pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools")
+
+    def volume(service, target):
+        mounts = [mount for mount in services[service].get("volumes", [])
+                  if mount.get("target") == target and mount.get("type") == "volume" and mount.get("source")]
+        if len(mounts) != 1:
+            raise ValueError("Expected shared socket/data volume missing; review upstream Compose")
+        return mounts[0]["source"]
+
+    # Fail closed if an upstream change replaces the supported socket paths.
+    for left, right, path in (("pg-gvm", "gvmd", "/var/run/postgresql"),
+                              ("pg-gvm-migrator", "pg-gvm", "/var/lib/postgresql"),
+                              ("pg-gvm-migrator", "pg-gvm", "/var/run/postgresql"),
+                              ("redis-server", "ospd-openvas", "/run/redis"),
+                              ("gvm-tools", "gvmd", "/run/gvmd")):
+        if volume(left, path) != volume(right, path):
+            raise ValueError("Services no longer share the expected socket/data volume")
+    for name in selected:
+        service = services[name]
+        conflicting_privilege = any(option.startswith("no-new-privileges") and
+                                    option.replace("=", ":").replace(" ", "") not in
+                                    {"no-new-privileges", "no-new-privileges:true"}
+                                    for option in service.get("security_opt", []))
+        if service.get("ports") or service.get("privileged") or conflicting_privilege:
+            raise ValueError("Unexpected privileged or published socket-only service")
+        service.pop("networks", None)
+        service["network_mode"] = "none"
+        service["security_opt"] = sorted(set(service.get("security_opt", []) + ["no-new-privileges:true"]))
+        service["cap_drop"] = sorted(set(service.get("cap_drop", []) + ["NET_RAW"]))
+    services["redis-server"]["read_only"] = True
+    services["redis-server"]["tmpfs"] = sorted(set(services["redis-server"].get("tmpfs", []) +
+                                                    ["/tmp:rw,noexec,nosuid,size=16m"]))
+    return config
+
+
+def harden(compose):
+    normalized = json.loads(subprocess.check_output(
+        ["docker", "compose", "-f", str(compose), "config", "--format", "json"], text=True, timeout=60))
+    normalized = isolated_services(normalized)
+    # Compose accepts JSON. Preserve commands, dependencies, volumes and project identity.
+    Path(compose).write_text(json.dumps(normalized, indent=2))
+    return {name: {key: normalized["services"][name][key] for key in
+                  ("network_mode", "security_opt", "cap_drop", "read_only", "tmpfs")
+                  if key in normalized["services"][name]}
+            for name in ("pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools")}
 
 
 def definitions(root):

@@ -109,3 +109,23 @@ these five patched images reports an available fixed version in this scan.
 ECR publication of approved artifacts and patched Ubuntu AMI automation are
 tracked in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
 CI and runtime still build independently until that follow-up is implemented.
+
+## Socket-only service isolation
+
+Before startup, the runner normalizes Compose through Docker and verifies the
+expected named volumes connect PostgreSQL to gvmd, Redis to OSPD, the migrator
+to the PostgreSQL data/socket, and gvm-tools to the manager's GMP socket. Changes
+to those paths, unexpected published ports or privileged service settings fail
+preparation instead of silently applying an incompatible policy.
+
+PostgreSQL, its migrator, Redis and gvm-tools run with `network_mode: none`,
+`no-new-privileges:true` and `NET_RAW` dropped. Their Unix socket/data volumes
+remain available. Redis also receives a read-only root filesystem and a limited
+temporary filesystem; its socket and image-declared data volume remain writable.
+OpenVAS/OSPD retain their required scanning network/capabilities; manager and web
+service network settings are preserved. The runner publishes only the applied
+control settings in `scanner-hardening.json`, without exporting Compose secrets.
+
+These controls reduce access and escalation paths; they do not patch a CVE or
+automatically disposition a finding. They require deployment and a full scan to
+establish operational acceptance.

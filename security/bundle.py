@@ -6,6 +6,8 @@ import shutil
 from pathlib import Path
 import tarfile
 
+from cve_report import write_report
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
 
@@ -38,6 +40,7 @@ def main():
                           "Trivy misconfiguration advisory; Checkov separate blocking gate"}
     (OUT / "coverage.json").write_text(json.dumps(manifest, indent=2) + "\n")
     evidence = [OUT / "inventory.json", OUT / "coverage.json"]
+    evidence += write_report(OUT, inventory, manifest)
     review = OUT / "feed-secret-review.json"
     shutil.copyfile(ROOT / "security" / "feed-secret-review.json", review)
     evidence.append(review)
@@ -55,6 +58,7 @@ def main():
     summary += "".join(f"| {item['id']} | {item['complete']} | {item['blocking_findings']} | {item['reviewed_false_positives']} |\n"
                        for item in coverage)
     summary += "\nAttestation proves report provenance; consult coverage and findings for assessment status.\n"
+    summary += "\nDownload `security-evidence` for `remaining-cves.md` and the sortable `remaining-cves.csv` (asset, CVE, package and fixed version).\n"
     print(summary)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:

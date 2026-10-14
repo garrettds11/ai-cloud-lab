@@ -1,4 +1,5 @@
 import json
+import copy
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,42 @@ def setUpModule():
 
 
 class ManagedImageTests(unittest.TestCase):
+    def socket_config(self):
+        mounts = {
+            "pg-gvm": [("pg-data", "/var/lib/postgresql"), ("pg-socket", "/var/run/postgresql")],
+            "pg-gvm-migrator": [("pg-data", "/var/lib/postgresql"), ("pg-socket", "/var/run/postgresql")],
+            "gvmd": [("pg-socket", "/var/run/postgresql"), ("gmp-socket", "/run/gvmd")],
+            "redis-server": [("redis-socket", "/run/redis")],
+            "ospd-openvas": [("redis-socket", "/run/redis")],
+            "gvm-tools": [("gmp-socket", "/run/gvmd")],
+        }
+        return {"services": {name: {"networks": {"default": None}, "volumes": [
+            {"type": "volume", "source": source, "target": target} for source, target in volumes]}
+            for name, volumes in mounts.items()}}
+
+    def test_isolation_preserves_scanner_network_and_shared_sockets(self):
+        config = self.socket_config()
+        original = copy.deepcopy(config)
+        result = managed_images.isolated_services(config)
+        self.assertEqual(config, original)
+        self.assertEqual(result["services"]["ospd-openvas"], original["services"]["ospd-openvas"])
+        for name in ("pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools"):
+            self.assertEqual(result["services"][name]["network_mode"], "none")
+            self.assertNotIn("networks", result["services"][name])
+            self.assertIn("no-new-privileges:true", result["services"][name]["security_opt"])
+            self.assertEqual(result["services"][name]["volumes"], original["services"][name]["volumes"])
+        self.assertTrue(result["services"]["redis-server"]["read_only"])
+
+    def test_unexpected_exposure_or_changed_socket_fails_closed(self):
+        for change in (lambda c: c["services"]["pg-gvm"].update(ports=["5432:5432"]),
+                       lambda c: c["services"]["gvm-tools"].update(privileged=True),
+                       lambda c: c["services"]["gvm-tools"].update(security_opt=["no-new-privileges=false"]),
+                       lambda c: c["services"]["redis-server"]["volumes"][0].update(source="unshared")):
+            config = self.socket_config()
+            change(config)
+            with self.assertRaises(ValueError):
+                managed_images.isolated_services(config)
+
     def test_recipe_matches_digest_pinned_base(self):
         images = managed_images.definitions(Path(__file__).parent / "image_builds")
         self.assertEqual({image["context"] for image in images},

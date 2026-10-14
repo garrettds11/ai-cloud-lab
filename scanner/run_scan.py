@@ -11,7 +11,7 @@ import sys
 import time
 
 from assess_aws import assess
-from managed_images import prepare
+from managed_images import prepare, harden
 
 
 ROOT = pathlib.Path("/opt/ai-scanner")
@@ -113,6 +113,7 @@ def run(run_id):
         "--output", str(compose), timeout=60)
     cmd("docker", "compose", "-f", str(compose), "pull", timeout=7200)
     built = prepare(compose, ROOT / "image_builds")
+    (output / "scanner-hardening.json").write_text(json.dumps(harden(compose), indent=2))
     for image in built:
         archive = work / ("scanner-image-" + image["context"] + ".tar")
         try:

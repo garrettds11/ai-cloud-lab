@@ -43,11 +43,11 @@ grep -q 'security-nasl-fixture-ok' /tmp/fixture-result
 echo 'Redis readiness, NASL parsing and fixture execution passed'
 '''
     if ospd:
-        script += '''cp "$(command -v openvas)" /tmp/openvas
-cmp "$(command -v openvas)" /tmp/openvas
-PATH="/tmp:$PATH" ospd-openvas --version
+        script += '''openvas -s > /tmp/scanner-settings 2>&1 || { cat /tmp/scanner-settings; exit 1; }
+ospd-openvas --version
 echo 'OSPD controller version and runtime imports passed'
 '''
+    scanner_caps = ["--cap-add", "NET_ADMIN", "--cap-add", "NET_RAW"] if ospd else []
     isolation = ["--network", "none", "--read-only", "--cap-drop", "ALL",
                  "--security-opt", "no-new-privileges:true", "--cpus", "1",
                  "--label", "ai-cloud-lab.verification=nasl"]
@@ -59,7 +59,7 @@ echo 'OSPD controller version and runtime imports passed'
                         redis_image_id, "--port", "0", "--unixsocket", "/run/redis/redis.sock",
                         "--unixsocketperm", "777", "--save", "", "--appendonly", "no"],
                        check=True, timeout=60, stdout=subprocess.DEVNULL)
-        subprocess.run(["docker", "run", "--rm", "--name", name, *isolation,
+        subprocess.run(["docker", "run", "--rm", "--name", name, *isolation, *scanner_caps,
                         "--user", "0:0",
                         "--memory", "512m", "--mount", f"type=volume,source={volume},target=/run/redis",
                         "--tmpfs", "/tmp:rw,exec,nosuid,nodev,size=16m", "--entrypoint", "/bin/sh",
@@ -78,6 +78,7 @@ echo 'OSPD controller version and runtime imports passed'
                        stdout=subprocess.DEVNULL)
     return {"nasl_parse": "passed", "nasl_fixture_execution": "passed", "redis_readiness": "passed",
             "ospd_version": "passed" if ospd else "not applicable",
+            "capabilities": ["NET_ADMIN", "NET_RAW"] if ospd else [],
             "redis_image_id": redis_image_id, "network": "none", "storage": "disposable",
             "production_targets_scanned": False}
 

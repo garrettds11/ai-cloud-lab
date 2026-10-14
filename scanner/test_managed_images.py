@@ -40,6 +40,10 @@ class ManagedImageTests(unittest.TestCase):
             managed_images.scanner_smoke("sha256:" + "a" * 64, "sha256:" + "b" * 64, ospd=True)
         script = run.call_args_list[2].args[0][-1]
         self.assertLess(script.index('client.connect'), script.index('ospd-openvas --version'))
+        fixture = run.call_args_list[2].args[0]
+        caps = [fixture[i + 1] for i, flag in enumerate(fixture) if flag == "--cap-add"]
+        self.assertEqual(caps, ["NET_ADMIN", "NET_RAW"])
+        self.assertNotIn("--cap-add", run.call_args_list[1].args[0])
 
     def test_nasl_failure_cleans_only_generated_resources(self):
         commands = []

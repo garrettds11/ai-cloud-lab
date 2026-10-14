@@ -33,6 +33,10 @@ capabilities. Only generated resources are removed. A preflight compatibility
 job runs before the expensive scanner build; individual assessed scanner images
 repeat the check and retain its result and Redis image identity in their evidence.
 This exercises a local fixture, not a full feed or production target scan.
+The OSPD fixture grants only its upstream-declared NET_ADMIN/NET_RAW capabilities
+inside a network-disabled namespace for scanner settings retrieval. Redis and the
+standalone NASL fixture retain no capabilities. OSPD's version/import check runs
+after Redis readiness; no build-time runtime-service probe is required.
 
 [Assessment 38576332719](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38576332719)
 restores complete coverage for all 28 targets after replacing the deleted

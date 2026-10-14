@@ -52,7 +52,7 @@ class ManagedImageTests(unittest.TestCase):
     def test_recipe_matches_digest_pinned_base(self):
         images = managed_images.definitions(Path(__file__).parent / "image_builds")
         self.assertEqual({image["context"] for image in images},
-                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas", "openvas-scanner"})
+                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas", "openvas-scanner", "trivy"})
         for image in images:
             self.assertTrue(image["recipe_files"])
 
@@ -66,7 +66,8 @@ class ManagedImageTests(unittest.TestCase):
                 build.assert_not_called()
 
     def test_compose_uses_built_id_and_preserves_other_images(self):
-        images = managed_images.definitions(Path(__file__).parent / "image_builds")
+        images = [image for image in managed_images.definitions(Path(__file__).parent / "image_builds")
+                  if image.get("scope", "compose") == "compose"]
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent.parent / ".security-scan") as temporary:
             compose = Path(temporary) / "compose.yaml"
             compose.write_text("services:\n" + "".join(

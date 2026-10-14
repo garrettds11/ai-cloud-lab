@@ -129,3 +129,25 @@ control settings in `scanner-hardening.json`, without exporting Compose secrets.
 These controls reduce access and escalation paths; they do not patch a CVE or
 automatically disposition a finding. They require deployment and a full scan to
 establish operational acceptance.
+
+## Patched Trivy tool
+
+Trivy's Go standard library and `golang.org/x/net` vulnerabilities require a
+binary rebuild. The tool recipe retains release 0.75.0 at upstream commit
+`591e9799316a602e703f0b484f6c6d7b234ec8f3`, verifies the complete source archive
+SHA256, builds with Go 1.27.2 and x/net 0.60.0, verifies Go modules, and removes
+compiler/source/cache packages from the final image. Build metadata remains in
+`/usr/local/share/trivy-build.txt`. This is a custom patched build, not a new
+upstream release. Its final archive still must pass vulnerability assessment.
+
+CI builds the tool once in the inventory job and distributes a checksummed image
+archive with its inputs. Each job verifies the archive hash and loaded image ID
+before execution. The tool's own assessment uses that exact same archive without
+rebuilding it. The scanner container retains its non-root user, read-only source
+mount and absence of Docker socket/AWS credentials. A missing or altered tool
+artifact fails the scan; there is no fallback to the unpatched upstream binary.
+
+The deployed runner builds the same recipe before any assessment, uses its
+immutable ID for all Trivy scans, and assesses the exact runtime tool archive
+alongside the other managed images. `scanner-tool-build.json` records the tool
+identity even when later assessments fail. ECR promotion remains tracked in #90.

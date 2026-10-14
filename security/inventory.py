@@ -263,6 +263,15 @@ def main():
                      "Host packages and plugins downloaded at boot require runtime assessment",
                      "Source CVE analysis requires supported dependency manifests or bundled packages",
                      "No network, authenticated web, or business authorization assessment in this workflow"]}
+    # Build the scanner once, then distribute the exact assessed artifact to jobs.
+    # The host performs builds; the scanning container never gets a Docker socket.
+    scanner = managed_images.build_tool(snapshot / "scanner" / "image_builds")
+    scanner_archive = OUT / "inputs" / "scanner-image.tar"
+    subprocess.run(["docker", "image", "save", "--output", str(scanner_archive), scanner["image_id"]],
+                   check=True, timeout=300)
+    with scanner_archive.open("rb") as stream:
+        scanner["archive_sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+    inventory["scanner_build"] = scanner
     (OUT / "inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
     matrix = json.dumps({"include": [{"id": t["id"]} for t in targets]}, separators=(",", ":"))
     if os.environ.get("GITHUB_OUTPUT"):

@@ -70,7 +70,11 @@ def definitions(root):
         seen.add(image["reference"])
         if not re.fullmatch(r"[a-z0-9-]+", image["context"]):
             raise ValueError("Invalid managed-image context")
-        repository = image["reference"].rsplit(":", 1)[0]
+        repository = image["reference"].split("@", 1)[0]
+        if ":" in repository.rsplit("/", 1)[-1]:
+            repository = repository.rsplit(":", 1)[0]
+        if image.get("scope", "compose") not in {"compose", "tool"}:
+            raise ValueError("Unsupported managed-image scope")
         if not re.fullmatch(re.escape(repository) + r"@sha256:[a-f0-9]{64}", image["base"]):
             raise ValueError("Managed image must use a digest-pinned base from its upstream repository")
         if not re.fullmatch(r"ai-cloud-lab/[a-z0-9-]+:patched", image["tag"]):
@@ -101,6 +105,13 @@ def build(root, image, timeout=1800):
     return dict(image, image_id=image_id)
 
 
+def build_tool(root):
+    tools = [image for image in definitions(root) if image.get("scope") == "tool"]
+    if len(tools) != 1 or tools[0]["context"] != "trivy":
+        raise ValueError("Exactly one reviewed Trivy tool recipe is required")
+    return build(root, tools[0])
+
+
 def pins(root):
     manifest = json.loads((Path(root) / "manifest.json").read_text())
     result = manifest.get("pins", [])
@@ -116,7 +127,7 @@ def pins(root):
 
 def prepare(compose, root):
     text = Path(compose).read_text()
-    images = definitions(root)
+    images = [image for image in definitions(root) if image.get("scope", "compose") == "compose"]
     coordinated = pins(root)
     # Validate the complete expected coverage before building or rewriting.
     patterns = {}

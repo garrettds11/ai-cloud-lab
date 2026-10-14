@@ -19,7 +19,7 @@ jobs:
   inventory:
     name: Inventory and package deployable assets
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     outputs:
       matrix: ${{ steps.inventory.outputs.matrix }}
     steps:

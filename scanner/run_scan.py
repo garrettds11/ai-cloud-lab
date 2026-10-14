@@ -11,7 +11,7 @@ import sys
 import time
 
 from assess_aws import assess
-from managed_images import prepare, harden
+from managed_images import prepare, harden, build_tool
 
 
 ROOT = pathlib.Path("/opt/ai-scanner")
@@ -76,8 +76,11 @@ def run(run_id):
     deadline = time.time() + int(float(env["SCAN_TIMEOUT_HOURS"]) * 3600) + 3 * 3600
     assessment_work = work / "lambda-artifacts"
     assessment_work.mkdir(mode=0o700)
+    tool = build_tool(ROOT / "image_builds")
+    trivy_image = tool["image_id"]
+    (output / "scanner-tool-build.json").write_text(json.dumps(tool, indent=2))
     assessment = assess(json.loads((ROOT / "assessment.json").read_text()), region,
-                        assessment_work, output, TRIVY_IMAGE)
+                        assessment_work, output, trivy_image)
     upload_reports(env, run_id, output)
     password = secret(env["GREENBONE_SECRET_ARN"], region).strip()
     private_key = secret(env["SSH_SECRET_ARN"], region)
@@ -101,7 +104,7 @@ def run(run_id):
 
     # Image coverage is independent of Greenbone's feed load. Publish it first
     # so the exact deployed digest still has a report if Greenbone later fails.
-    cmd("docker", "run", "--rm", "-v", f"{output}:/reports", TRIVY_IMAGE,
+    cmd("docker", "run", "--rm", "-v", f"{output}:/reports", trivy_image,
         "image", "--scanners", "vuln", "--format", "json",
         "--output", "/reports/trivy.json", env["IMAGE_DIGEST"], timeout=3600)
     cmd("aws", "s3", "cp", str(output / "trivy.json"),
@@ -112,7 +115,7 @@ def run(run_id):
     cmd("curl", "--fail", "--location", "--silent", "--show-error", COMPOSE_URL,
         "--output", str(compose), timeout=60)
     cmd("docker", "compose", "-f", str(compose), "pull", timeout=7200)
-    built = prepare(compose, ROOT / "image_builds")
+    built = [tool] + prepare(compose, ROOT / "image_builds")
     (output / "scanner-hardening.json").write_text(json.dumps(harden(compose), indent=2))
     for image in built:
         archive = work / ("scanner-image-" + image["context"] + ".tar")
@@ -122,7 +125,7 @@ def run(run_id):
                 image["image_archive_sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
             # Assess the exact runtime rebuild independently of CI's earlier build.
             cmd("docker", "run", "--rm", "-v", f"{archive}:/image.tar:ro",
-                "-v", f"{output}:/reports", TRIVY_IMAGE, "image", "--input", "/image.tar",
+                "-v", f"{output}:/reports", trivy_image, "image", "--input", "/image.tar",
                 "--scanners", "vuln", "--format", "json", "--output",
                 "/reports/scanner-image-" + image["context"] + ".json", timeout=3600)
         finally:

@@ -3,7 +3,9 @@
 [`security-scan.yml`](../.github/workflows/security-scan.yml) runs on every PR,
 pushes to `dev`/`main`, Tuesday at 19:15 UTC on the default branch, and manual runs.
 It needs no AWS credentials or running scanner instance. All actions use verified
-commit pins; Trivy 0.75.0 uses the same immutable image as the runtime scanner.
+commit pins; Trivy 0.75.0 is rebuilt from pinned source with patched Go
+dependencies using the same reviewed recipe as the runtime scanner. The exact
+CI tool image is checksummed, distributed to jobs and assessed independently.
 
 ## Coverage
 

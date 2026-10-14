@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import subprocess
@@ -66,6 +67,11 @@ class ReportTests(unittest.TestCase):
 
 
 class CoverageTests(unittest.TestCase):
+    def setUp(self):
+        scanner_patch = patch("scan.scanner_ref", return_value=(scan.TRIVY_IMAGE, {}))
+        scanner_patch.start()
+        self.addCleanup(scanner_patch.stop)
+
     def test_missing_or_partial_report_never_passes(self):
         target = {"id": "one"}
         valid = {"target": target, "commit": "abc", "complete": True}
@@ -167,6 +173,32 @@ class CoverageTests(unittest.TestCase):
             self.assertFalse((output / "managed.image.tar").exists())
             status = json.loads((output / "reports/managed/status.json").read_text())
             self.assertEqual(status["image_build"]["image_id"], "sha256:" + "1" * 64)
+
+
+class ScannerArtifactTests(unittest.TestCase):
+    def test_changed_archive_fails_before_any_docker_load(self):
+        with tempfile.TemporaryDirectory(dir=scan.ROOT / ".security-scan") as temporary:
+            output = Path(temporary)
+            (output / "inputs").mkdir()
+            (output / "inputs/scanner-image.tar").write_bytes(b"changed")
+            record = {"reference": scan.TRIVY_IMAGE, "scope": "tool", "image_id": "sha256:" + "1" * 64,
+                      "archive_sha256": hashlib.sha256(b"original").hexdigest()}
+            with patch("scan.OUT", output), patch("scan.subprocess.run") as run:
+                with self.assertRaises(ValueError):
+                    scan.scanner_ref({"scanner_build": record})
+                run.assert_not_called()
+
+    def test_verified_archive_load_must_match_immutable_id(self):
+        with tempfile.TemporaryDirectory(dir=scan.ROOT / ".security-scan") as temporary:
+            output = Path(temporary)
+            (output / "inputs").mkdir()
+            (output / "inputs/scanner-image.tar").write_bytes(b"image")
+            record = {"reference": scan.TRIVY_IMAGE, "scope": "tool", "image_id": "sha256:" + "1" * 64,
+                      "archive_sha256": hashlib.sha256(b"image").hexdigest()}
+            with patch("scan.OUT", output), patch("scan.subprocess.run"), \
+                    patch("scan.subprocess.check_output", return_value="sha256:" + "2" * 64):
+                with self.assertRaises(ValueError):
+                    scan.scanner_ref({"scanner_build": record})
 
 
 class InventoryTests(unittest.TestCase):

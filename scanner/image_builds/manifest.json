@@ -37,6 +37,13 @@
       "base": "registry.community.greenbone.net/community/openvas-scanner@sha256:525c48bb93e39218d4de360a90d991a2ff735e1fe08f97ef35c5cbc375a08408",
       "context": "openvas-scanner",
       "tag": "ai-cloud-lab/openvas-scanner:patched"
+    },
+    {
+      "reference": "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa",
+      "base": "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa",
+      "context": "trivy",
+      "tag": "ai-cloud-lab/trivy:patched",
+      "scope": "tool"
     }
   ]
 }

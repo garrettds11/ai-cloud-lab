@@ -123,6 +123,25 @@ def resolve_image(reference):
     return repository + "@" + match[1]
 
 
+def scanner_ref(inventory):
+    record = inventory["scanner_build"]
+    if record.get("reference") != TRIVY_IMAGE or record.get("scope") != "tool":
+        raise ValueError("Missing or unexpected reviewed scanner build")
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", record.get("image_id", "")):
+        raise ValueError("Scanner requires an immutable image ID")
+    archive = OUT / "inputs" / "scanner-image.tar"
+    with archive.open("rb") as stream:
+        if hashlib.file_digest(stream, "sha256").hexdigest() != record["archive_sha256"]:
+            raise ValueError("Scanner archive differs from inventoried artifact")
+    subprocess.run(["docker", "image", "load", "--input", str(archive)], check=True, timeout=300,
+                   stdout=subprocess.DEVNULL)
+    loaded = subprocess.check_output(["docker", "image", "inspect", record["image_id"],
+                                      "--format", "{{.Id}}"], text=True, timeout=60).strip()
+    if loaded != record["image_id"]:
+        raise ValueError("Loaded scanner image does not match inventoried build")
+    return record["image_id"], record
+
+
 def scan(target_id):
     inventory = json.loads((OUT / "inventory.json").read_text())
     target = next(item for item in inventory["targets"] if item["id"] == target_id)
@@ -130,16 +149,18 @@ def scan(target_id):
     destination.mkdir(parents=True, exist_ok=True)
     status = {"target": target, "commit": inventory["commit"], "complete": False,
               "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              "scanner_image": TRIVY_IMAGE, "blocking_findings": None}
+              "scanner_base_image": TRIVY_IMAGE, "blocking_findings": None}
     raw = OUT / (target_id + ".raw.json")
     image_archive = OUT / (target_id + ".image.tar")
     cache = OUT / "cache"
     cache.mkdir(exist_ok=True)
     # No Docker socket, AWS credentials, or execution of scanned images/packages.
-    docker = ["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
-              "-e", "HOME=/tmp", "-v", f"{ROOT}:/work:ro", "-v", f"{OUT}:/output",
-              "-v", f"{cache}:/cache", TRIVY_IMAGE]
     try:
+        reference, scanner = scanner_ref(inventory)
+        status["scanner_image"], status["scanner_build"] = reference, scanner
+        docker = ["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+                  "-e", "HOME=/tmp", "-v", f"{ROOT}:/work:ro", "-v", f"{OUT}:/output",
+                  "-v", f"{cache}:/cache", reference]
         version = json.loads(subprocess.check_output(docker + ["--version", "--format", "json"],
                                                      text=True, timeout=180))
         status["scanner_version_before"] = version
@@ -151,14 +172,23 @@ def scan(target_id):
                                   if image["reference"] == target["scan_ref"])
                 if definition != target["build"]:
                     raise ValueError("Managed image recipe differs from inventoried input")
-                record = managed_images.build(root, definition)
-                subprocess.run(["docker", "image", "save", "--output", str(image_archive), record["image_id"]],
-                               check=True, timeout=300)
+                if definition.get("scope") == "tool":
+                    if any(scanner.get(key) != value for key, value in definition.items()):
+                        raise ValueError("Scanner build differs from reviewed recipe")
+                    record = scanner
+                    # Assess the exact image already executing this scan, never rebuild it.
+                    input_archive = OUT / "inputs" / "scanner-image.tar"
+                else:
+                    record = managed_images.build(root, definition)
+                    subprocess.run(["docker", "image", "save", "--output", str(image_archive), record["image_id"]],
+                                   check=True, timeout=300)
+                    input_archive = image_archive
                 status["image_build"] = record
-                with image_archive.open("rb") as stream:
+                with input_archive.open("rb") as stream:
                     status["image_archive_sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
                 # Read a static archive: the scanner still gets no Docker socket.
-                command = ["image", "--scanners", "vuln,secret", "--input", "/output/" + image_archive.name]
+                command = ["image", "--scanners", "vuln,secret", "--input",
+                           "/work/" + input_archive.relative_to(ROOT).as_posix()]
             else:
                 reference = resolve_image(target["scan_ref"])
                 status["resolved_image"] = reference

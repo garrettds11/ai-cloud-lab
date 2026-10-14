@@ -277,6 +277,9 @@ def main():
                      "Host packages and plugins downloaded at boot require runtime assessment",
                      "Source CVE analysis requires supported dependency manifests or bundled packages",
                      "No network, authenticated web, or business authorization assessment in this workflow"]}
+    # Validate patch candidates/tool early while retaining every configured target.
+    targets.sort(key=lambda target: (target.get("deployment_status") != "candidate",
+                                     target.get("build", {}).get("scope") != "tool"))
     # Build the scanner once, then distribute the exact assessed artifact to jobs.
     # The host performs builds; the scanning container never gets a Docker socket.
     scanner = managed_images.build_tool(snapshot / "scanner" / "image_builds")

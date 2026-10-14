@@ -164,7 +164,10 @@ identity even when later assessments fail. ECR promotion remains tracked in #90.
 The `open-webui` context is a candidate build from the assessed v0.12.0 digest.
 It pins the reported fixed versions for PyJWT, cryptography, fsspec,
 jaraco.context, MCP, PyArrow, pypdf, sentence-transformers, transformers,
-unstructured and wheel. Binary-only package installation and `pip check` reject
+unstructured and wheel. Datasets is upgraded to 5.1.0 with PyArrow 24.0.0 because
+the existing datasets 4.x upper bound rejects the patched fsspec version.
+Transformers uses the non-yanked 5.10.1 fix instead of yanked 5.10.0.
+Binary-only package installation and `pip check` reject
 unavailable wheels or dependency conflicts. Offline smoke checks exercise JWT,
 crypto, in-memory storage, Arrow and PDF APIs and import the NLP/MCP APIs without
 model downloads or persistent account/database state.

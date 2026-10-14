@@ -1,6 +1,6 @@
 # Remediation status — 14 October 2026
 
-## Completed assessment
+## Completed assessment baseline
 
 [Assessment 38533402718](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38533402718)
 has complete coverage for 28 targets: repository source, five packaged inputs,
@@ -29,6 +29,17 @@ trusted dev/main runs use artifact attestation. Publication is not deployment.
   jaraco.context/wheel copies. No remaining HIGH/CRITICAL candidate finding
   reports a fixed version. The original configured image remains assessed and
   unchanged; the candidate is not deployed.
+- **Open WebUI runtime reduction:**
+  [assessment 38573301642](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38573301642)
+  confirms **479 → 277** HIGH/CRITICAL instances after removing build packages,
+  **202 removed / zero added**. Against the original image in this same run,
+  the complete candidate reduction is **507 → 277**, **230 removed / zero
+  added**. Dependency, CPU tensor, backend and authentication checks pass;
+  the image has zero secrets and no HIGH/CRITICAL finding reporting a fixed
+  version. Runtime libgcc, libstdc++, MariaDB, OpenSSL and zlib libraries remain
+  installed. The assessed candidate is
+  `sha256:38b7c254f4f4479da466ea0a15ad947365e30601f0cf527517d77ec6bb88d0d4`.
+  It remains undeployed and its 277 residual findings remain blocking.
 - **Greenbone:** managed rebuilds of PostgreSQL, its migrator, Redis, gvm-tools,
   OSPD and OpenVAS remain assessed. The PostgreSQL shared private keys are gone;
   unique keys are created at startup. Socket-only service isolation reduces
@@ -46,7 +57,7 @@ trusted dev/main runs use artifact attestation. Publication is not deployment.
   reported fixes are gone. Unfixed curl CVEs and other residual findings remain
   blocking. Service binary/version checks pass; full stack acceptance is pending.
 
-## Next verification
+## Remaining acceptance
 
 The Open WebUI candidate removes native compilers and development headers
 after installing binary wheels. An apt simulation refuses removal of runtime
@@ -55,8 +66,8 @@ authentication checks run after removal, followed by an image scan. Removing
 kernel headers removes their image findings; it does not patch the host kernel.
 Its first build correctly stopped when the removal plan included shared
 libraries outside the allowed list. Binutils and those libraries are now
-retained. The corrected candidate is not counted as verified remediation until
-its compatibility checks and image scan complete.
+retained. Its corrected image scan and compatibility checks now pass; removal
+of development packages is distinguished from patching executable libraries.
 
 ChromaDB's remaining critical findings require further work. Its latest
 published release is still 1.5.9. The

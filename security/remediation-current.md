@@ -59,6 +59,17 @@ trusted dev/main runs use artifact attestation. Publication is not deployment.
 
 ## Remaining acceptance
 
+The final bundle of assessment 38573301642 reports **incomplete coverage**:
+the previously pinned gvm-tools base was deleted upstream during the scan.
+It has 1,594 known HIGH/CRITICAL instances, including the 277 candidate
+instances, with the gvm-tools target missing. This is not a complete remaining
+count or a clean result. The feed job confirmed 72 reviewed false positives
+and zero feed blockers. The replacement gvm-tools digest is pinned in the
+manifest, preserves its inspected upstream startup configuration, and checks
+GMP and Unix-socket library imports after signed Debian updates. Its new build
+and a subsequent complete assessment must verify restored coverage. This
+upstream retention problem reinforces the ECR promotion work in #90.
+
 The Open WebUI candidate removes native compilers and development headers
 after installing binary wheels. An apt simulation refuses removal of runtime
 packages, and autoremove is disabled. Dependency, CPU tensor, startup and

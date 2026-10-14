@@ -40,7 +40,7 @@
     },
     {
       "reference": "registry.community.greenbone.net/community/gvm-tools",
-      "base": "registry.community.greenbone.net/community/gvm-tools@sha256:a3ec2b8d2281e1a0bea147f1a6fbe00d22eab26db1c114bebf7bb2beed0a5619",
+      "base": "registry.community.greenbone.net/community/gvm-tools@sha256:53d294ab34b1a7fe3582826560aa8a6dcdfb395e396b195a03dd7d4b3b9cd885",
       "context": "gvm-tools",
       "tag": "ai-cloud-lab/gvm-tools:patched"
     },

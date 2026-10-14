@@ -3,6 +3,24 @@
   "pins": [],
   "images": [
     {
+      "reference": "registry.community.greenbone.net/community/gsad:stable",
+      "base": "registry.community.greenbone.net/community/gsad@sha256:d564fa5d6bd8f98c739be82ba7fb6d6760a9f1ab7827b40c57ac747adcd03428",
+      "context": "gsad",
+      "tag": "ai-cloud-lab/gsad:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/gvmd:stable",
+      "base": "registry.community.greenbone.net/community/gvmd@sha256:2d4191418d8998a872954ab30292a18c4eae74ffb8f15aec70d8eb2d16ee9b8c",
+      "context": "gvmd",
+      "tag": "ai-cloud-lab/gvmd:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/nginx:latest",
+      "base": "registry.community.greenbone.net/community/nginx@sha256:2218c3a09dde107ef999cac1f47e5c39b9a87fd2728fe7db3c930ff354392958",
+      "context": "nginx",
+      "tag": "ai-cloud-lab/nginx:patched"
+    },
+    {
       "reference": "registry.community.greenbone.net/community/pg-gvm:stable",
       "base": "registry.community.greenbone.net/community/pg-gvm@sha256:b81bc5d7a750203ea25c6e4dd086751ecee8e388d1cb2501c60b3805e0056204",
       "context": "pg-gvm",

@@ -41,6 +41,16 @@ report include both upstream changes and the additional package updates.
 
 ## CI and runtime
 
+`gsad`, `gvmd` and the Greenbone `nginx` proxy also receive signed Debian
+updates. Their builds reject curl/libcurl versions older than
+`8.14.1-2+deb13u7`, the reported fixes for CVE-2026-8286 and CVE-2026-8927,
+and check that each service binary can load and report its version. Their
+upstream startup commands and runtime user handling are preserved. The older
+assessed gsad/gvmd digests were unavailable when resolving these recipes;
+the manifest records the current available bases. A comparison includes
+upstream changes as well as our package updates. Full feed-backed Greenbone
+acceptance remains required before deployment.
+
 CI inventories the recipe and complete build context, then rebuilds with
 `--no-cache --pull`, exports the resulting image and scans its static archive.
 Trivy receives no Docker socket or build credentials. Sanitized SARIF/JSON and

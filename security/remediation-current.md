@@ -1,5 +1,18 @@
 # Remediation status — 14 October 2026
 
+## Latest complete assessment
+
+[Assessment 38576332719](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38576332719)
+restores complete coverage for all 28 targets after replacing the deleted
+gvm-tools base. It reports **1,663 HIGH/CRITICAL instances**, **364 distinct
+IDs**: **1,386 in configured assets** and **277 in the undeployed candidate**.
+The 27 remaining instances with reported fixed versions belong to the unchanged
+configured Open WebUI image; the candidate does not replace its assessment.
+All 72 feed test-data dispositions applied. All 89 published evidence file
+checksums were independently verified. SARIF and the readable CVE list are in
+the published `security-evidence` artifact. The policy gate remains blocking;
+this PR's report is unsigned and is not a deployment approval.
+
 ## Completed assessment baseline
 
 [Assessment 38533402718](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38533402718)
@@ -66,8 +79,9 @@ instances, with the gvm-tools target missing. This is not a complete remaining
 count or a clean result. The feed job confirmed 72 reviewed false positives
 and zero feed blockers. The replacement gvm-tools digest is pinned in the
 manifest, preserves its inspected upstream startup configuration, and checks
-GMP and Unix-socket library imports after signed Debian updates. Its new build
-and a subsequent complete assessment must verify restored coverage. This
+GMP and Unix-socket library imports after signed Debian updates. Assessment
+38576332719 confirms that the replacement build and imports pass, its image
+scan completes with 69 residual blockers, and aggregate coverage is restored. This
 upstream retention problem reinforces the ECR promotion work in #90.
 
 The Open WebUI candidate removes native compilers and development headers

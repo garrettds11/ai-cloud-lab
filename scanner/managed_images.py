@@ -8,7 +8,7 @@ import subprocess
 import uuid
 
 
-def scanner_smoke(image_id, redis_image_id):
+def scanner_smoke(image_id, redis_image_id, ospd=False):
     """Run a local NASL fixture with disposable Redis; no production targets."""
     for identity in (image_id, redis_image_id):
         if not re.fullmatch(r"sha256:[a-f0-9]{64}", identity):
@@ -42,6 +42,12 @@ cat /tmp/fixture-result
 grep -q 'security-nasl-fixture-ok' /tmp/fixture-result
 echo 'Redis readiness, NASL parsing and fixture execution passed'
 '''
+    if ospd:
+        script += '''cp "$(command -v openvas)" /tmp/openvas
+cmp "$(command -v openvas)" /tmp/openvas
+PATH="/tmp:$PATH" ospd-openvas --version
+echo 'OSPD controller version and runtime imports passed'
+'''
     isolation = ["--network", "none", "--read-only", "--cap-drop", "ALL",
                  "--security-opt", "no-new-privileges:true", "--cpus", "1",
                  "--label", "ai-cloud-lab.verification=nasl"]
@@ -71,6 +77,7 @@ echo 'Redis readiness, NASL parsing and fixture execution passed'
         subprocess.run(["docker", "volume", "rm", volume], check=True, timeout=60,
                        stdout=subprocess.DEVNULL)
     return {"nasl_parse": "passed", "nasl_fixture_execution": "passed", "redis_readiness": "passed",
+            "ospd_version": "passed" if ospd else "not applicable",
             "redis_image_id": redis_image_id, "network": "none", "storage": "disposable",
             "production_targets_scanned": False}
 
@@ -230,7 +237,8 @@ def build(root, image, timeout=1800, scanner_redis=None):
             if len(redis) != 1:
                 raise ValueError("Scanner fixture requires the existing managed Redis recipe")
             scanner_redis = build(root, redis[0])["image_id"]
-        record["compatibility_checks"] = scanner_smoke(image_id, scanner_redis)
+        record["compatibility_checks"] = scanner_smoke(
+            image_id, scanner_redis, ospd=image["context"] == "ospd-openvas")
     return record
 
 

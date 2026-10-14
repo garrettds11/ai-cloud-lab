@@ -6,7 +6,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && python3 /tmp/remove-headers.py \
     && cp "$(command -v openvas)" /tmp/openvas \
     && cmp "$(command -v openvas)" /tmp/openvas \
-    && /tmp/openvas --version && PATH="/tmp:$PATH" ospd-openvas --version \
+    && /tmp/openvas --version \
     && rm /tmp/remove-headers.py /tmp/openvas \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 # Inherit scanner startup and its runtime privilege handling unchanged.

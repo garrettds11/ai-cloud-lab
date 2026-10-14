@@ -36,6 +36,10 @@ class ManagedImageTests(unittest.TestCase):
         self.assertEqual(commands[-1], ["docker", "volume", "rm", volume])
         self.assertEqual(result["network"], "none")
         self.assertFalse(result["production_targets_scanned"])
+        with patch("managed_images.subprocess.run") as run:
+            managed_images.scanner_smoke("sha256:" + "a" * 64, "sha256:" + "b" * 64, ospd=True)
+        script = run.call_args_list[2].args[0][-1]
+        self.assertLess(script.index('client.connect'), script.index('ospd-openvas --version'))
 
     def test_nasl_failure_cleans_only_generated_resources(self):
         commands = []

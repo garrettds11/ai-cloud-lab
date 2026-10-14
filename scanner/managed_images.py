@@ -43,18 +43,26 @@ echo 'Redis readiness, NASL parsing and fixture execution passed'
 '''
     isolation = ["--network", "none", "--read-only", "--cap-drop", "ALL",
                  "--security-opt", "no-new-privileges:true", "--cpus", "1",
-                 "--label", "ai-cloud-lab.verification=nasl", "--user", "0:0"]
+                 "--label", "ai-cloud-lab.verification=nasl"]
     try:
         subprocess.run(["docker", "run", "--detach", "--name", redis, *isolation,
+                        "--user", "redis",
                         "--memory", "128m", "--mount", f"type=volume,source={volume},target=/run/redis",
                         "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "redis-server",
                         redis_image_id, "--port", "0", "--unixsocket", "/run/redis/redis.sock",
                         "--unixsocketperm", "777", "--save", "", "--appendonly", "no"],
                        check=True, timeout=60, stdout=subprocess.DEVNULL)
         subprocess.run(["docker", "run", "--rm", "--name", name, *isolation,
+                        "--user", "0:0",
                         "--memory", "512m", "--mount", f"type=volume,source={volume},target=/run/redis",
                         "--tmpfs", "/tmp:rw,nosuid,size=16m", "--entrypoint", "/bin/sh",
                         image_id, "-c", script], check=True, timeout=120)
+    except Exception:
+        # Only the ephemeral fixture's logs; no application data or credentials.
+        subprocess.run(["docker", "logs", redis], check=False, timeout=30)
+        subprocess.run(["docker", "inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", redis],
+                       check=False, timeout=30)
+        raise
     finally:
         # Generated unique names only. No host directories, user volumes or containers.
         subprocess.run(["docker", "rm", "--force", "--volumes", name, redis],

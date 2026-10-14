@@ -28,6 +28,8 @@ class ManagedImageTests(unittest.TestCase):
                 self.assertNotIn("--publish", command)
                 self.assertIn("type=volume,source=security-nasl-", " ".join(command))
         volume = commands[0][-1]
+        redis = commands[1]
+        self.assertEqual(redis[redis.index("--user") + 1], "redis")
         self.assertEqual(commands[-1], ["docker", "volume", "rm", volume])
         self.assertEqual(result["network"], "none")
         self.assertFalse(result["production_targets_scanned"])
@@ -44,6 +46,7 @@ class ManagedImageTests(unittest.TestCase):
         name = commands[2][commands[2].index("--name") + 1]
         self.assertEqual(commands[-2], ["docker", "rm", "--force", "--volumes", name, name + "-redis"])
         self.assertEqual(commands[-1], ["docker", "volume", "rm", name + "-socket"])
+        self.assertIn(["docker", "logs", name + "-redis"], commands)
         with patch("managed_images.subprocess.run") as command:
             with self.assertRaises(ValueError):
                 managed_images.scanner_smoke("image:mutable", "sha256:" + "b" * 64)

@@ -15,6 +15,40 @@ def setUpModule():
 
 
 class ManagedImageTests(unittest.TestCase):
+    def test_nasl_fixture_is_isolated_and_cleans_its_resources(self):
+        with patch("managed_images.subprocess.run") as run:
+            result = managed_images.scanner_smoke("sha256:" + "a" * 64, "sha256:" + "b" * 64)
+        commands = [call.args[0] for call in run.call_args_list]
+        for command in commands:
+            if command[:2] == ["docker", "run"]:
+                self.assertEqual(command[command.index("--network") + 1], "none")
+                self.assertEqual(command[command.index("--cap-drop") + 1], "ALL")
+                self.assertIn("--read-only", command)
+                self.assertNotIn("--privileged", command)
+                self.assertNotIn("--publish", command)
+                self.assertIn("type=volume,source=security-nasl-", " ".join(command))
+        volume = commands[0][-1]
+        self.assertEqual(commands[-1], ["docker", "volume", "rm", volume])
+        self.assertEqual(result["network"], "none")
+        self.assertFalse(result["production_targets_scanned"])
+
+    def test_nasl_failure_cleans_only_generated_resources(self):
+        commands = []
+        def run(command, **kwargs):
+            commands.append(command)
+            if command[:2] == ["docker", "run"] and "--rm" in command:
+                raise subprocess.CalledProcessError(1, command)
+        with patch("managed_images.subprocess.run", side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                managed_images.scanner_smoke("sha256:" + "a" * 64, "sha256:" + "b" * 64)
+        name = commands[2][commands[2].index("--name") + 1]
+        self.assertEqual(commands[-2], ["docker", "rm", "--force", "--volumes", name, name + "-redis"])
+        self.assertEqual(commands[-1], ["docker", "volume", "rm", name + "-socket"])
+        with patch("managed_images.subprocess.run") as command:
+            with self.assertRaises(ValueError):
+                managed_images.scanner_smoke("image:mutable", "sha256:" + "b" * 64)
+            command.assert_not_called()
+
     def test_scanner_header_pruning_preserves_runtime_libraries(self):
         for context in ("openvas-scanner", "ospd-openvas"):
             path = Path(__file__).parent / "image_builds" / context / "remove-headers.py"

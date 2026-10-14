@@ -5,6 +5,65 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import uuid
+
+
+def scanner_smoke(image_id, redis_image_id):
+    """Run a local NASL fixture with disposable Redis; no production targets."""
+    for identity in (image_id, redis_image_id):
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", identity):
+            raise ValueError("Scanner acceptance requires immutable image IDs")
+    name = "security-nasl-" + uuid.uuid4().hex
+    volume, redis = name + "-socket", name + "-redis"
+    subprocess.run(["docker", "volume", "create", "--label", "ai-cloud-lab.verification=nasl",
+                    volume], check=True, timeout=60, stdout=subprocess.DEVNULL)
+    script = '''set -eu
+python3 - <<'PY'
+import socket, time
+for attempt in range(30):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(1)
+            client.connect("/run/redis/redis.sock")
+            client.sendall(b"*1\\r\\n$4\\r\\nPING\\r\\n")
+            assert client.recv(64).startswith(b"+PONG")
+        break
+    except (OSError, AssertionError):
+        time.sleep(0.5)
+else:
+    raise RuntimeError("Disposable Redis did not become ready")
+PY
+cp "$(command -v openvas-nasl)" /tmp/nasl-check
+cmp "$(command -v openvas-nasl)" /tmp/nasl-check
+printf 'display("security-nasl-fixture-ok");\\n' > /tmp/fixture.nasl
+/tmp/nasl-check -p -X /tmp/fixture.nasl
+/tmp/nasl-check -X /tmp/fixture.nasl > /tmp/fixture-result
+grep -q 'security-nasl-fixture-ok' /tmp/fixture-result
+echo 'Redis readiness, NASL parsing and fixture execution passed'
+'''
+    isolation = ["--network", "none", "--read-only", "--cap-drop", "ALL",
+                 "--security-opt", "no-new-privileges:true", "--cpus", "1",
+                 "--label", "ai-cloud-lab.verification=nasl", "--user", "0:0"]
+    try:
+        subprocess.run(["docker", "run", "--detach", "--name", redis, *isolation,
+                        "--memory", "128m", "--mount", f"type=volume,source={volume},target=/run/redis",
+                        "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--entrypoint", "redis-server",
+                        redis_image_id, "--port", "0", "--unixsocket", "/run/redis/redis.sock",
+                        "--unixsocketperm", "777", "--save", "", "--appendonly", "no"],
+                       check=True, timeout=60, stdout=subprocess.DEVNULL)
+        subprocess.run(["docker", "run", "--rm", "--name", name, *isolation,
+                        "--memory", "512m", "--mount", f"type=volume,source={volume},target=/run/redis",
+                        "--tmpfs", "/tmp:rw,nosuid,size=16m", "--entrypoint", "/bin/sh",
+                        image_id, "-c", script], check=True, timeout=120)
+    finally:
+        # Generated unique names only. No host directories, user volumes or containers.
+        subprocess.run(["docker", "rm", "--force", "--volumes", name, redis],
+                       check=False, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "volume", "rm", volume], check=True, timeout=60,
+                       stdout=subprocess.DEVNULL)
+    return {"nasl_parse": "passed", "nasl_fixture_execution": "passed", "redis_readiness": "passed",
+            "redis_image_id": redis_image_id, "network": "none", "storage": "disposable",
+            "production_targets_scanned": False}
 
 
 def candidate_smoke(image_id):
@@ -142,7 +201,7 @@ def definitions(root):
     return manifest["images"]
 
 
-def build(root, image, timeout=1800):
+def build(root, image, timeout=1800, scanner_redis=None):
     if image.get("scope") == "candidate" and image["context"] != "open-webui":
         raise ValueError("Register candidate acceptance checks before building another application")
     # No build secrets, SSH forwarding, host mounts or privileged build flags.
@@ -156,6 +215,13 @@ def build(root, image, timeout=1800):
     record = dict(image, image_id=image_id)
     if image.get("scope") == "candidate":
         record["compatibility_checks"] = candidate_smoke(image_id)
+    if image["context"] in {"openvas-scanner", "ospd-openvas"}:
+        if scanner_redis is None:
+            redis = [entry for entry in definitions(root) if entry["context"] == "redis-server"]
+            if len(redis) != 1:
+                raise ValueError("Scanner fixture requires the existing managed Redis recipe")
+            scanner_redis = build(root, redis[0])["image_id"]
+        record["compatibility_checks"] = scanner_smoke(image_id, scanner_redis)
     return record
 
 

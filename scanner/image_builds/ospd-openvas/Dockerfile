@@ -7,11 +7,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && cp "$(command -v openvas)" /tmp/openvas-check \
     && cmp "$(command -v openvas)" /tmp/openvas-check \
     && /tmp/openvas-check --version && ospd-openvas --version \
-    && cp "$(command -v openvas-nasl)" /tmp/nasl-check \
-    && cmp "$(command -v openvas-nasl)" /tmp/nasl-check \
-    && printf 'display("header-removal-parse-check");\n' > /tmp/header-check.nasl \
-    && /tmp/nasl-check -p -X /tmp/header-check.nasl \
-    && rm /tmp/remove-headers.py /tmp/header-check.nasl /tmp/openvas-check /tmp/nasl-check \
+    && rm /tmp/remove-headers.py /tmp/openvas-check \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 # Inherit scanner startup and its runtime privilege handling unchanged.
 # Temporary byte-identical copies omit file capabilities for build-only checks.

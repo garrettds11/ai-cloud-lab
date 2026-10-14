@@ -25,6 +25,15 @@ check uses byte-identical temporary executable copies without file capabilities;
 the original binaries and capabilities are retained. This correction still
 requires CI verification. No header-related reduction has been accepted yet.
 
+The corrected scanner binary version checks passed in assessment 38606892155,
+but standalone NASL parsing required Redis. NASL parsing/execution is now a
+disposable component test with the existing managed Redis image and a generated
+socket volume, no network or published ports, read-only roots and dropped
+capabilities. Only generated resources are removed. A preflight compatibility
+job runs before the expensive scanner build; individual assessed scanner images
+repeat the check and retain its result and Redis image identity in their evidence.
+This exercises a local fixture, not a full feed or production target scan.
+
 [Assessment 38576332719](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38576332719)
 restores complete coverage for all 28 targets after replacing the deleted
 gvm-tools base. It reports **1,663 HIGH/CRITICAL instances**, **364 distinct

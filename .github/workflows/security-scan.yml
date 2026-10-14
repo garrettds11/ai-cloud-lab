@@ -16,8 +16,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scanner-compatibility:
+    name: Greenbone component compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check native scanner and Redis compatibility before full assessment
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from scanner import managed_images
+          root = Path('scanner/image_builds')
+          images = {entry['context']: entry for entry in managed_images.definitions(root)}
+          redis = managed_images.build(root, images['redis-server'])
+          checks = [managed_images.build(root, images[name], scanner_redis=redis['image_id'])
+                    for name in ('openvas-scanner', 'ospd-openvas')]
+          output = Path('.security-scan/scanner-compatibility.json')
+          output.parent.mkdir(exist_ok=True)
+          output.write_text(json.dumps({'redis': redis, 'scanners': checks}, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: scanner-compatibility
+          path: .security-scan/scanner-compatibility.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
   inventory:
     name: Inventory and package deployable assets
+    needs: scanner-compatibility
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:

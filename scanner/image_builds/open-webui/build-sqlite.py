@@ -31,7 +31,7 @@ def main():
     # toolchain and MUTEX_PTHREADS is derived by SQLite, not a build input.
     flags = [option for option in options
              if not option.startswith(("COMPILER=", "MUTEX_"))]
-    if not all(re.fullmatch(r"[A-Z][A-Z0-9_]*(?:=[A-Za-z0-9_]+)?", flag) for flag in flags):
+    if not all(re.fullmatch(r"[A-Z][A-Z0-9_]*(?:=-?[A-Za-z0-9_]+)?", flag) for flag in flags):
         raise RuntimeError("Unexpected SQLite compile option")
     dependencies = subprocess.check_output(
         ["dpkg-query", "-W", "-f=${Depends}", "libsqlite3-0"], text=True).strip()

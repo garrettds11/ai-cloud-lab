@@ -1,53 +1,55 @@
-# Remediation status — 14 October 2026
+# Remediation status — 16 October 2026
+
+## Critical remediation batch in verification
+
+The [critical finding plan](critical-remediation.md) accounts for all 37 critical
+occurrences in the last complete assessment: 27 configured and ten candidate.
+The next candidate recipe replaces SQLite 3.40.1 with checksum-pinned upstream
+3.54.0 in a truthful local Debian package, retaining the original compile
+features and recording source/binary provenance. Database upgrade/feature and
+backend acceptance checks are required. Fresh assessment results are pending;
+no additional finding reduction is claimed yet. Policy and asset scope are unchanged.
 
 ## Latest complete assessment
 
-The [27-finding patch ledger](open-webui-patch-ledger.md) verifies every reported
-fix against the original and candidate in the complete assessment below. All 27
-IDs are absent in the candidate; they remain in the configured original.
+[Assessment 38617707801](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38617707801)
+confirms complete coverage for the same 28 targets, with **1,535 HIGH/CRITICAL
+finding occurrences** and **346 distinct IDs**: **1,258 configured** and **277
+in the undeployed Open WebUI candidate**. The aggregate policy gate remains
+blocking. No deployment or promotion has occurred.
 
-Assessment 38598894942 stopped before scanning because a Go dependency download
-failed with an HTTP/2 stream error while building Trivy. It produced no new
-complete assessment. The next batch adds bounded dependency-download retries,
-an offline Chroma vector storage/query compatibility check, and removal of
-reviewed development headers from OpenVAS/OSPD images. Header removal refuses
-any proposed runtime library removal, disables automatic package removal, and
-requires scanner binary loading and NASL parsing checks. Results are pending;
-no additional finding reduction is claimed yet. These checks do not replace
-full feed-backed scanner acceptance or patch the EC2 host kernel.
+Compared with complete assessment 38576332719, **128 occurrences were removed
+and none added**. OpenVAS and OSPD each changed **164 → 100**, removing 62
+linux-libc-dev findings and two libcurl4-gnutls-dev findings per image. These
+packages were purged with a guard that refuses runtime-library removal and
+without automatic dependency removal. This is development-package elimination,
+not host kernel patching or a claim that the retained curl runtime is fixed.
 
-Assessment 38604484723 confirms the new candidate dependency/retrieval check
-and backend/authentication checks pass; its complete candidate scan still has
-277 blockers. The initial OpenVAS header-removal build check failed because
-the original capability-bearing executable cannot run in Docker's build
-sandbox. Header removal itself passed its runtime-package guard. The corrected
-check uses byte-identical temporary executable copies without file capabilities;
-the original binaries and capabilities are retained. This correction still
-requires CI verification. No header-related reduction has been accepted yet.
+Native component acceptance passes against the actual images assessed: Redis
+readiness, NASL parsing/execution, scanner settings retrieval and OSPD version/
+imports. Tests use disposable storage, no network or published ports, read-only
+roots and bounded temporary executable/log storage. The OSPD fixture permits
+only upstream-declared NET_ADMIN/NET_RAW inside its isolated namespace; Redis
+and standalone NASL retain no capabilities. Production binaries retain their
+upstream file capabilities. Full feed-backed/deployment acceptance is pending.
 
-The corrected scanner binary version checks passed in assessment 38606892155,
-but standalone NASL parsing required Redis. NASL parsing/execution is now a
-disposable component test with the existing managed Redis image and a generated
-socket volume, no network or published ports, read-only roots and dropped
-capabilities. Only generated resources are removed. A preflight compatibility
-job runs before the expensive scanner build; individual assessed scanner images
-repeat the check and retain its result and Redis image identity in their evidence.
-This exercises a local fixture, not a full feed or production target scan.
-The OSPD fixture grants only its upstream-declared NET_ADMIN/NET_RAW capabilities
-inside a network-disabled namespace for scanner settings retrieval. Redis and the
-standalone NASL fixture retain no capabilities. OSPD's version/import check runs
-after Redis readiness; no build-time runtime-service probe is required.
+All **27 original finding IDs with reported fixes remain absent across all
+severities in the latest candidate**. The configured original still contains
+those findings. The [row-by-row historical patch ledger](open-webui-patch-ledger.md)
+records package versions and the prior complete assessment. The candidate's
+277 residual HIGH/CRITICAL findings remain blocking; none reports a fixed version.
 
-[Assessment 38576332719](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38576332719)
-restores complete coverage for all 28 targets after replacing the deleted
-gvm-tools base. It reports **1,663 HIGH/CRITICAL instances**, **364 distinct
-IDs**: **1,386 in configured assets** and **277 in the undeployed candidate**.
-The 27 remaining instances with reported fixed versions belong to the unchanged
-configured Open WebUI image; the candidate does not replace its assessment.
-All 72 feed test-data dispositions applied. All 89 published evidence file
-checksums were independently verified. SARIF and the readable CVE list are in
-the published `security-evidence` artifact. The policy gate remains blocking;
-this PR's report is unsigned and is not a deployment approval.
+All **119 published evidence checksums** were verified, including **28 of 28
+CycloneDX SBOMs**. All 72 exact-image feed test-data dispositions applied. Download
+`security-evidence` for remaining-cves.md/csv, sanitized findings and SARIF;
+`security-sboms` contains a readable index and individual CycloneDX files.
+These PR reports are unsigned; trusted dev/main runs attest report provenance.
+
+Baseline CI passes. Local verification: 33 scanner tests, 34 security tests,
+workflow lint, and download retry recovery/bounded-failure checks. The new
+native preflight runs before the expensive Trivy build so compatibility failures
+return before a full scan cycle. Earlier incomplete attempts are superseded by
+the complete assessment linked above.
 
 ## Completed assessment baseline
 

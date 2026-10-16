@@ -127,11 +127,17 @@ else:
 print("Backend health, signup, signin and token round-trip passed")
 '''
     try:
+        subprocess.run(["docker", "exec", container, "python3", "/opt/security-sqlite-smoke.py"],
+                       check=True, timeout=60)
+        sqlite_record = json.loads(subprocess.check_output([
+            "docker", "exec", container, "cat", "/usr/share/doc/libsqlite3-0/security-build.json"],
+            text=True, timeout=60))
         subprocess.run(["docker", "exec", container, "python3", "-c", script], check=True, timeout=240)
     finally:
         subprocess.run(["docker", "rm", "--force", "--volumes", container], check=True, timeout=60,
                        stdout=subprocess.DEVNULL)
     return {"dependency_checks": "passed", "backend_health": "passed", "signup_signin_token": "passed",
+            "sqlite_runtime": sqlite_record,
             "network": "none", "storage": "disposable", "production_deployed": False}
 
 

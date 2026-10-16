@@ -16,6 +16,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  candidate-compatibility:
+    name: Candidate database and backend compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify candidate before compiling the assessment tool
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from scanner import managed_images
+          root = Path('scanner/image_builds')
+          candidates = [image for image in managed_images.definitions(root)
+                        if image.get('scope') == 'candidate']
+          checks = [managed_images.build(root, image) for image in candidates]
+          output = Path('.security-scan/candidate-compatibility.json')
+          output.parent.mkdir(exist_ok=True)
+          output.write_text(json.dumps({'candidates': checks}, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: candidate-compatibility
+          path: .security-scan/candidate-compatibility.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
   scanner-compatibility:
     name: Greenbone component compatibility
     runs-on: ubuntu-latest
@@ -49,7 +79,7 @@ jobs:
 
   inventory:
     name: Inventory and package deployable assets
-    needs: scanner-compatibility
+    needs: [scanner-compatibility, candidate-compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:

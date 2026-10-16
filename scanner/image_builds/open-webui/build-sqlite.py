@@ -68,7 +68,9 @@ def main():
         if native.sqlite3_libversion().decode() != VERSION or native.sqlite3_sourceid().decode() != SOURCE_ID:
             raise RuntimeError("Compiled SQLite identity differs from reviewed source")
         (library.parent / "libsqlite3.so.0").symlink_to(library.name)
-        document = package / "usr/share/doc/libsqlite3-0"
+        # Debian slim images exclude /usr/share/doc during dpkg unpack. Keep
+        # this required, package-owned provenance outside those pruning rules.
+        document = package / "opt/ai-cloud-lab/sqlite"
         document.mkdir(parents=True)
         record = {"version": VERSION, "package_version": PACKAGE_VERSION, "previous_version": previous,
                   "source_url": URL, "archive_sha3_256": ARCHIVE_SHA3, "source_sha3_256": SOURCE_SHA3,

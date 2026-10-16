@@ -130,7 +130,7 @@ print("Backend health, signup, signin and token round-trip passed")
         subprocess.run(["docker", "exec", container, "python3", "/opt/security-sqlite-smoke.py"],
                        check=True, timeout=60)
         sqlite_record = json.loads(subprocess.check_output([
-            "docker", "exec", container, "cat", "/usr/share/doc/libsqlite3-0/security-build.json"],
+            "docker", "exec", container, "cat", "/opt/ai-cloud-lab/sqlite/security-build.json"],
             text=True, timeout=60))
         subprocess.run(["docker", "exec", container, "python3", "-c", script], check=True, timeout=240)
     finally:

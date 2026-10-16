@@ -43,7 +43,7 @@ SQLite feature/limit options and hardening flags, and installs a real local
 `libsqlite3-0` Debian package, version `3.54.0-0ai.cloud.lab1`.
 
 The package records its upstream URL, source ID, checksums, original options and
-final library checksum in `/usr/share/doc/libsqlite3-0/security-build.json`.
+final library checksum in `/opt/ai-cloud-lab/sqlite/security-build.json`.
 Candidate acceptance includes that receipt in the scan's build metadata. This
 is a locally maintained upstream build, **not an official Debian security update**.
 It adds ongoing maintenance responsibility until a supported base includes the fix.

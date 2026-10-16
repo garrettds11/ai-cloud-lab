@@ -8,7 +8,7 @@ import tempfile
 
 
 def main():
-    record = json.loads(Path("/usr/share/doc/libsqlite3-0/security-build.json").read_text())
+    record = json.loads(Path("/opt/ai-cloud-lab/sqlite/security-build.json").read_text())
     assert sqlite3.sqlite_version == record["version"], "Python loaded an unexpected SQLite library"
     library = Path("/usr/lib/x86_64-linux-gnu/libsqlite3.so.0")
     assert hashlib.sha256(library.read_bytes()).hexdigest() == record["library_sha256"]

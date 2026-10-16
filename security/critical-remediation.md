@@ -26,6 +26,16 @@ the same 28 assessment targets. No candidate is deployed.
 
 ## SQLite implementation and limits
 
+Initial verification run 38905953785 stopped at preflight: the upstream registry
+had deleted the pinned OpenVAS base `525c48bb...`. All eleven managed bases were
+checked through their registry manifests/configs; only this base was missing.
+Its replacement is pinned to `77d6f443...`, created 15 October, with upstream
+command `/usr/local/bin/openvasd` and no entrypoint/user override. Manifest and
+config digests were independently verified. Native scanner acceptance and a
+new scan remain mandatory. Any OpenVAS result change includes this upstream
+replacement, not merely the SQLite patch. Registry retention remains tracked
+in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
+
 The candidate uses the existing pinned upstream Open WebUI base and its build
 toolchain. `build-sqlite.py` verifies the official archive's SHA3-256 and the
 amalgamation's independently published SHA3-256, compiles with the distro's

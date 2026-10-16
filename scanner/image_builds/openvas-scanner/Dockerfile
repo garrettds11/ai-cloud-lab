@@ -1,4 +1,4 @@
-FROM registry.community.greenbone.net/community/openvas-scanner@sha256:525c48bb93e39218d4de360a90d991a2ff735e1fe08f97ef35c5cbc375a08408
+FROM registry.community.greenbone.net/community/openvas-scanner@sha256:77d6f4432afb70610353150c881c29f403f7100965040aa3fbeba324f688602d
 USER root
 COPY remove-headers.py /tmp/remove-headers.py
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \

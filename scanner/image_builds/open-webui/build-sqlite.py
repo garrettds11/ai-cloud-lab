@@ -3,9 +3,10 @@ import ctypes
 import hashlib
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import time
@@ -14,9 +15,8 @@ import zipfile
 
 VERSION = "3.54.0"
 PACKAGE_VERSION = VERSION + "-0ai.cloud.lab1"
-URL = "https://sqlite.org/2026/sqlite-amalgamation-3540000.zip"
-ARCHIVE_SHA3 = "7b670a62fdfbd672b75fef004cb703c8a3e87d3a5cc7d675b4a08337004a2d93"
-SOURCE_SHA3 = "8efd453d08a7cfc4c79de5923153036cdc4dcaa254d4f1e617be6a2a98828f9e"
+URL = "https://sqlite.org/2026/sqlite-src-3540000.zip"
+ARCHIVE_SHA3 = "a5c29342ca185abcda332448fbb27c536661245be27e20199b46c49099b0e15e"
 SOURCE_ID = "2026-10-09 15:46:58 be8d059e9a49089ab2dce5ed26dd87aaf598fdc5fbe0b107c0dd758464bcd5e3"
 
 
@@ -38,7 +38,7 @@ def main():
     for attempt in range(3):
         try:
             with urllib.request.urlopen(URL, timeout=60) as response:
-                archive = response.read(16 * 1024 * 1024)
+                archive = response.read(32 * 1024 * 1024)
             break
         except OSError:
             if attempt == 2:
@@ -48,12 +48,28 @@ def main():
         raise RuntimeError("SQLite archive checksum mismatch")
     with tempfile.TemporaryDirectory(prefix="security-sqlite-") as temporary:
         root = Path(temporary)
-        source = root / "sqlite3.c"
+        source_tree = root / "source"
+        source_tree.mkdir()
         with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-            # Read a known member, never extract paths supplied by an archive.
-            source.write_bytes(bundle.read("sqlite-amalgamation-3540000/sqlite3.c"))
-        if hashlib.sha3_256(source.read_bytes()).hexdigest() != SOURCE_SHA3:
-            raise RuntimeError("SQLite C source checksum mismatch")
+            for member in bundle.infolist():
+                relative = PurePosixPath(member.filename).relative_to("sqlite-src-3540000")
+                if ".." in relative.parts or "\\" in member.filename or stat.S_ISLNK(member.external_attr >> 16):
+                    raise RuntimeError("Unsafe source archive path")
+                destination = source_tree.joinpath(*relative.parts)
+                if member.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(bundle.read(member))
+                    destination.chmod((member.external_attr >> 16) & 0o777 or 0o644)
+        # Canonical source includes JimTCL and Lemon: no new build packages.
+        # The optional DML grammar must be generated with the feature enabled;
+        # merely defining it while compiling the published amalgamation loses it.
+        subprocess.run(["sh", "configure", "--disable-tcl", "--enable-update-limit"],
+                       cwd=source_tree, check=True, timeout=180)
+        subprocess.run(["make", "sqlite3.c", "OPTS=" + " ".join("-DSQLITE_" + flag for flag in flags)],
+                       cwd=source_tree, check=True, timeout=180)
+        source = source_tree / "sqlite3.c"
         package = root / "package"
         library = package / "usr/lib/x86_64-linux-gnu/libsqlite3.so.0.8.6"
         library.parent.mkdir(parents=True)
@@ -73,7 +89,9 @@ def main():
         document = package / "opt/ai-cloud-lab/sqlite"
         document.mkdir(parents=True)
         record = {"version": VERSION, "package_version": PACKAGE_VERSION, "previous_version": previous,
-                  "source_url": URL, "archive_sha3_256": ARCHIVE_SHA3, "source_sha3_256": SOURCE_SHA3,
+                  "source_url": URL, "archive_sha3_256": ARCHIVE_SHA3,
+                  "source_kind": "canonical; parser generated with distro options",
+                  "source_sha3_256": hashlib.sha3_256(source.read_bytes()).hexdigest(),
                   "source_id": SOURCE_ID, "compile_options_before": options,
                   "library_sha256": hashlib.sha256(library.read_bytes()).hexdigest(),
                   "maintainer": "ai-cloud-lab (local source rebuild; not a Debian security update)"}

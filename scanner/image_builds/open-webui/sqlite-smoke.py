@@ -37,6 +37,13 @@ def main():
             assert connection.execute("select count(*) from search where search match 'fixture'").fetchone() == (1,)
             connection.execute("create virtual table coordinates using rtree(id, lo, hi)")
             connection.execute("insert into coordinates values(1, 0, 1)")
+            # Check actual grammar, not just PRAGMA compile_options metadata.
+            connection.execute("create table bounded_dml(id integer primary key, value integer)")
+            connection.executemany("insert into bounded_dml values(?, 0)", [(1,), (2,), (3,)])
+            connection.execute("update bounded_dml set value=1 order by id limit 1")
+            assert connection.execute("select sum(value) from bounded_dml").fetchone() == (1,)
+            connection.execute("delete from bounded_dml order by id desc limit 1")
+            assert connection.execute("select id from bounded_dml order by id").fetchall() == [(1,), (2,)]
             connection.commit()
             connection.execute("begin")
             connection.execute("insert into accounts values(2, '{}')")
@@ -44,7 +51,7 @@ def main():
         with sqlite3.connect(database) as reopened:
             assert reopened.execute("select count(*) from accounts").fetchone() == (1,)
             assert reopened.execute("pragma integrity_check").fetchone() == ("ok",)
-    print("Pinned SQLite identity, features, WAL, JSON, FTS5, RTree, rollback and reopen passed")
+    print("Pinned SQLite identity, features, WAL, JSON, FTS5, RTree, bounded DML, rollback and reopen passed")
 
 
 if __name__ == "__main__":

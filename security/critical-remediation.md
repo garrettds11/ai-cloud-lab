@@ -37,13 +37,17 @@ replacement, not merely the SQLite patch. Registry retention remains tracked
 in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
 
 The candidate uses the existing pinned upstream Open WebUI base and its build
-toolchain. `build-sqlite.py` verifies the official archive's SHA3-256 and the
-amalgamation's independently published SHA3-256, compiles with the distro's
-SQLite feature/limit options and hardening flags, and installs a real local
+toolchain. `build-sqlite.py` verifies the official canonical source archive's
+SHA3-256, generates the parser using the distro's SQLite feature/limit options,
+compiles with those options and hardening flags, and installs a real local
 `libsqlite3-0` Debian package, version `3.54.0-0ai.cloud.lab1`.
 
 The package records its upstream URL, source ID, checksums, original options and
-final library checksum in `/opt/ai-cloud-lab/sqlite/security-build.json`.
+generated source checksum and final library checksum in
+`/opt/ai-cloud-lab/sqlite/security-build.json`. Upstream's included JimTCL/Lemon
+generators require no additional installed build packages. Bounded UPDATE/DELETE
+syntax is functionally tested: setting its compiler macro alone on the published
+amalgamation does not preserve the distro parser feature.
 Candidate acceptance includes that receipt in the scan's build metadata. This
 is a locally maintained upstream build, **not an official Debian security update**.
 It adds ongoing maintenance responsibility until a supported base includes the fix.
@@ -61,7 +65,8 @@ separate backup/restore plan before promotion.
 ## Primary evidence checked on 16 October
 
 - [SQLite official download checksums](https://sqlite.org/download.html) and
-  [release/source identities](https://sqlite.org/changes.html).
+  [release/source identities](https://sqlite.org/changes.html), plus the
+  [parser-generation requirement for optional compile features](https://sqlite.org/compile.html#enable_update_delete_limit).
 - [Debian SQLite CVE-2025-7458](https://security-tracker.debian.org/tracker/CVE-2025-7458),
   [CVE-2026-11822](https://security-tracker.debian.org/tracker/CVE-2026-11822) and
   [CVE-2026-11824](https://security-tracker.debian.org/tracker/CVE-2026-11824).

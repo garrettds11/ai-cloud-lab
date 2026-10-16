@@ -32,7 +32,9 @@ def write_report(root, inventory, coverage):
                          "cve": item["id"], "severity": item["severity"], "package": item.get("PkgName", ""),
                          "installed_version": item.get("InstalledVersion", ""),
                          "fixed_version": item.get("FixedVersion", ""),
-                         "mitigation_review": "Not individually assessed",
+                         "mitigation_review": ("Verified upstream source fix " + item["source_fix"]["upstream_version"]
+                                               + "; informational, still blocking pending policy")
+                         if item.get("source_fix") else "Not individually assessed",
                          "advisory": item.get("PrimaryURL", ""),
                          "findings_file": "reports/" + target["id"] + "/findings.json"})
     rows.sort(key=lambda row: (row["severity"] != "CRITICAL", not bool(row["fixed_version"]),
@@ -47,11 +49,14 @@ def write_report(root, inventory, coverage):
     unique = len({row["cve"] for row in rows})
     fixable = sum(bool(row["fixed_version"]) for row in rows)
     candidate_count = sum(row["deployment_status"] == "candidate" for row in rows)
+    source_fixed = sum(row["mitigation_review"].startswith("Verified upstream source fix") for row in rows)
     report = ("# Remaining merge-blocking CVEs\n\n"
               f"Commit: `{inventory['commit']}`\n\n"
               f"Coverage complete: **{coverage['complete']}**. Policy passed: **{coverage['policy_passed']}**.\n\n"
               f"**{len(rows)} HIGH/CRITICAL instances**, **{unique} distinct vulnerability IDs**, "
-              f"**{fixable} instances reporting fixed versions**.\n\n"
+              f"**{fixable} instances reporting fixed versions**. "
+              f"**{source_fixed} instances have a verified upstream source fix**; they remain counted and "
+              "blocking because the scanner has no distro fixed version to compare and no policy accepts them.\n\n"
               f"Configured assets: **{len(rows)-candidate_count} instances**. "
               f"Candidates not deployed: **{candidate_count} instances**. A candidate does not replace "
               "the assessment of the configured upstream image or imply deployment/approval.\n\n"

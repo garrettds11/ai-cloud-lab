@@ -33,7 +33,9 @@ def main():
                              (directory / "findings.json").is_file(), target["id"] in available_sboms)
         coverage.append({"id": target["id"], "complete": complete,
                          "blocking_findings": status.get("blocking_findings"),
-                         "reviewed_false_positives": status.get("reviewed_false_positives", 0)})
+                         "reviewed_false_positives": status.get("reviewed_false_positives", 0),
+                         # Informational; these rows remain inside blocking_findings.
+                         "verified_source_fixes": status.get("verified_source_fixes", 0)})
     complete = all(item["complete"] for item in coverage)
     clean = complete and all(item["blocking_findings"] == 0 for item in coverage)
     manifest = {"commit": inventory["commit"], "run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -49,6 +51,9 @@ def main():
     review = OUT / "feed-secret-review.json"
     shutil.copyfile(ROOT / "security" / "feed-secret-review.json", review)
     evidence.append(review)
+    fixes = OUT / "source-fixes.json"
+    shutil.copyfile(ROOT / "security" / "source-fixes.json", fixes)
+    evidence.append(fixes)
     evidence += sorted((OUT / "reports").rglob("*.json"))
     evidence += sorted((OUT / "reports").rglob("*.sarif"))
     checksum = OUT / "SHA256SUMS"
@@ -59,8 +64,10 @@ def main():
         for path in evidence + [checksum]:
             archive.add(path, arcname=path.relative_to(OUT).as_posix())
     summary = f"## Trivy assessment\n\nCoverage complete: **{complete}**\n\nPolicy passed: **{clean}**\n\n"
-    summary += "| Target | Complete | Blocking findings | Reviewed false positives |\n|---|---|---|---|\n"
-    summary += "".join(f"| {item['id']} | {item['complete']} | {item['blocking_findings']} | {item['reviewed_false_positives']} |\n"
+    summary += ("| Target | Complete | Blocking findings | Reviewed false positives | Verified source fixes (still blocking) |\n"
+                "|---|---|---|---|---|\n")
+    summary += "".join(f"| {item['id']} | {item['complete']} | {item['blocking_findings']} | "
+                       f"{item['reviewed_false_positives']} | {item['verified_source_fixes']} |\n"
                        for item in coverage)
     summary += "\nAttestation proves report provenance; consult coverage and findings for assessment status.\n"
     summary += "\nDownload `security-evidence` for `remaining-cves.md` and the sortable `remaining-cves.csv` (asset, CVE, package and fixed version).\n"

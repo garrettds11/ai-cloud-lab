@@ -10,6 +10,28 @@ Its `remaining-cves.csv` contains **37 CRITICAL occurrences: 27 configured and
 These are finding rows, not assets or demonstrated exploits. Scope remains
 the same 28 assessment targets. No candidate is deployed.
 
+## Verified batch outcome
+
+[Complete assessment 38909417812](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38909417812)
+confirms the same 28-target scope, all 28 SBOMs/SARIF uploads and 119 verified
+checksums. Baseline CI and both early compatibility jobs pass. The assessed
+candidate `sha256:faf695385cac5bcad7e60281f2155c77b8e70652a713653c22171859f4f26a11`
+loads canonical SQLite 3.54.0 and passes old-database/schema, actual bounded DML,
+search and backend authentication checks. Its receipt is in the assessment's
+image-build metadata, independently of the separately built preflight image.
+
+The automated report still contains 37 critical rows and all three targeted
+SQLite findings. Trivy's Debian detector does not compare versions for records
+with an empty distro fixed-version boundary. No automated findings were removed;
+the verified source replacement carries a report-only
+[source-fix record](source-fixes.json) and stays blocking until a policy decision
+is approved. Chroma's statically bundled SQLite 3.46.0 is not covered by it.
+Current totals are 1,614 HIGH/CRITICAL rows: 1,302 configured and 312 candidate.
+All 79 additional rows are newly reported IDs on unchanged FFmpeg/util-linux/
+kernel-header packages; scope did not expand. The new feed digest also has 72
+unreviewed secret detections. See [the current report](remediation-current.md)
+for exact hashes, primary source links, database dates and the remaining gates.
+
 ## Ordered work
 
 | Priority | Component / finding | Decision and completion evidence required |
@@ -57,7 +79,16 @@ may still report these findings; the new assessment determines the actual count.
 
 Checks cover the actual loaded library/source ID, original database reopen and
 schema migration, retained features, WAL, JSON, FTS5, RTree, rollback, integrity,
-Chroma add/query, and backend signup/signin/token behavior in disposable storage.
+and backend signup/signin/token behavior in disposable storage. The Chroma
+add/query check runs on Chroma's own statically bundled SQLite 3.46.0, not on the
+replaced library, so it is a compatibility check only. Candidate acceptance
+records bundled engines as `sqlite_embedded_copies`. The build uses Debian's own
+hardening flags, fails if any public `sqlite3_*` symbol of the distro library is
+missing and marks the package `Multi-Arch: same`.
+
+Because `3.54.0-0ai.cloud.lab1` sorts above every Bookworm `3.40.1` revision, a
+future Debian fix will be treated as fixed for this package even if 3.54.0 is
+affected. Upstream SQLite advisories must be monitored separately.
 Existing production databases and full live model/retrieval integration remain
 outside this candidate test. Rollback of a deployed database would require a
 separate backup/restore plan before promotion.

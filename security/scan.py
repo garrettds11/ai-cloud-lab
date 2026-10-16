@@ -11,6 +11,7 @@ import time
 from urllib.parse import quote
 
 from dispositions import classify, load
+import source_fixes
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
@@ -78,6 +79,10 @@ def sarif(target, items, version):
         if item["kind"] == "vulnerability":
             message += (f"; {item['PkgName']} {item['InstalledVersion']}; "
                         f"fixed: {item['FixedVersion'] or 'not available'}")
+            if item.get("source_fix"):
+                message += ("; verified upstream source fix " + item["source_fix"]["upstream_version"] +
+                            " (fixed from " + item["source_fix"]["first_fixed_upstream"] +
+                            "); informational only, still counted as blocking")
         elif item["kind"] == "secret":
             message += "; matching value redacted"
             if item.get("disposition"):
@@ -96,6 +101,9 @@ def sarif(target, items, version):
                         "partialFingerprints": {"primaryLocationLineHash": fingerprint},
                         "properties": {"target": target["id"], "kind": item["kind"],
                                        "severity": item["severity"]}})
+        if item.get("source_fix"):
+            # Deliberately no SARIF suppression: the alert stays open and blocking.
+            results[-1]["properties"]["source_fix"] = item["source_fix"]
         if item.get("disposition"):
             disposition = item["disposition"]
             results[-1]["suppressions"] = [{
@@ -224,6 +232,13 @@ def scan(target_id):
                          platform=target.get("platform"))
         status["secret_review_sha256"] = hashlib.sha256(review_path.read_bytes()).hexdigest()
         status["reviewed_false_positives"] = sum(bool(item.get("disposition")) for item in items)
+        fixes_path = ROOT / "security" / "source-fixes.json"
+        before = gate(items)
+        items = source_fixes.annotate(items, status.get("image_build"), source_fixes.load(fixes_path))
+        if gate(items) != before:
+            raise ValueError("Source-fix records must not change the policy count")
+        status["source_fix_review_sha256"] = hashlib.sha256(fixes_path.read_bytes()).hexdigest()
+        status["verified_source_fixes"] = sum(bool(item.get("source_fix")) for item in items)
         # Preserve DB timestamps/version after the scan, not just before first download.
         status["scanner_version_after"] = json.loads(subprocess.check_output(
             docker + ["--cache-dir", "/cache", "--version", "--format", "json"],

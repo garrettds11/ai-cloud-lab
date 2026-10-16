@@ -1,13 +1,50 @@
 """Verify the installed SQLite and a disposable database across upgrades/reopens."""
 import hashlib
 import json
+import mmap
+import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 import tempfile
 
+SOURCE_ID = re.compile(rb"(20[0-9]{2}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9a-f]{64})")
+
+
+def embedded_copies(roots=None):
+    """Report SQLite engines compiled into other native modules.
+
+    Statically linked copies (for example Chroma's Rust bindings) do not load the
+    replaced system library and are invisible to package-based scanners. This is
+    an inventory, not a fix or an exception.
+    """
+    system = Path("/usr/lib/x86_64-linux-gnu/libsqlite3.so.0").resolve()
+    roots = roots or sorted({Path(entry) for entry in sys.path if entry and Path(entry).is_dir()})
+    copies, seen = [], set()
+    for root in roots:
+        for directory, _, files in os.walk(root):
+            for name in files:
+                path = Path(directory) / name
+                if ".so" not in name or path.is_symlink() or path.resolve() in seen or path.resolve() == system:
+                    continue
+                seen.add(path.resolve())
+                with path.open("rb") as stream:
+                    if os.fstat(stream.fileno()).st_size == 0:
+                        continue
+                    with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
+                        if data.find(b"SQLite format 3\x00") < 0:
+                            continue
+                        found = sorted({match.decode() for match in SOURCE_ID.findall(data)})
+                if found:
+                    copies.append({"path": str(path), "source_ids": found})
+    return copies
+
 
 def main():
+    if sys.argv[1:] == ["--embedded-copies"]:
+        print(json.dumps(embedded_copies(), indent=2))
+        return
     record = json.loads(Path("/opt/ai-cloud-lab/sqlite/security-build.json").read_text())
     assert sqlite3.sqlite_version == record["version"], "Python loaded an unexpected SQLite library"
     library = Path("/usr/lib/x86_64-linux-gnu/libsqlite3.so.0")

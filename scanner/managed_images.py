@@ -132,12 +132,16 @@ print("Backend health, signup, signin and token round-trip passed")
         sqlite_record = json.loads(subprocess.check_output([
             "docker", "exec", container, "cat", "/opt/ai-cloud-lab/sqlite/security-build.json"],
             text=True, timeout=60))
+        # Inventory only: bundled engines are not covered by the system library replacement.
+        embedded_sqlite = json.loads(subprocess.check_output([
+            "docker", "exec", container, "python3", "/opt/security-sqlite-smoke.py", "--embedded-copies"],
+            text=True, timeout=300))
         subprocess.run(["docker", "exec", container, "python3", "-c", script], check=True, timeout=240)
     finally:
         subprocess.run(["docker", "rm", "--force", "--volumes", container], check=True, timeout=60,
                        stdout=subprocess.DEVNULL)
     return {"dependency_checks": "passed", "backend_health": "passed", "signup_signin_token": "passed",
-            "sqlite_runtime": sqlite_record,
+            "sqlite_runtime": sqlite_record, "sqlite_embedded_copies": embedded_sqlite,
             "network": "none", "storage": "disposable", "production_deployed": False}
 
 

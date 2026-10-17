@@ -344,6 +344,12 @@ variable "extra_egress_cidrs" {
   }
 }
 
+variable "enable_wazuh_agent_egress" {
+  description = "Allow the lab host to reach a Wazuh manager in the default VPC on TCP 1514 and 1515. Enable before running the Wazuh track; no instance replacement is required."
+  type        = bool
+  default     = false
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool

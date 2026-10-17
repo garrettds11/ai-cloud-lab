@@ -2,11 +2,13 @@
 
 ## Latest complete assessment
 
-[Assessment 38909417812](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38909417812)
-assessed PR head `93379cb244764748f06dc3b42d0a245bfb3980d2` with complete coverage
-for the same **28 targets**. All **28 SARIF uploads**, **28 SBOMs** and **119
-published evidence checksums** were independently verified. The policy gate
-remains blocking; no deployment, registry promotion or merge occurred.
+[Assessment 38985470580](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38985470580)
+assessed PR head `6b90f2a27d3526d5d88b2f53f0256aa5dbbefb28` with complete coverage
+for the same **28 targets**. The evidence archive and all **120 published
+evidence checksums** were independently verified. The policy gate remains
+blocking; no deployment, registry promotion or merge occurred. Counts match the
+previous complete assessment
+[38909417812](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38909417812).
 
 | Reported result | Current |
 |---|---:|
@@ -16,6 +18,7 @@ remains blocking; no deployment, registry promotion or merge occurred.
 | Undeployed candidate occurrences | 312 |
 | CRITICAL occurrences | 37: 27 configured, 10 candidate |
 | Original 27 finding IDs present in candidate, all severities | 0 |
+| Rows with a verified upstream source fix (still counted and blocking) | 3 |
 | New feed digest secret detections awaiting review | 72 |
 
 Counts are package finding occurrences, not assets or proven exploits. Scope
@@ -34,7 +37,11 @@ amalgamation. Existing runtime packages remain in place; no new runtime
 packages were added for source generation.
 
 The actual assessed candidate is
-`sha256:faf695385cac5bcad7e60281f2155c77b8e70652a713653c22171859f4f26a11`.
+`sha256:daa8f9b20de276d424e73663498ca281176c580afba6fa793a7cc1b8e70396a5`.
+It is built with Debian's own hardening flags, keeps all 283 public `sqlite3_*`
+symbols of the distro library and is marked `Multi-Arch: same`. The library is
+byte-identical to the previous build: Bookworm's flags add only compile-time
+format checks to what was already used.
 Its image-build compatibility metadata records:
 
 - Official source: `https://sqlite.org/2026/sqlite-src-3540000.zip`.
@@ -116,8 +123,9 @@ and zlib need their recorded package/applicability reviews. Supported component
 replacement or audited source backports must retain application functionality.
 
 The feed resolved to immutable digest
-`registry.community.greenbone.net/community/vulnerability-tests@sha256:42410b5aef873425da00ee922d313338d3b452324b0dfc7680aa150da731b810`.
-Its 72 secret detections did not inherit the old digest's test-data review.
+`registry.community.greenbone.net/community/vulnerability-tests@sha256:e0f85aca0d448653cb8da8e1065c374cb7239bd8d902b988f2b3d4b924eae583`,
+which changed again after the previous assessment (`42410b5a...`).
+Its 72 secret detections did not inherit the reviewed `bc7d28cf...` test-data review.
 They remain blocking pending a new exact-image/file review; this report does
 not establish that they are live credentials or renew the prior disposition.
 

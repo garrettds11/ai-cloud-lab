@@ -34,7 +34,7 @@ The owner's default AWS profile is a different account, so never rely on it.
 |---|---|---|---|
 | Repository root (the lab) | AWS, Cloudflare | `Invoke-TerraformWithCloudflareToken -Arguments @(...)`, defined in Step 1 of the smoke test plan and loaded per PowerShell window | The Cloudflare provider needs `CLOUDFLARE_API_TOKEN`; the function reads it from Secrets Manager per command and clears it afterwards |
 | `scanner/` (Greenbone) | AWS, archive | plain `terraform` | No Cloudflare provider, so no token is needed |
-| `logging/<track>/` | AWS (Graylog also archive) | plain `terraform` | No Cloudflare provider, so no token is needed |
+| `logging/<track>/` | AWS | plain `terraform` | No Cloudflare provider, so no token is needed |
 
 Before using the Cloudflare wrapper anywhere new, check that root's `versions.tf` actually
 requires the Cloudflare provider. Terraform run from provisioners or scripts must also use

@@ -19,8 +19,7 @@ data "aws_subnets" "default" {
 
 locals {
   subnet_id = sort(data.aws_subnets.default.ids)[0]
-  ports     = var.track == "wazuh" ? [1514, 1515] : [443]
-  ui_port   = 8080 # Every track publishes its UI on host port 8080 (Wazuh maps 5601, Graylog 9000)
+  ui_port   = 9428 # VictoriaLogs serves its API and built-in vmui UI on this port
   vector_config = templatefile("${path.module}/vector.toml.tftpl", {
     track          = var.track
     backend_ip     = aws_instance.backend.private_ip
@@ -28,7 +27,7 @@ locals {
     aws_region     = var.aws_region
     container_name = var.open_webui_container_name
   })
-  selected_packages = var.track == "wazuh" ? toset(["vector", "wazuh"]) : toset(["vector"])
+  selected_packages = toset(["vector"])
 }
 
 check "track_name_matches_root" {
@@ -38,6 +37,7 @@ check "track_name_matches_root" {
   }
 }
 
+#trivy:ignore:AWS-0089 Short-lived test archive; access logging needs a second bucket and the track is destroyed after each run
 resource "aws_s3_bucket" "archive" {
   #checkov:skip=CKV_AWS_18:Short-lived test archive; access logging needs a second bucket and the track is destroyed after each run
   #checkov:skip=CKV_AWS_144:Single-region test archive deleted at destroy; cross-region replication adds cost for no benefit
@@ -53,6 +53,7 @@ resource "aws_s3_bucket_public_access_block" "archive" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+#trivy:ignore:AWS-0132 Encrypted with S3-managed keys (SSE-S3); a customer managed key adds cost for no lab benefit
 resource "aws_s3_bucket_server_side_encryption_configuration" "archive" {
   bucket = aws_s3_bucket.archive.id
   rule {
@@ -111,7 +112,7 @@ resource "aws_iam_role_policy" "lab_archive" {
       {
         Effect   = "Allow"
         Action   = ["ssm:GetParameter"]
-        Resource = concat([aws_ssm_parameter.vector_config.arn], var.track == "wazuh" ? [aws_ssm_parameter.wazuh_manager[0].arn] : [])
+        Resource = [aws_ssm_parameter.vector_config.arn]
       }
     ]
   })
@@ -122,14 +123,6 @@ resource "aws_ssm_parameter" "vector_config" {
   name  = "/logging-bakeoff/${var.track}/vector-config"
   type  = "String"
   value = local.vector_config
-}
-
-resource "aws_ssm_parameter" "wazuh_manager" {
-  #checkov:skip=CKV2_AWS_34:Holds the backend's private IP address only; no secret
-  count = var.track == "wazuh" ? 1 : 0
-  name  = "/logging-bakeoff/${var.track}/wazuh-manager-ip"
-  type  = "String"
-  value = aws_instance.backend.private_ip
 }
 
 resource "aws_iam_role" "backend" {
@@ -146,21 +139,19 @@ resource "aws_security_group" "backend" {
   name_prefix = "${var.project_name}-backend-"
   description = "${var.track} backend; intake only from the root lab host"
   vpc_id      = data.aws_vpc.default.id
-  dynamic "ingress" {
-    for_each = local.ports
-    content {
-      description     = "${var.track} collector intake from root lab host"
-      from_port       = ingress.value
-      to_port         = ingress.value
-      protocol        = "tcp"
-      security_groups = [var.lab_security_group_id]
-    }
+  ingress {
+    description     = "${var.track} collector intake from root lab host"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [var.lab_security_group_id]
   }
   egress {
     description = "HTTPS for package and container downloads"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
+    #trivy:ignore:AWS-0104 Outbound package and image downloads from public mirrors and registries; no inbound Internet rule
     cidr_blocks = ["0.0.0.0/0"]
   }
   egress {
@@ -168,6 +159,7 @@ resource "aws_security_group" "backend" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
+    #trivy:ignore:AWS-0104 Outbound package and image downloads from public mirrors and registries; no inbound Internet rule
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -195,7 +187,7 @@ resource "aws_instance" "backend" {
   }
   root_block_device {
     volume_type           = "gp3"
-    volume_size           = var.track == "wazuh" ? 120 : 80
+    volume_size           = 80
     encrypted             = true
     delete_on_termination = true
   }
@@ -203,6 +195,8 @@ resource "aws_instance" "backend" {
   depends_on = [aws_iam_role_policy_attachment.backend_ssm]
 }
 
+#trivy:ignore:AWS-0089 Holds only the Distributor package built from this repository; deleted at destroy
+#trivy:ignore:AWS-0090 Terraform rewrites the package object on each apply; the repository is the history
 resource "aws_s3_bucket" "packages" {
   #checkov:skip=CKV_AWS_18:Holds only the Distributor package built from this repository; deleted at destroy
   #checkov:skip=CKV_AWS_21:Terraform rewrites the package object on each apply; the repository is the history
@@ -220,6 +214,7 @@ resource "aws_s3_bucket_public_access_block" "packages" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+#trivy:ignore:AWS-0132 Encrypted with S3-managed keys (SSE-S3); a customer managed key adds cost for no lab benefit
 resource "aws_s3_bucket_server_side_encryption_configuration" "packages" {
   bucket = aws_s3_bucket.packages.id
   rule {

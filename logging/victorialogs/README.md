@@ -1,5 +1,5 @@
 # VictoriaLogs track
 
-Vector on the root Ubuntu host reads the system journal and Open WebUI Docker logs, writes gzip NDJSON to this track's raw S3 archive, and forwards events through a private intake adapter into VictoriaLogs. Grafana provides LogsQL search and time-based dashboards. The backend opens its HTTPS intake only to the root host security group; the UI is reached through SSM port forwarding.
+Vector on the root Ubuntu host reads the system journal and the Open WebUI Docker logs. It writes gzip NDJSON to this track's raw S3 archive and forwards the same events through a private intake adapter into VictoriaLogs. The backend accepts intake only from the root host's security group. The VictoriaLogs API and its built-in vmui UI are reached through SSM port forwarding.
 
-See [the shared end-to-end test](../END-TO-END-TEST.md) for marker generation, Grafana query and dashboard checks, archive verification, and uninstall steps.
+See [the logging README](../README.md) to apply, open vmui and destroy, and [the end-to-end test](../END-TO-END-TEST.md) to check events and the archive.

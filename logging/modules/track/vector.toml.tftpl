@@ -31,7 +31,6 @@ buffer.type = "disk"
 buffer.max_size = 1073741824
 buffer.when_full = "block"
 
-%{ if track != "wazuh" ~}
 [sinks.backend]
 type = "http"
 inputs = ["normalize"]
@@ -44,4 +43,3 @@ batch.timeout_secs = 5
 buffer.type = "disk"
 buffer.max_size = 268435456
 buffer.when_full = "block"
-%{ endif ~}

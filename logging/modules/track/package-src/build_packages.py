@@ -8,8 +8,8 @@ destination.mkdir(parents=True, exist_ok=True)
 for existing in destination.glob("*.zip"):
     existing.unlink()
 
-for track in ("wazuh", "graylog", "victorialogs", "quickwit", "splunk"):
-    packages = ["vector", "wazuh"] if track == "wazuh" else ["vector"]
+for track in ("victorialogs",):
+    packages = ["vector"]
     for package in packages:
         with ZipFile(destination / f"{track}-{package}.zip", "w", ZIP_DEFLATED) as archive:
             track_file = ZipInfo("track.txt")

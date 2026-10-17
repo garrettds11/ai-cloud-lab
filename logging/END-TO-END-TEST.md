@@ -1,46 +1,54 @@
-# One end-to-end test per track
+# End-to-end test
 
-Run this after that track's plan has been reviewed and applied. Finish the uninstall and destroy before starting the next track. The root Ubuntu lab host remains running for all five runs.
+Run this after the VictoriaLogs track has been applied and its Distributor association has succeeded. The root lab host stays running throughout.
 
-## Generate the same test events
+## Send test events
 
-Use an SSM shell session to the root lab instance. Each run should use the same host and application log paths. Save the generated run ID in your notes so you can search the backend and archive:
+Open an SSM shell session to the root lab instance and run:
 
 ```bash
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 logger -p authpriv.notice "bakeoff-host-$RUN_ID"
 docker exec open-webui python -c "import logging; logging.error('bakeoff-openwebui-$RUN_ID')"
 printf '%s\n' "$RUN_ID" >/tmp/logging-bakeoff-run-id
+echo "$RUN_ID"
 ```
 
-The first event is a host auth-priority syslog message. The second is emitted to the Open WebUI container's stderr and appears in its Docker log stream. Both collectors should return the same unique `RUN_ID` markers.
+The first event is a host syslog message. The second goes to the Open WebUI container's stderr and appears in its Docker log stream. Note the printed run ID.
 
-Wait for the Distributor association to succeed, then allow a minute for buffering and ingestion. In each UI, set the time picker to **Last 15 minutes** and search for the bare run ID, `<RUN_ID>`, which matches both `bakeoff-host-<RUN_ID>` and `bakeoff-openwebui-<RUN_ID>`. Confirm both host and container markers, the event timestamp, source, and host. Create a small dashboard panel or saved view that groups event counts by source, then confirm it follows the time picker. In a second shell, verify the independent raw archive:
+## Check vmui
+
+Allow a minute for buffering, then in vmui (`http://localhost:18080/select/vmui/`, see the [README](README.md)) run:
+
+```
+_time:15m "<RUN_ID>"
+```
+
+Confirm both events appear, from the `ubuntu-host` and `open-webui` sources, with the expected timestamps and host. Then run `_time:15m | stats by (source) count()` and confirm it counts both sources and changes when you change the time range.
+
+The same query works against the API, which is what an MCP tool calls:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:18080/select/logsql/query -Body @{ query = '_time:15m "<RUN_ID>"' }
+```
+
+## Check the S3 archive
+
+In the track folder:
 
 ```powershell
 $bucket = terraform output -raw archive_bucket
-aws s3 ls "s3://$bucket/raw/<track>/" --recursive --region <root-region>
+aws s3 ls "s3://$bucket/raw/victorialogs/" --recursive
 ```
 
-The S3 objects are gzip-compressed NDJSON. Download one object and confirm it contains both markers and the same event timestamps. Do not rely on the backend index as proof of the S3 archive.
-
-## Candidate-specific UI checks
-
-| Track | Search surface | Dashboard check |
-|---|---|---|
-| Wazuh | In Wazuh Dashboard, create/select `wazuh-archives-*` with time field `timestamp`; search `<RUN_ID>`. Security alerts remain visible in `wazuh-alerts-*`. | Use Discover with the archive pattern, then save a visualization or dashboard showing event counts by `source`. |
-| Graylog | Search `<RUN_ID>` in Graylog Search. | Save a search or dashboard widget showing counts by source. |
-| VictoriaLogs | In Grafana Explore, query `<RUN_ID>` through the VictoriaLogs data source. | Save the query as a Grafana panel and verify the time range changes the result. |
-| Quickwit | In Grafana Explore, search the `webui-logs` index for `<RUN_ID>`. | Save a Grafana panel for counts by source and change the time range. |
-| Splunk | In Search & Reporting, run `index=main "<RUN_ID>"`. | Save the search as a dashboard panel and change the time range. |
+The objects are gzip-compressed NDJSON. Download one and confirm it holds both markers with the same timestamps. The archive is the independent record; don't use the VictoriaLogs index as proof of it.
 
 ## Uninstall and destroy
 
-The apply creates a one-time State Manager install association and a custom Distributor package. Before destroying the track, uninstall every package shown by `terraform output -json ssm_package_names`. Run the corresponding command from `terraform output -json uninstall_agent_commands`, wait for the SSM command to finish successfully, and verify the package is gone from the host:
+Before destroying, uninstall Vector with the command from `terraform output -json uninstall_agent_commands`, wait for the SSM command to succeed, and check on the root host:
 
 ```bash
 systemctl is-active vector || true
-systemctl is-active wazuh-agent || true
 ```
 
-Then review and run a saved destroy plan in that track directory. The track destroy deletes the archive and its objects, its backend, its package bucket and document, and the narrow permissions and parameters attached to the root host. Save any desired test results before destroying.
+Then destroy the track as described in the [README](README.md#destroy).

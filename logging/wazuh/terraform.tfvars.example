@@ -1,7 +1,0 @@
-aws_region = "us-east-1"
-project_name = "ai-cloud-lab-wazuh"
-lab_instance_id = "i-REPLACE_WITH_ROOT_OUTPUT"
-lab_security_group_id = "sg-REPLACE_WITH_ROOT_OUTPUT"
-lab_iam_role_name = "REPLACE_WITH_ROOT_OUTPUT"
-open_webui_container_name = "open-webui"
-tags = { project = "aiwebdemo" }

@@ -1,7 +1,7 @@
 services:
 %{ if backend == "splunk" ~}
   splunk:
-    image: splunk/splunk:9.4.2
+    image: splunk/splunk:9.4.2@sha256:4f798b8dfa75512c5b69b4f162c686e7b194e980559dd40fed78aadc417381be
     environment:
       SPLUNK_START_ARGS: --accept-license
       SPLUNK_PASSWORD: $${LOGGING_PASSWORD}
@@ -20,7 +20,7 @@ volumes:
 %{ endif ~}
 %{ if backend == "elastic" ~}
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.5
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.5@sha256:7d6ce4507f5be2864136428ccf4e3077402415ac39fe81ecc2ce3a5063c449ad
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -31,7 +31,7 @@ volumes:
       - elastic:/usr/share/elasticsearch/data
     restart: unless-stopped
   logstash:
-    image: docker.elastic.co/logstash/logstash:8.17.5
+    image: docker.elastic.co/logstash/logstash:8.17.5@sha256:41a1d5df6a773df4b8e3c60e5bb479e5f8027ba12a0651147c5ece90fdd75932
     environment:
       LS_JAVA_OPTS: -Xms512m -Xmx512m
       QUEUE_TYPE: persisted
@@ -43,7 +43,7 @@ volumes:
     depends_on: [elasticsearch]
     restart: unless-stopped
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.17.5
+    image: docker.elastic.co/kibana/kibana:8.17.5@sha256:4c862aa325844e40c7bc570296f77795bfa061390d26b9688db533a0509838a7
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
     ports:
@@ -56,7 +56,7 @@ volumes:
 %{ endif ~}
 %{ if backend == "opensearch" ~}
   opensearch:
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:2.19.1@sha256:72fe2fc84be8295906b8efca020b46c58ed45c8da60cd9b8b49e1991e38e89a4
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
@@ -67,7 +67,7 @@ volumes:
       - opensearch:/usr/share/opensearch/data
     restart: unless-stopped
   dashboards:
-    image: opensearchproject/opensearch-dashboards:2.19.1
+    image: opensearchproject/opensearch-dashboards:2.19.1@sha256:70fb0a6563f204f391c444329287ce7ac50dbb7b99a43307c047de1fcfb9c658
     environment:
       OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
@@ -80,7 +80,7 @@ volumes:
 %{ endif ~}
 %{ if backend == "loki" ~}
   loki:
-    image: grafana/loki:3.4.3
+    image: grafana/loki:3.4.3@sha256:5fe9fa99e9a747297cdf0239a5b25d192d8f668bd6505b09beef4dffcab5aac2
     command: -config.file=/etc/loki/local-config.yaml
     ports:
       - "127.0.0.1:3100:3100"
@@ -88,7 +88,7 @@ volumes:
       - loki:/loki
     restart: unless-stopped
   grafana:
-    image: grafana/grafana-oss:11.6.1
+    image: grafana/grafana-oss:11.6.1@sha256:52c3e20686b860c6dc1f623811565773cf51eefa378817a4896dfc863c3c82c8
     environment:
       GF_SECURITY_ADMIN_PASSWORD: $${LOGGING_PASSWORD}
     ports:
@@ -104,7 +104,7 @@ volumes:
 %{ endif ~}
 %{ if backend == "openobserve" ~}
   openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v0.14.7
+    image: public.ecr.aws/zinclabs/openobserve:v0.14.7@sha256:dbce3f9e7c96588f6bf8834f94adefe00228280b7fe7a294e9c44823665798ac
     environment:
       ZO_ROOT_USER_EMAIL: admin@localhost
       ZO_ROOT_USER_PASSWORD: $${LOGGING_PASSWORD}
@@ -119,7 +119,7 @@ volumes:
 %{ endif ~}
 %{ if backend == "victorialogs" ~}
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.53.0
+    image: victoriametrics/victoria-logs:v1.53.0@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d
     command: -storageDataPath=/data -retentionPeriod=30d
     ports:
       - "127.0.0.1:9428:9428"
@@ -127,7 +127,7 @@ volumes:
       - victorialogs:/data
     restart: unless-stopped
   grafana:
-    image: grafana/grafana-oss:11.6.1
+    image: grafana/grafana-oss:11.6.1@sha256:52c3e20686b860c6dc1f623811565773cf51eefa378817a4896dfc863c3c82c8
     environment:
       GF_SECURITY_ADMIN_PASSWORD: $${LOGGING_PASSWORD}
       GF_INSTALL_PLUGINS: victoriametrics-logs-datasource
@@ -144,7 +144,7 @@ volumes:
 %{ endif ~}
 %{ if backend == "quickwit" ~}
   quickwit:
-    image: quickwit/quickwit:0.8.2
+    image: quickwit/quickwit:0.8.2@sha256:363ff56ce45614e46eba1c308e420f56a9f2fd8ab5788cbca0ec6b68a2e0ef92
     command: run
     ports:
       - "127.0.0.1:7280:7280"
@@ -152,7 +152,7 @@ volumes:
       - quickwit:/quickwit/qwdata
     restart: unless-stopped
   grafana:
-    image: grafana/grafana-oss:11.6.1
+    image: grafana/grafana-oss:11.6.1@sha256:52c3e20686b860c6dc1f623811565773cf51eefa378817a4896dfc863c3c82c8
     environment:
       GF_SECURITY_ADMIN_PASSWORD: $${LOGGING_PASSWORD}
       GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.5.0/quickwit-quickwit-datasource-0.5.0.zip;quickwit-quickwit-datasource
@@ -169,12 +169,12 @@ volumes:
 %{ endif ~}
 %{ if backend == "graylog" ~}
   mongodb:
-    image: mongo:7.0.16
+    image: mongo:7.0.16@sha256:c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a
     volumes:
       - mongodb:/data/db
     restart: unless-stopped
   opensearch:
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:2.19.1@sha256:72fe2fc84be8295906b8efca020b46c58ed45c8da60cd9b8b49e1991e38e89a4
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
@@ -183,7 +183,7 @@ volumes:
       - opensearch:/usr/share/opensearch/data
     restart: unless-stopped
   graylog:
-    image: graylog/graylog:6.3.9
+    image: graylog/graylog:6.3.9@sha256:72096b020705f2b2a6212c35e8279bf13a67635d338e23d986672eec9e6ec4db
     environment:
       GRAYLOG_PASSWORD_SECRET: $${LOGGING_SECRET}
       GRAYLOG_ROOT_PASSWORD_SHA2: $${LOGGING_PASSWORD_SHA2}

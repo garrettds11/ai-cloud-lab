@@ -54,6 +54,32 @@ class SecretReviewTests(unittest.TestCase):
             item = dict(self.item, **{key: value})
             self.assertEqual(scan.gate(self.classify(items=[item])), 1)
 
+    def test_new_feed_digest_qualifies_only_with_matching_file_hash(self):
+        image = dispositions.FEED_REPOSITORY + "@sha256:" + "1" * 64
+        good = {self.item["path"]: self.review["files"][0]["sha256"]}
+        items = dispositions.classify([self.item], image, self.review, self.today, file_hashes=good)
+        self.assertEqual(scan.gate(items), 0)
+        self.assertEqual(items[0]["disposition"]["image"], image)
+        self.assertEqual(items[0]["disposition"]["reviewed_image"], self.review["image"])
+        self.assertIn("recomputed", items[0]["disposition"]["verification"])
+        for hashes in ({self.item["path"]: "0" * 64}, {}, {"/other/path": good[self.item["path"]]}):
+            items = dispositions.classify([self.item], image, self.review, self.today, file_hashes=hashes)
+            self.assertEqual(scan.gate(items), 1, hashes)
+
+    def test_file_hashes_never_extend_review_to_other_repositories(self):
+        good = {self.item["path"]: self.review["files"][0]["sha256"]}
+        for image in ("registry/pg-gvm@sha256:" + "0" * 64, dispositions.FEED_REPOSITORY + ":latest", None):
+            items = dispositions.classify([self.item], image, self.review, self.today, file_hashes=good)
+            self.assertEqual(scan.gate(items), 1, image)
+
+    def test_matching_hash_does_not_cover_unreviewed_rule_or_line(self):
+        image = dispositions.FEED_REPOSITORY + "@sha256:" + "1" * 64
+        good = {self.item["path"]: self.review["files"][0]["sha256"]}
+        for key, value in (("line", 9999), ("id", "new-rule")):
+            item = dict(self.item, **{key: value})
+            items = dispositions.classify([item], image, self.review, self.today, file_hashes=good)
+            self.assertEqual(scan.gate(items), 1)
+
     def test_cves_cannot_be_dispositioned(self):
         item = dict(self.item, kind="vulnerability")
         self.assertEqual(scan.gate(self.classify(items=[item])), 1)

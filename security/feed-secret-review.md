@@ -1,7 +1,9 @@
 # Greenbone feed secret review
 
 Reviewed 14 October 2026 against completed assessment
-[38533402718](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38533402718).
+[38533402718](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38533402718);
+renewed 16 October 2026 against assessment
+[38985470580](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38985470580).
 
 ## Disposition
 
@@ -13,9 +15,13 @@ No CVE finding or PostgreSQL TLS key is covered by this review.
 
 The machine-readable [review](feed-secret-review.json) records every exact path,
 rule, line, verified file SHA256 and rationale. It applies only to
-`registry.community.greenbone.net/community/vulnerability-tests@sha256:bc7d28cfdee969aff58cdffce1cdccb8aa17657297f94cc7e6b03b6a9f68c83d`
-on linux/amd64, and expires **12 November 2026 at 00:00 UTC**. Changed image digests,
-rules, paths or line numbers require new review. A registry tag or path pattern
+`registry.community.greenbone.net/community/vulnerability-tests@sha256:e0f85aca0d448653cb8da8e1065c374cb7239bd8d902b988f2b3d4b924eae583`
+on linux/amd64, and expires **12 November 2026 at 00:00 UTC**. Changed rules,
+paths or line numbers require new review. A newer digest of the same feed
+repository qualifies only file by file: CI pulls that exact image, copies out the
+flagged files without starting it, and grants a disposition only where the
+recomputed full-file SHA256 equals the reviewed hash. Changed or new files, other
+repositories and any hashing failure stay blocking. A registry tag or path pattern
 alone never grants a disposition. This is a test-data classification, not
 acceptance of an application vulnerability or a credential leak.
 
@@ -25,7 +31,7 @@ The OCI index/manifest and all four compressed image layer hashes were verified
 against their registry SHA256 digests. Only the flagged regular files were read
 from the tar archives; no image or NASL code was executed. Each file's complete
 bytes were hashed. All flagged files occurred in layer
-`sha256:784abc0a7b30047046789311756900e9b805c0687fe07ffff6f53b73a5384040`.
+`sha256:7b5fae2c3ea64e54582ddb038490eba763b3b83548716c846a4982b164beb338`.
 Matched key/token values are excluded from this document and published evidence.
 
 The feed image changed after the first review of digest `c165a094...`. The new
@@ -39,8 +45,16 @@ The new OCI index/manifest and all four compressed layers were verified against
 their registry digests. Every one of the 28 full-file hashes and all 72
 path/rule/line matches equal the previous review. Only the exact image and
 verified layer identities and review date changed; expiry remains 12 November.
-The completed assessment above predates this renewal and reports zero applied
-dispositions. A subsequent scan must confirm use of this review.
+That renewal was not used: the feed changed again, to `42410b5a...` and then
+`e0f85aca...`, before a scan could confirm it.
+
+On 16 October assessment 38985470580 resolved the feed to `e0f85aca...`. Its 72
+detections have exactly the reviewed path/rule/line set. The index, amd64
+manifest, config and all four compressed layers were downloaded and verified
+against their registry digests. All 28 flagged files are regular files in layer
+`7b5fae2c...`, and every full-file SHA256 equals the review. Only the exact image,
+verified layer and review date changed; expiry remains 12 November. A subsequent
+scan must confirm use of this review.
 
 | File within each feed's NASL directory | Matches per copy | Evidence from file contents |
 | --- | ---: | --- |

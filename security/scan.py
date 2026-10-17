@@ -10,7 +10,9 @@ import sys
 import time
 from urllib.parse import quote
 
-from dispositions import classify, load
+from dispositions import FEED_REPOSITORY, classify, load
+import io
+import tarfile
 import source_fixes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,6 +133,38 @@ def resolve_image(reference):
     return repository + "@" + match[1]
 
 
+def feed_file_hashes(reference, paths, platform="linux/amd64"):
+    """SHA256 of reviewed feed files inside the exact assessed image, without running it.
+
+    The digest-pinned pull is content-verified by Docker; the container is created
+    but never started. Only regular files are hashed. Any failure raises, so no
+    content-based disposition is granted.
+    """
+    if not re.fullmatch(re.escape(FEED_REPOSITORY) + r"@sha256:[a-f0-9]{64}", reference):
+        raise ValueError("Content verification is limited to immutable feed images")
+    subprocess.run(["docker", "pull", "--quiet", "--platform", platform, reference],
+                   check=True, timeout=1200, stdout=subprocess.DEVNULL)
+    container = subprocess.check_output(["docker", "create", "--platform", platform,
+                                         "--network", "none", "--entrypoint", "/nonexistent",
+                                         reference], text=True, timeout=120).strip()
+    hashes = {}
+    try:
+        for path in sorted(set(paths)):
+            archive = subprocess.run(["docker", "cp", container + ":" + path, "-"],
+                                     check=True, timeout=120, capture_output=True).stdout
+            with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+                members = bundle.getmembers()
+                if len(members) != 1 or not members[0].isreg():
+                    raise ValueError("Reviewed feed path is not a single regular file")
+                hashes[path] = hashlib.sha256(bundle.extractfile(members[0]).read()).hexdigest()
+    finally:
+        subprocess.run(["docker", "rm", "--force", container], check=False, timeout=120,
+                       stdout=subprocess.DEVNULL)
+        subprocess.run(["docker", "image", "rm", "--force", reference], check=False, timeout=300,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return hashes
+
+
 def scanner_ref(inventory):
     record = inventory["scanner_build"]
     if record.get("reference") != TRIVY_IMAGE or record.get("scope") != "tool":
@@ -228,8 +262,23 @@ def scan(target_id):
         items = findings(report)
         status["raw_blocking_findings"] = gate(items)
         review_path = ROOT / "security" / "feed-secret-review.json"
-        items = classify(items, status.get("resolved_image"), load(review_path),
-                         platform=target.get("platform"))
+        review = load(review_path)
+        resolved = status.get("resolved_image")
+        reviewed_paths = {entry["path"] for entry in review["files"]}
+        flagged = {item["path"] for item in items
+                   if item["kind"] == "secret" and item["path"] in reviewed_paths}
+        file_hashes = None
+        if (flagged and resolved and resolved != review["image"]
+                and resolved.startswith(FEED_REPOSITORY + "@")):
+            # The feed is republished often; recompute reviewed file hashes from
+            # this exact image instead of requiring a manual digest renewal.
+            try:
+                file_hashes = feed_file_hashes(resolved, flagged, target.get("platform") or "linux/amd64")
+                status["secret_review_hashed_files"] = len(file_hashes)
+            except (subprocess.SubprocessError, OSError, ValueError, tarfile.TarError) as error:
+                status["secret_review_hash_error"] = type(error).__name__
+        items = classify(items, resolved, review, platform=target.get("platform"),
+                         file_hashes=file_hashes)
         status["secret_review_sha256"] = hashlib.sha256(review_path.read_bytes()).hexdigest()
         status["reviewed_false_positives"] = sum(bool(item.get("disposition")) for item in items)
         fixes_path = ROOT / "security" / "source-fixes.json"

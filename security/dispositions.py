@@ -6,7 +6,14 @@ import re
 FEED_REPOSITORY = "registry.community.greenbone.net/community/vulnerability-tests"
 
 
-def classify(items, resolved_image, review, today=None, platform="linux/amd64"):
+def classify(items, resolved_image, review, today=None, platform="linux/amd64", file_hashes=None):
+    """Apply the review to exact reviewed files.
+
+    A finding qualifies when its path/rule/line is reviewed and either the assessed
+    image is the reviewed digest, or the flagged file's full SHA256, recomputed from
+    the assessed feed image (file_hashes), equals the reviewed hash. New or changed
+    files, other repositories and unverified content never qualify.
+    """
     if review.get("schema_version") != 1:
         raise ValueError("Unsupported secret review schema")
     image = review["image"]
@@ -31,17 +38,24 @@ def classify(items, resolved_image, review, today=None, platform="linux/amd64"):
                 raise ValueError("Duplicate secret review")
             matches[key] = entry
     today = today or datetime.datetime.now(datetime.timezone.utc).date()
+    feed_image = bool(resolved_image) and re.fullmatch(
+        re.escape(FEED_REPOSITORY) + r"@sha256:[a-f0-9]{64}", resolved_image) is not None
     result = []
     for original in items:
         item = dict(original)
         item.pop("disposition", None)
         entry = matches.get((item["path"], item["id"], item["line"]))
-        if (item["kind"] == "secret" and entry and resolved_image == image
+        exact = resolved_image == image
+        content = (feed_image and file_hashes is not None
+                   and entry is not None and file_hashes.get(item["path"]) == entry["sha256"])
+        if (item["kind"] == "secret" and entry and (exact or content)
                 and platform == review["platform"] == "linux/amd64" and reviewed <= today < expires):
             item["disposition"] = {
                 "classification": "false_positive", "justification": entry["justification"],
                 "reviewed": review["reviewed"], "expires": review["expires"],
-                "image": image, "file_sha256": entry["sha256"],
+                "image": resolved_image, "reviewed_image": image, "file_sha256": entry["sha256"],
+                "verification": ("exact reviewed image" if exact else
+                                 "file SHA256 recomputed from the assessed image"),
                 "evidence": "security/feed-secret-review.md",
             }
         result.append(item)

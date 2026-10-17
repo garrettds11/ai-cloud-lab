@@ -26,3 +26,9 @@ variable "open_webui_container_name" {
   type    = string
   default = "open-webui"
 }
+
+variable "tags" {
+  description = "Extra tags for every resource in this track. Keep the project tag your other lab resources carry."
+  type        = map(string)
+  default     = { project = "aiwebdemo" }
+}

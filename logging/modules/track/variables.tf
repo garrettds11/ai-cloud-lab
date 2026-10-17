@@ -21,3 +21,8 @@ variable "package_version" {
   type    = string
   default = "1.0.0"
 }
+variable "tags" {
+  description = "Extra tags for every resource in this track, such as the project tag. Merged over Environment, ManagedBy and Stack."
+  type        = map(string)
+  default     = {}
+}

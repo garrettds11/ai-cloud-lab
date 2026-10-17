@@ -45,7 +45,20 @@ terraform show -no-color track.tfplan | Out-File track-plan.txt
 terraform apply track.tfplan
 ```
 
-Wait for the `AWS-ConfigureAWSPackage` association to report success in Systems Manager State Manager before testing. For Wazuh, also confirm the Wazuh agent is active and enrolled. Open the backend UI with the `ui_tunnel_command` output. Follow [END-TO-END-TEST.md](END-TO-END-TEST.md) for the same unique host and container markers, each product's exact search and dashboard check, and S3 archive verification.
+Wait for the `AWS-ConfigureAWSPackage` association to report success in Systems Manager State Manager before testing. For Wazuh, also confirm the Wazuh agent is active and enrolled.
+
+Read the UI sign-in for Graylog, VictoriaLogs (Grafana), Quickwit (Grafana) and Splunk. The backend generates a random password at boot and keeps it only in `/root/logging-bakeoff-credentials` on the backend instance, so it never enters Terraform state. Read it through SSM Run Command:
+
+```powershell
+$backend = terraform output -raw backend_instance_id
+$command = aws ssm send-command --instance-ids $backend --document-name AWS-RunShellScript --parameters "commands=cat /root/logging-bakeoff-credentials" --query Command.CommandId --output text
+aws ssm wait command-executed --command-id $command --instance-id $backend
+aws ssm get-command-invocation --command-id $command --instance-id $backend --query StandardOutputContent --output text
+```
+
+The user name is `admin`. Run Command keeps the output in the account's command history, which the track destroy does not remove; the password stops working when the backend is destroyed. Wazuh does not use this file: its dashboard uses the default credentials of the pinned `wazuh-docker` single-node release.
+
+Open the backend UI with the `ui_tunnel_command` output, then browse to `http://localhost:18080`. Follow [END-TO-END-TEST.md](END-TO-END-TEST.md) for the same unique host and container markers, each product's exact search and dashboard check, and S3 archive verification.
 
 Before each destroy, uninstall the track package from the root host through Distributor. The track README gives the package name and command. Review `terraform plan -destroy -out=destroy.tfplan` and `terraform show -no-color destroy.tfplan` first; then destroy that track only:
 

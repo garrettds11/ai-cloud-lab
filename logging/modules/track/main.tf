@@ -1,7 +1,9 @@
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
-  default_tags { tags = { Environment = "lab", ManagedBy = "terraform", Stack = "logging-${var.track}" } }
+  default_tags {
+    tags = merge({ Environment = "lab", ManagedBy = "terraform", Stack = "logging-${var.track}" }, var.tags)
+  }
 }
 
 data "aws_ssm_parameter" "ubuntu_ami" {
@@ -18,7 +20,7 @@ data "aws_subnets" "default" {
 locals {
   subnet_id = sort(data.aws_subnets.default.ids)[0]
   ports     = var.track == "wazuh" ? [1514, 1515] : [443]
-  ui_port   = var.track == "wazuh" ? 5601 : (var.track == "graylog" ? 9000 : 8080)
+  ui_port   = 8080 # Every track publishes its UI on host port 8080 (Wazuh maps 5601, Graylog 9000)
   vector_config = templatefile("${path.module}/vector.toml.tftpl", {
     track          = var.track
     backend_ip     = aws_instance.backend.private_ip
@@ -37,6 +39,10 @@ check "track_name_matches_root" {
 }
 
 resource "aws_s3_bucket" "archive" {
+  #checkov:skip=CKV_AWS_18:Short-lived test archive; access logging needs a second bucket and the track is destroyed after each run
+  #checkov:skip=CKV_AWS_144:Single-region test archive deleted at destroy; cross-region replication adds cost for no benefit
+  #checkov:skip=CKV_AWS_145:Encrypted with S3-managed keys (SSE-S3); a customer managed key adds cost for no lab benefit
+  #checkov:skip=CKV2_AWS_62:Nothing consumes events from this bucket
   bucket_prefix = "${var.project_name}-raw-"
   force_destroy = true
 }
@@ -81,6 +87,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "archive" {
     filter {}
     expiration { days = var.archive_retention_days }
     noncurrent_version_expiration { noncurrent_days = var.archive_retention_days }
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
   }
   depends_on = [aws_s3_bucket_versioning.archive]
 }
@@ -111,12 +118,14 @@ resource "aws_iam_role_policy" "lab_archive" {
 }
 
 resource "aws_ssm_parameter" "vector_config" {
+  #checkov:skip=CKV2_AWS_34:Holds the Vector configuration only (bucket name, backend private IP); no secret
   name  = "/logging-bakeoff/${var.track}/vector-config"
   type  = "String"
   value = local.vector_config
 }
 
 resource "aws_ssm_parameter" "wazuh_manager" {
+  #checkov:skip=CKV2_AWS_34:Holds the backend's private IP address only; no secret
   count = var.track == "wazuh" ? 1 : 0
   name  = "/logging-bakeoff/${var.track}/wazuh-manager-ip"
   type  = "String"
@@ -164,6 +173,9 @@ resource "aws_security_group" "backend" {
 }
 
 resource "aws_instance" "backend" {
+  #checkov:skip=CKV_AWS_88:Public IP is used only for outbound package and image downloads in the default VPC; no inbound rule allows the Internet and the UI is reached through SSM
+  #checkov:skip=CKV_AWS_135:Current instance types (the default t3) are EBS-optimized by default; forcing the flag would break older types
+  #checkov:skip=CKV_AWS_126:Detailed (1-minute) EC2 monitoring costs extra for a short-lived test backend
   ami                         = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type               = var.backend_instance_type
   subnet_id                   = local.subnet_id
@@ -192,6 +204,12 @@ resource "aws_instance" "backend" {
 }
 
 resource "aws_s3_bucket" "packages" {
+  #checkov:skip=CKV_AWS_18:Holds only the Distributor package built from this repository; deleted at destroy
+  #checkov:skip=CKV_AWS_21:Terraform rewrites the package object on each apply; the repository is the history
+  #checkov:skip=CKV_AWS_144:Single-region package bucket deleted at destroy; cross-region replication adds cost for no benefit
+  #checkov:skip=CKV_AWS_145:Encrypted with S3-managed keys (SSE-S3); a customer managed key adds cost for no lab benefit
+  #checkov:skip=CKV2_AWS_61:Objects are replaced on every apply and deleted with the track; no lifecycle rules needed
+  #checkov:skip=CKV2_AWS_62:Nothing consumes events from this bucket
   bucket_prefix = "${var.project_name}-packages-"
   force_destroy = true
 }

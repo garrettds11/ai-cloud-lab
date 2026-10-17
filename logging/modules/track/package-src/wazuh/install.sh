@@ -34,6 +34,20 @@ if "<location>/var/log/syslog</location>" not in text:
     text = text[:position] + localfiles + text[position:]
     path.write_text(text)
 PY
-/var/ossec/bin/agent-auth -m "$manager" -A "$agent_name"
+# The backend can still be pulling and starting the Wazuh stack when this runs, so retry
+# enrollment for up to 15 minutes instead of failing on the first refused connection.
+enrolled=no
+for attempt in $(seq 1 90); do
+  if /var/ossec/bin/agent-auth -m "$manager" -A "$agent_name"; then
+    enrolled=yes
+    break
+  fi
+  echo "Wazuh manager not accepting enrollment yet (attempt $attempt of 90); retrying in 10 seconds"
+  sleep 10
+done
+if [ "$enrolled" != yes ]; then
+  echo "Wazuh manager at $manager did not accept enrollment within 15 minutes" >&2
+  exit 1
+fi
 systemctl daemon-reload
 systemctl enable --now wazuh-agent

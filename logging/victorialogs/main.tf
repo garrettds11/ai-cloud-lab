@@ -10,4 +10,5 @@ module "track" {
   backend_instance_type     = var.backend_instance_type
   open_webui_container_name = var.open_webui_container_name
   archive_retention_days    = var.archive_retention_days
+  tags                      = var.tags
 }

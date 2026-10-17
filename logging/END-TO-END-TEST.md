@@ -15,7 +15,7 @@ printf '%s\n' "$RUN_ID" >/tmp/logging-bakeoff-run-id
 
 The first event is a host auth-priority syslog message. The second is emitted to the Open WebUI container's stderr and appears in its Docker log stream. Both collectors should return the same unique `RUN_ID` markers.
 
-Wait for the Distributor association to succeed, then allow a minute for buffering and ingestion. In each UI, set the time picker to **Last 15 minutes** and search for `bakeoff-<RUN_ID>`. Confirm both host and container markers, the event timestamp, source, and host. Create a small dashboard panel or saved view that groups event counts by source, then confirm it follows the time picker. In a second shell, verify the independent raw archive:
+Wait for the Distributor association to succeed, then allow a minute for buffering and ingestion. In each UI, set the time picker to **Last 15 minutes** and search for the bare run ID, `<RUN_ID>`, which matches both `bakeoff-host-<RUN_ID>` and `bakeoff-openwebui-<RUN_ID>`. Confirm both host and container markers, the event timestamp, source, and host. Create a small dashboard panel or saved view that groups event counts by source, then confirm it follows the time picker. In a second shell, verify the independent raw archive:
 
 ```powershell
 $bucket = terraform output -raw archive_bucket
@@ -28,11 +28,11 @@ The S3 objects are gzip-compressed NDJSON. Download one object and confirm it co
 
 | Track | Search surface | Dashboard check |
 |---|---|---|
-| Wazuh | In Wazuh Dashboard, create/select `wazuh-archives-*` with time field `timestamp`; search `bakeoff-<RUN_ID>`. Security alerts remain visible in `wazuh-alerts-*`. | Use Discover with the archive pattern, then save a visualization or dashboard showing event counts by `source`. |
-| Graylog | Search `message:bakeoff-<RUN_ID>` in Graylog Search. | Save a search or dashboard widget showing counts by source. |
-| VictoriaLogs | In Grafana Explore, query `bakeoff-<RUN_ID>` through the VictoriaLogs data source. | Save the query as a Grafana panel and verify the time range changes the result. |
-| Quickwit | In Grafana Explore, search the `webui-logs` index for `bakeoff-<RUN_ID>`. | Save a Grafana panel for counts by source and change the time range. |
-| Splunk | In Search & Reporting, run `index=main "bakeoff-<RUN_ID>"`. | Save the search as a dashboard panel and change the time range. |
+| Wazuh | In Wazuh Dashboard, create/select `wazuh-archives-*` with time field `timestamp`; search `<RUN_ID>`. Security alerts remain visible in `wazuh-alerts-*`. | Use Discover with the archive pattern, then save a visualization or dashboard showing event counts by `source`. |
+| Graylog | Search `<RUN_ID>` in Graylog Search. | Save a search or dashboard widget showing counts by source. |
+| VictoriaLogs | In Grafana Explore, query `<RUN_ID>` through the VictoriaLogs data source. | Save the query as a Grafana panel and verify the time range changes the result. |
+| Quickwit | In Grafana Explore, search the `webui-logs` index for `<RUN_ID>`. | Save a Grafana panel for counts by source and change the time range. |
+| Splunk | In Search & Reporting, run `index=main "<RUN_ID>"`. | Save the search as a dashboard panel and change the time range. |
 
 ## Uninstall and destroy
 

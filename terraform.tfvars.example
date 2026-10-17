@@ -86,7 +86,7 @@ root_volume_size = 100
 # Generative AI Language Model Selection
 llm_provider = "ollama"
 # qwen3:14b calls tools reliably (the vulnerability MCP depends on it); llama3.2:3b does not.
-llm_model    = "qwen3:14b"
+llm_model = "qwen3:14b"
 # Room for tool definitions, the system prompt and the chat. Ollama's own default (4096) is too small.
 ollama_context_length = 16384
 

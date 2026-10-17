@@ -8,6 +8,21 @@ output "private_ip" {
   value       = aws_instance.ai_lab.private_ip
 }
 
+output "instance_security_group_id" {
+  description = "Security group ID used by a separately managed logging track to authorize collector traffic from this lab host."
+  value       = aws_security_group.ai_lab.id
+}
+
+output "instance_iam_role_name" {
+  description = "IAM role name for the lab host; a selected logging track can attach narrowly scoped raw-archive permissions."
+  value       = aws_iam_role.ssm.name
+}
+
+output "open_webui_container_name" {
+  description = "Container name whose application logs are included by the logging track collector."
+  value       = var.open_webui_container_name
+}
+
 output "public_ip" {
   description = "EC2 public IP address used for outbound Internet connectivity."
   value       = aws_instance.ai_lab.public_ip

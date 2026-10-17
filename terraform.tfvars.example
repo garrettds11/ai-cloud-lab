@@ -198,6 +198,9 @@ enable_ssh       = false
 ssh_key_name     = null
 allowed_ssh_cidr = null
 
+# Logging bake-off: set true before the Wazuh track (TCP 1514-1515 to the default VPC only).
+enable_wazuh_agent_egress = false
+
 # Security and acceptable use notice shown at the top of Open WebUI after sign-in.
 # Set to "" for no banner. Changing it replaces the EC2 instance on the next apply.
 security_banner_text = "This system is for authorized users only. Activity may be monitored and logged. By using this lab you agree to use it only for approved purposes: do not enter confidential, regulated, or personal data, do not create illegal, harmful, or abusive content, and do not try to bypass security controls. Misuse may result in loss of access."

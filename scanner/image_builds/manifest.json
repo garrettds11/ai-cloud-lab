@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "pins": [],
+  "images": [
+    {
+      "reference": "registry.community.greenbone.net/community/gsad:stable",
+      "base": "registry.community.greenbone.net/community/gsad@sha256:d564fa5d6bd8f98c739be82ba7fb6d6760a9f1ab7827b40c57ac747adcd03428",
+      "context": "gsad",
+      "tag": "ai-cloud-lab/gsad:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/gvmd:stable",
+      "base": "registry.community.greenbone.net/community/gvmd@sha256:2d4191418d8998a872954ab30292a18c4eae74ffb8f15aec70d8eb2d16ee9b8c",
+      "context": "gvmd",
+      "tag": "ai-cloud-lab/gvmd:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/nginx:latest",
+      "base": "registry.community.greenbone.net/community/nginx@sha256:2218c3a09dde107ef999cac1f47e5c39b9a87fd2728fe7db3c930ff354392958",
+      "context": "nginx",
+      "tag": "ai-cloud-lab/nginx:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/pg-gvm:stable",
+      "base": "registry.community.greenbone.net/community/pg-gvm@sha256:b81bc5d7a750203ea25c6e4dd086751ecee8e388d1cb2501c60b3805e0056204",
+      "context": "pg-gvm",
+      "tag": "ai-cloud-lab/pg-gvm:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/pg-gvm-migrator:stable",
+      "base": "registry.community.greenbone.net/community/pg-gvm-migrator@sha256:201da953f12dd26c84db8aa0117465de0aac9916f4e1d2d60b4fcb6f86176d4e",
+      "context": "pg-gvm-migrator",
+      "tag": "ai-cloud-lab/pg-gvm-migrator:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/redis-server",
+      "base": "registry.community.greenbone.net/community/redis-server@sha256:6da6a7c7221aa3ab231961fd6ca001d552b6a2c7727ac6201c6d8a360baa963a",
+      "context": "redis-server",
+      "tag": "ai-cloud-lab/redis-server:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/gvm-tools",
+      "base": "registry.community.greenbone.net/community/gvm-tools@sha256:53d294ab34b1a7fe3582826560aa8a6dcdfb395e396b195a03dd7d4b3b9cd885",
+      "context": "gvm-tools",
+      "tag": "ai-cloud-lab/gvm-tools:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/ospd-openvas:stable",
+      "base": "registry.community.greenbone.net/community/ospd-openvas@sha256:31a85272abc77521c98451ce6834ed7d2f887e98ff1b26ff3fd94f00d000b169",
+      "context": "ospd-openvas",
+      "tag": "ai-cloud-lab/ospd-openvas:patched"
+    },
+    {
+      "reference": "registry.community.greenbone.net/community/openvas-scanner:stable",
+      "base": "registry.community.greenbone.net/community/openvas-scanner@sha256:030fed8566ccca3bc1d5ff3a22adf3d3ad2904def71f0ca58039d1e4c286e14a",
+      "context": "openvas-scanner",
+      "tag": "ai-cloud-lab/openvas-scanner:patched"
+    },
+    {
+      "reference": "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa",
+      "base": "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa",
+      "context": "trivy",
+      "tag": "ai-cloud-lab/trivy:patched",
+      "scope": "tool"
+    },
+    {
+      "reference": "ghcr.io/open-webui/open-webui:v0.12.0",
+      "base": "ghcr.io/open-webui/open-webui@sha256:1565038903151ced924b5a3226f73f40f16963df4b910441f6391f10144afdaa",
+      "context": "open-webui",
+      "tag": "ai-cloud-lab/open-webui:patched",
+      "scope": "candidate"
+    }
+  ]
+}

@@ -36,6 +36,18 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_cloudwatch_event_rule" {
+    defaults = {
+      arn = "arn:aws:events:us-east-1:123456789012:rule/test-spend"
+    }
+  }
+
+  mock_resource "aws_sns_topic" {
+    defaults = {
+      arn = "arn:aws:sns:us-east-1:123456789012:test-spend"
+    }
+  }
+
   mock_resource "aws_apigatewayv2_api" {
     defaults = {
       id            = "abc123defg"
@@ -76,7 +88,8 @@ variables {
 }
 
 run "spend_emails_are_off_by_default_and_need_no_topic" {
-  command = plan
+  # Policy ARNs become known after the mocked apply; no AWS calls occur.
+  command = apply
 
   assert {
     condition     = length(aws_sns_topic.spend) == 0 && aws_lambda_function.spend.environment[0].variables["SPEND_TOPIC_ARN"] == ""
@@ -90,7 +103,7 @@ run "spend_emails_are_off_by_default_and_need_no_topic" {
 }
 
 run "spend_emails_on_give_the_job_only_its_own_topic" {
-  command = plan
+  command = apply
 
   variables {
     spend_emails_enabled = true
@@ -111,8 +124,13 @@ run "every_route_exists_and_admin_routes_go_to_the_admin_function" {
   command = apply
 
   assert {
-    condition     = length(aws_apigatewayv2_route.panel) == 15
-    error_message = "The API must have the fifteen routes the handler serves (see ../openapi.yaml)."
+    condition = toset(keys(aws_apigatewayv2_route.panel)) == toset(flatten([
+      for path, operations in yamldecode(file("${path.module}/../openapi.yaml")).paths : [
+        for method, operation in operations : "${upper(method)} ${path}"
+        if contains(["get", "post", "put", "delete", "patch", "options", "head"], method)
+      ]
+    ]))
+    error_message = "The deployed routes must exactly match the HTTP operations in ../openapi.yaml."
   }
 
   assert {
@@ -195,7 +213,7 @@ run "open_webui_actions_run_only_the_panel_document_on_managed_instances" {
   assert {
     condition = jsondecode(aws_ssm_document.webui_admin.content).parameters.action.allowedValues == [
       "status", "usage", "set-role", "chat-test", "tool-servers", "settings", "export-config",
-      "set-default-model", "set-model-params", "set-feature", "upsert-tool-server", "remove-tool-server", "apply-desired",
+      "set-default-model", "set-model-params", "set-feature", "upsert-tool-server", "remove-tool-server", "import-skill", "apply-desired",
     ]
     error_message = "The document must accept only the listed action names."
   }

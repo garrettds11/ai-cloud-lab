@@ -119,6 +119,11 @@ class Base(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
+        # Match cloud-init installation: usage invokes this helper directly.
+        # Git checkout permissions must not decide whether sessions are included.
+        self.session_log = self.bin / "ai-lab-session-log"
+        shutil.copyfile(SESSION_LOG, self.session_log)
+        self.session_log.chmod(0o755)
         self.data = self.tmp / "data"
         self.state = self.tmp / "run"
         self.state.mkdir()
@@ -153,7 +158,7 @@ class Base(unittest.TestCase):
                    AI_LAB_DATA_DIR=str(self.data), AI_LAB_STATE_DIR=str(self.state), AI_LAB_READY_FILE=str(self.data / "ready"),
                    AI_LAB_SETTINGS_FILE=str(self.settings), AI_LAB_AUTO_STOP_ENV=str(self.autostop),
                    AI_LAB_WEBUI_DB=str(self.db), AI_LAB_WEBUI_LIB=str(LIB),
-                   AI_LAB_SESSION_LOG=str(SESSION_LOG), AI_LAB_BOOT_ID_FILE=str(self.tmp / "boot_id"),
+                   AI_LAB_SESSION_LOG=str(self.session_log), AI_LAB_BOOT_ID_FILE=str(self.tmp / "boot_id"),
                    AI_LAB_METRICS_DIR=str(self.tmp / "metrics"), AI_LAB_METRICS_ENV=str(self.tmp / "metrics.env"),
                    AI_LAB_OLLAMA_URL="http://127.0.0.1:11434")
         env.update(extra)

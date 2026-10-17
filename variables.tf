@@ -38,7 +38,7 @@ variable "instance_hourly_cost_usd" {
   default     = null
 
   validation {
-    condition     = var.instance_hourly_cost_usd == null || (var.instance_hourly_cost_usd >= 0 && var.instance_hourly_cost_usd <= 1000)
+    condition     = var.instance_hourly_cost_usd == null ? true : (var.instance_hourly_cost_usd >= 0 && var.instance_hourly_cost_usd <= 1000)
     error_message = "instance_hourly_cost_usd must be null or a number from 0 through 1000."
   }
 }
@@ -344,6 +344,12 @@ variable "extra_egress_cidrs" {
   }
 }
 
+variable "enable_wazuh_agent_egress" {
+  description = "Allow the lab host to reach a Wazuh manager in the default VPC on TCP 1514 and 1515. Enable before running the Wazuh track; no instance replacement is required."
+  type        = bool
+  default     = false
+}
+
 variable "enable_ssh" {
   description = "Whether to enable inbound SSH for tunneling. SSM remains available either way."
   type        = bool
@@ -570,7 +576,11 @@ variable "grafana_cloudwatch_external_id" {
   default     = null
 
   validation {
-    condition     = var.grafana_cloudwatch_external_id == null || can(regex("^[A-Za-z0-9+=,.@:/_-]{2,1224}$", var.grafana_cloudwatch_external_id))
+    condition = var.grafana_cloudwatch_external_id == null ? true : (
+      length(var.grafana_cloudwatch_external_id) >= 2 &&
+      length(var.grafana_cloudwatch_external_id) <= 1224 &&
+      can(regex("^[A-Za-z0-9+=,.@:/_-]+$", var.grafana_cloudwatch_external_id))
+    )
     error_message = "grafana_cloudwatch_external_id may contain only letters, digits and + = , . @ : / _ - (2 to 1224 characters)."
   }
 }

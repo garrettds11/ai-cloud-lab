@@ -1,0 +1,141 @@
+# Critical finding remediation plan — 16 October 2026
+
+## Verified baseline and scope
+
+[Complete assessment 38617707801](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38617707801)
+assessed PR head `c8f8e10840ec05ecf7b4df0da1ae6c80754d57b5` (its inventory
+records GitHub's test merge revision `334ca9a96b90e5619a6e878727e25e74d1a7b3fb`).
+Its `remaining-cves.csv` contains **37 CRITICAL occurrences: 27 configured and
+10 candidate**, within the previously reported 1,535 HIGH/CRITICAL occurrences.
+These are finding rows, not assets or demonstrated exploits. Scope remains
+the same 28 assessment targets. No candidate is deployed.
+
+## Verified batch outcome
+
+[Complete assessment 38909417812](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38909417812)
+confirms the same 28-target scope, all 28 SBOMs/SARIF uploads and 119 verified
+checksums. Baseline CI and both early compatibility jobs pass. The assessed
+candidate `sha256:faf695385cac5bcad7e60281f2155c77b8e70652a713653c22171859f4f26a11`
+loads canonical SQLite 3.54.0 and passes old-database/schema, actual bounded DML,
+search and backend authentication checks. Its receipt is in the assessment's
+image-build metadata, independently of the separately built preflight image.
+
+The automated report still contains 37 critical rows and all three targeted
+SQLite findings. Trivy's Debian detector does not compare versions for records
+with an empty distro fixed-version boundary. No automated findings were removed;
+the verified source replacement carries a report-only
+[source-fix record](source-fixes.json) and stays blocking until a policy decision
+is approved. Chroma's statically bundled SQLite 3.46.0 is not covered by it.
+Current totals are 1,614 HIGH/CRITICAL rows: 1,302 configured and 312 candidate.
+All 79 additional rows are newly reported IDs on unchanged FFmpeg/util-linux/
+kernel-header packages; scope did not expand. The new feed digest also has 72
+unreviewed secret detections. See [the current report](remediation-current.md)
+for exact hashes, primary source links, database dates and the remaining gates.
+
+## Ordered work
+
+| Priority | Component / finding | Decision and completion evidence required |
+|---|---|---|
+| 1 | Chroma: CVE-2026-45829, CVE-2026-45833 | Remains blocking. Latest upstream release is still 1.5.9; no released fix verified. Review a complete upstream patch or supported vector-store replacement. Test malicious persisted embedding configuration and nested kwargs, plus normal retrieval, before claiming mitigation. |
+| 1 | SQLite: CVE-2025-7458, plus HIGH CVE-2026-11822/11824 | This batch replaces the candidate's 3.40.1 library with checksum-pinned upstream 3.54.0. Requires compiled source identity, old-database compatibility, feature tests, backend/authentication acceptance, fresh SBOM/SARIF and scan comparison. No waiver or scan exclusion. |
+| 2 | libxml2: CVE-2026-6653 | Nine critical occurrences across eight configured images and the candidate. Both Bookworm and Trixie remain affected. A distro migration alone is insufficient; review upstream fix/backport and XML consumer compatibility. This is the broadest shared critical component blocker. |
+| 2 | Mbed TLS crypto package: CVE-2025-47917, CVE-2026-34873/34875 | The candidate and original each contain libmbedcrypto7 2.28.3. Bookworm source package is end of life. Verify installed symbols/components against upstream affected functions and version ranges; otherwise replace/rebuild affected consumers with a supported library. Do not install an incompatible new SONAME over the old one. |
+| 2 | AOM: CVE-2023-6879; GLib: CVE-2026-58016 | Bookworm remains affected. A supported distro rebuild can address these, but must retain media/document processing and test those paths. Removing media packages merely to reduce counts is not approved. |
+| 2 | gvmd LMDB: CVE-2019-16224/16225/16227 | Three configured occurrences. Review upstream fixed code and distro applicability, then test manager database behavior before replacing its native library. |
+| 2 | gvmd OpenSSH client: CVE-2026-60002 | One configured occurrence. Establish whether the manager requires the client and verify upstream/distro patch status before upgrade or dependency removal. |
+| 3 | zlib MiniZip: CVE-2023-45853 | Four occurrences across zlib1g/zlib1g-dev. Debian documents a source/binary scope mismatch for Bookworm. Needs exact-image installed-file/bundled-code evidence before a not-affected decision. Remains counted. |
+| Already patched in candidate | PyJWT CVE-2026-102268; sentence-transformers CVE-2026-68770; unstructured CVE-2026-71428; linux-libc-dev CVE-2026-43185 | These four critical rows remain in the original configured image. Candidate dependency upgrades/build-package removal already eliminate them. Promotion requires review and acceptance; retaining assessment of the configured original is intentional. Header removal does not patch a host kernel. |
+
+## SQLite implementation and limits
+
+Initial verification run 38905953785 stopped at preflight: the upstream registry
+had deleted the pinned OpenVAS base `525c48bb...`. All eleven managed bases were
+checked through their registry manifests/configs; only this base was missing.
+Its replacement is pinned to `77d6f443...`, created 15 October, with upstream
+command `/usr/local/bin/openvasd` and no entrypoint/user override. Manifest and
+config digests were independently verified. Native scanner acceptance and a
+new scan remain mandatory. Any OpenVAS result change includes this upstream
+replacement, not merely the SQLite patch. Registry retention remains tracked
+in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
+
+On 16 October run 38975508963 failed the same preflight: upstream had deleted
+`77d6f443...` as well. Its replacement is index `030fed85...` (amd64 manifest
+`dbfb2868...`, config `00eae73e...`), created 16 October, with the same command
+`/usr/local/bin/openvasd` and no entrypoint/user override. The index digest was
+recomputed from the downloaded bytes. Redis and OSPD bases were confirmed present.
+Native scanner acceptance and a new scan remain mandatory.
+
+The candidate uses the existing pinned upstream Open WebUI base and its build
+toolchain. `build-sqlite.py` verifies the official canonical source archive's
+SHA3-256, generates the parser using the distro's SQLite feature/limit options,
+compiles with those options and hardening flags, and installs a real local
+`libsqlite3-0` Debian package, version `3.54.0-0ai.cloud.lab1`.
+
+The package records its upstream URL, source ID, checksums, original options and
+generated source checksum and final library checksum in
+`/opt/ai-cloud-lab/sqlite/security-build.json`. Upstream's included JimTCL/Lemon
+generators require no additional installed build packages. Bounded UPDATE/DELETE
+syntax is functionally tested: setting its compiler macro alone on the published
+amalgamation does not preserve the distro parser feature.
+Candidate acceptance includes that receipt in the scan's build metadata. This
+is a locally maintained upstream build, **not an official Debian security update**.
+It adds ongoing maintenance responsibility until a supported base includes the fix.
+The version is not relabeled in place, package metadata is retained, and no
+Trivy policy or CVE disposition is changed. Distro-oriented vulnerability data
+may still report these findings; the new assessment determines the actual count.
+
+Checks cover the actual loaded library/source ID, original database reopen and
+schema migration, retained features, WAL, JSON, FTS5, RTree, rollback, integrity,
+and backend signup/signin/token behavior in disposable storage. The Chroma
+add/query check runs on Chroma's own statically bundled SQLite 3.46.0, not on the
+replaced library, so it is a compatibility check only. Candidate acceptance
+records bundled engines as `sqlite_embedded_copies`. The build uses Debian's own
+hardening flags, fails if any public `sqlite3_*` symbol of the distro library is
+missing and marks the package `Multi-Arch: same`.
+
+Because `3.54.0-0ai.cloud.lab1` sorts above every Bookworm `3.40.1` revision, a
+future Debian fix will be treated as fixed for this package even if 3.54.0 is
+affected. Upstream SQLite advisories must be monitored separately.
+Existing production databases and full live model/retrieval integration remain
+outside this candidate test. Rollback of a deployed database would require a
+separate backup/restore plan before promotion.
+
+## Chroma reachability evidence
+
+Candidate acceptance runs `chroma-reachability.py` against Open WebUI's installed
+`ChromaClient` code and chromadb 1.5.9 in embedded mode. It plants a malicious
+`sentence_transformer` configuration (top-level and nested `trust_remote_code`)
+in the persisted collection schema. It then records every call to Chroma's
+embedding-function builder, where both advisories end. A positive control
+confirms the planted configuration is live.
+
+Measured result: client startup, `has_collection`, search, query, get, delete and
+`delete_collection` never reach the builder. `insert` and `upsert` do, because
+Chroma's `add`/`upsert` re-read the persisted schema on every write. Any document
+upload therefore rebuilds whatever embedding function is stored.
+
+The advisories' HTTP endpoints are absent: the deployment runs no Chroma server
+and sets no `CHROMA_*` or `VECTOR_DB` value, which
+`tests/test_chroma_embedded_guard.py` enforces. Planting a configuration needs
+write access to `chroma.sqlite3` in the Open WebUI data volume. Both findings
+remain counted and blocking; this is reachability evidence, not a fix. The check
+fails if the set of reaching operations changes, forcing a new review.
+
+## Primary evidence checked on 16 October
+
+- [SQLite official download checksums](https://sqlite.org/download.html) and
+  [release/source identities](https://sqlite.org/changes.html), plus the
+  [parser-generation requirement for optional compile features](https://sqlite.org/compile.html#enable_update_delete_limit).
+- [Debian SQLite CVE-2025-7458](https://security-tracker.debian.org/tracker/CVE-2025-7458),
+  [CVE-2026-11822](https://security-tracker.debian.org/tracker/CVE-2026-11822) and
+  [CVE-2026-11824](https://security-tracker.debian.org/tracker/CVE-2026-11824).
+- [Chroma latest releases](https://github.com/chroma-core/chroma/releases) and
+  [reviewed CVE-2026-45833 advisory](https://github.com/advisories/GHSA-36p7-vc44-83pf).
+- [Debian libxml2](https://security-tracker.debian.org/tracker/CVE-2026-6653),
+  [Mbed TLS](https://security-tracker.debian.org/tracker/CVE-2025-47917),
+  [AOM](https://security-tracker.debian.org/tracker/CVE-2023-6879), and
+  [GLib](https://security-tracker.debian.org/tracker/CVE-2026-58016).
+
+Merge remains blocked until findings are resolved or individually reviewed with
+adequate evidence under an explicitly approved policy. This plan grants no
+exceptions, registry promotion, deployment or merge approval.

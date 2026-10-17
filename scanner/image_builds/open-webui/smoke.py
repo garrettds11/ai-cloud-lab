@@ -1,0 +1,47 @@
+"""Offline dependency compatibility; no models, accounts or persistent state."""
+import io
+import importlib.metadata
+import os
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
+import fsspec
+from datasets import Dataset
+from mcp import ClientSession
+import pyarrow as pa
+from pypdf import PdfReader, PdfWriter
+import sentence_transformers
+import transformers
+import torch
+import chromadb
+from unstructured.partition.text import partition_text
+
+test_key = "compatibility-check-only-never-a-production-key"
+token = jwt.encode({"sub": "compatibility-check"}, test_key, algorithm="HS256")
+assert jwt.decode(token, test_key, algorithms=["HS256"])["sub"] == "compatibility-check"
+assert rsa.generate_private_key(public_exponent=65537, key_size=2048).key_size == 2048
+assert fsspec.filesystem("memory").protocol == "memory"
+assert pa.table({"value": [1]}).num_rows == 1
+assert Dataset.from_dict({"value": [1]})[0]["value"] == 1
+assert (torch.tensor([[2.0]]) @ torch.tensor([[3.0]])).item() == 6.0
+# Exercise retrieval storage without a model download or persistent database.
+# This checks dependency compatibility; it does not mitigate Chroma advisories.
+collection = chromadb.EphemeralClient().create_collection(
+    "security-compatibility", embedding_function=None)
+collection.add(ids=["first", "second"], embeddings=[[1.0, 0.0], [0.0, 1.0]],
+               documents=["first document", "second document"])
+retrieved = collection.query(query_embeddings=[[1.0, 0.0]], n_results=1)
+assert retrieved["ids"] == [["first"]]
+assert retrieved["documents"] == [["first document"]]
+writer = PdfWriter()
+writer.add_blank_page(width=72, height=72)
+stream = io.BytesIO()
+writer.write(stream)
+stream.seek(0)
+assert len(PdfReader(stream).pages) == 1
+# Import its parser API without downloading NLTK/model resources in a build.
+assert callable(partition_text)
+for name in ("PyJWT", "cryptography", "mcp", "pyarrow", "pypdf", "sentence-transformers", "transformers", "unstructured", "setuptools"):
+    print(name, importlib.metadata.version(name))

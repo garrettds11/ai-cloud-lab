@@ -191,6 +191,17 @@ resource "aws_security_group" "ai_lab" {
     }
   }
 
+  dynamic "egress" {
+    for_each = var.enable_wazuh_agent_egress ? [true] : []
+    content {
+      description = "Wazuh agent event and enrollment traffic inside the lab VPC"
+      from_port   = 1514
+      to_port     = 1515
+      protocol    = "tcp"
+      cidr_blocks = [data.aws_vpc.default.cidr_block]
+    }
+  }
+
   tags = {
     Name = "${var.project_name}-sg"
   }

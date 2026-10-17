@@ -75,11 +75,6 @@ def deliver(events):
         response = json.loads(request("https://127.0.0.1:8088/services/collector/event", body, headers={"Authorization": "Splunk " + ENV["LOGGING_HEC_TOKEN"]}, insecure=True))
         if response.get("code") != 0:
             raise RuntimeError("Splunk HEC rejected batch: " + json.dumps(response))
-    elif BACKEND == "elastic":
-        # The HTTP input's own host/header metadata is removed by the pipeline.
-        # Wrapping each event keeps the common host field intact until JSON expansion.
-        wrapped = [{"payload": json.dumps(e, separators=(",", ":"))} for e in events]
-        request("http://127.0.0.1:8088/events", json.dumps(wrapped))
     elif BACKEND in ("opensearch", "wazuh"):
         body = "".join(json.dumps({"index": {"_index": "webui-logs", "_id": e["event_id"]}}) + "\n" + json.dumps(e) + "\n" for e in events)
         if BACKEND == "wazuh":
@@ -91,15 +86,6 @@ def deliver(events):
         response = json.loads(request(url, body, "application/x-ndjson", headers, insecure=BACKEND == "wazuh"))
         if response.get("errors"):
             raise RuntimeError("bulk ingest reported item errors: " + json.dumps(response.get("items", [])[:2]))
-    elif BACKEND == "loki":
-        streams = {}
-        for e in events:
-            labels = (e["source"], e["host"])
-            streams.setdefault(labels, []).append([str(int(e["epoch"] * 1_000_000_000)), json.dumps(e)])
-        body = {"streams": [{"stream": {"source": source, "host": host}, "values": values} for (source, host), values in streams.items()]}
-        request("http://127.0.0.1:3100/loki/api/v1/push", json.dumps(body))
-    elif BACKEND == "openobserve":
-        request("http://127.0.0.1:8080/api/default/webui_logs/_json", json.dumps(events), headers={"Authorization": basic("admin@localhost", ENV["LOGGING_PASSWORD"])})
     elif BACKEND == "victorialogs":
         body = "\n".join(json.dumps(e) for e in events) + "\n"
         request("http://127.0.0.1:9428/insert/jsonline?_time_field=timestamp&_stream_fields=source,host", body, "application/x-ndjson")

@@ -38,17 +38,6 @@ if [ "$backend" = wazuh ]; then
   docker compose exec -T wazuh.manager sh -c "sed -i '/archives:/,/enabled:/s/enabled: false/enabled: true/' /etc/filebeat/filebeat.yml && (filebeat test output || true) && service filebeat restart"
   docker compose exec -T wazuh.manager sh -c 'grep -q "archives:" /etc/filebeat/filebeat.yml && grep -A1 "archives:" /etc/filebeat/filebeat.yml'
   cd /opt/logging-bakeoff
-elif [ "$backend" = loki ]; then
-  cat >grafana-datasource.yaml <<'EOF'
-apiVersion: 1
-datasources:
-  - name: Loki
-    type: loki
-    access: proxy
-    url: http://loki:3100
-    isDefault: true
-EOF
-  docker compose up -d
 elif [ "$backend" = victorialogs ]; then
   cat >grafana-datasource.yaml <<'EOF'
 apiVersion: 1
@@ -75,34 +64,6 @@ datasources:
 EOF
   docker compose up -d
 elif [ "$backend" = graylog ]; then
-  docker compose up -d
-elif [ "$backend" = elastic ]; then
-  cat >logstash.conf <<'EOF'
-input {
-  http {
-    port => 8080
-    codec => json
-    ecs_compatibility => "disabled"
-  }
-}
-filter {
-  json {
-    source => "payload"
-    remove_field => ["payload", "headers"]
-  }
-  date {
-    match => ["timestamp", "ISO8601"]
-    target => "@timestamp"
-  }
-}
-output {
-  elasticsearch {
-    hosts => ["http://elasticsearch:9200"]
-    index => "webui-logs"
-    document_id => "%%{event_id}"
-  }
-}
-EOF
   docker compose up -d
 else
   docker compose up -d

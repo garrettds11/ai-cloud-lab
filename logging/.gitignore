@@ -1,0 +1,13 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+__pycache__/
+crash.*.log
+# Superseded implementation kept locally for reference only.
+legacy/
+# Plan printouts can contain live resource identifiers.
+*-plan.txt
+plan-output*.txt

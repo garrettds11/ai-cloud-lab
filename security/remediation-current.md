@@ -101,14 +101,16 @@ Redis adds eight util-linux rows. No asset was added to obtain these counts.
 The configured Open WebUI image is now 543, candidate 312 and Redis 58. Other
 asset counts are unchanged. The previously pinned OpenVAS base was deleted
 upstream and was replaced with verified immutable digest `77d6f443...`; native
-scanner acceptance passes and its count remains 100. Registry retention and
+scanner acceptance passes and its count remains 100. That replacement was itself
+deleted on 16 October and is now pinned to verified digest `030fed85...`
+(see the critical plan); its acceptance and scan are pending. Registry retention and
 scanner-tool reuse requirements were added to [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
 
 ## Remaining merge work
 
 The [critical remediation plan](critical-remediation.md) accounts for all 37
-critical rows. Chroma needs a complete patch/replacement or exact application
-reachability evidence. Libxml2 is the broadest shared critical component and
+critical rows. Chroma needs a complete patch or replacement; reachability evidence now
+runs in candidate acceptance (see the critical plan). Libxml2 is the broadest shared critical component and
 remains affected in both Bookworm and Trixie. Mbed TLS, AOM, GLib, LMDB, OpenSSH
 and zlib need their recorded package/applicability reviews. Supported component
 replacement or audited source backports must retain application functionality.

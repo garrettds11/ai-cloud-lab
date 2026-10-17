@@ -14,6 +14,7 @@ RUN python3 /opt/security-remove-build-deps.py \
     && python3 -m pip check \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY smoke.py /opt/security-dependency-smoke.py
+COPY chroma-reachability.py /opt/security-chroma-reachability.py
 RUN python3 /opt/security-dependency-smoke.py
 RUN python3 /opt/security-sqlite-smoke.py
 # Candidate only: production remains on its configured image until promotion.

@@ -58,6 +58,13 @@ new scan remain mandatory. Any OpenVAS result change includes this upstream
 replacement, not merely the SQLite patch. Registry retention remains tracked
 in [issue #90](https://github.com/garrettds11/ai-cloud-lab/issues/90).
 
+On 16 October run 38975508963 failed the same preflight: upstream had deleted
+`77d6f443...` as well. Its replacement is index `030fed85...` (amd64 manifest
+`dbfb2868...`, config `00eae73e...`), created 16 October, with the same command
+`/usr/local/bin/openvasd` and no entrypoint/user override. The index digest was
+recomputed from the downloaded bytes. Redis and OSPD bases were confirmed present.
+Native scanner acceptance and a new scan remain mandatory.
+
 The candidate uses the existing pinned upstream Open WebUI base and its build
 toolchain. `build-sqlite.py` verifies the official canonical source archive's
 SHA3-256, generates the parser using the distro's SQLite feature/limit options,
@@ -92,6 +99,27 @@ affected. Upstream SQLite advisories must be monitored separately.
 Existing production databases and full live model/retrieval integration remain
 outside this candidate test. Rollback of a deployed database would require a
 separate backup/restore plan before promotion.
+
+## Chroma reachability evidence
+
+Candidate acceptance runs `chroma-reachability.py` against Open WebUI's installed
+`ChromaClient` code and chromadb 1.5.9 in embedded mode. It plants a malicious
+`sentence_transformer` configuration (top-level and nested `trust_remote_code`)
+in the persisted collection schema. It then records every call to Chroma's
+embedding-function builder, where both advisories end. A positive control
+confirms the planted configuration is live.
+
+Measured result: client startup, `has_collection`, search, query, get, delete and
+`delete_collection` never reach the builder. `insert` and `upsert` do, because
+Chroma's `add`/`upsert` re-read the persisted schema on every write. Any document
+upload therefore rebuilds whatever embedding function is stored.
+
+The advisories' HTTP endpoints are absent: the deployment runs no Chroma server
+and sets no `CHROMA_*` or `VECTOR_DB` value, which
+`tests/test_chroma_embedded_guard.py` enforces. Planting a configuration needs
+write access to `chroma.sqlite3` in the Open WebUI data volume. Both findings
+remain counted and blocking; this is reachability evidence, not a fix. The check
+fails if the set of reaching operations changes, forcing a new review.
 
 ## Primary evidence checked on 16 October
 

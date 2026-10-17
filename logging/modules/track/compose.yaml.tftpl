@@ -1,0 +1,205 @@
+services:
+%{ if backend == "splunk" ~}
+  splunk:
+    image: splunk/splunk:9.4.2
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: $${LOGGING_PASSWORD}
+      SPLUNK_HEC_TOKEN: $${LOGGING_HEC_TOKEN}
+    ports:
+      - "127.0.0.1:8080:8000"
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - splunk:/opt/splunk/var
+      - splunketc:/opt/splunk/etc
+    restart: unless-stopped
+  
+volumes:
+  splunk: {}
+  splunketc: {}
+%{ endif ~}
+%{ if backend == "elastic" ~}
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elastic:/usr/share/elasticsearch/data
+    restart: unless-stopped
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.17.5
+    environment:
+      LS_JAVA_OPTS: -Xms512m -Xmx512m
+      QUEUE_TYPE: persisted
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - logstash:/usr/share/logstash/data
+    depends_on: [elasticsearch]
+    restart: unless-stopped
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.5
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "127.0.0.1:8080:5601"
+    depends_on: [elasticsearch]
+    restart: unless-stopped
+volumes:
+  elastic: {}
+  logstash: {}
+%{ endif ~}
+%{ if backend == "opensearch" ~}
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - opensearch:/usr/share/opensearch/data
+    restart: unless-stopped
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.1
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    ports:
+      - "127.0.0.1:8080:5601"
+    depends_on: [opensearch]
+    restart: unless-stopped
+volumes:
+  opensearch: {}
+%{ endif ~}
+%{ if backend == "loki" ~}
+  loki:
+    image: grafana/loki:3.4.3
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - loki:/loki
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana-oss:11.6.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: $${LOGGING_PASSWORD}
+    ports:
+      - "127.0.0.1:8080:3000"
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana-datasource.yaml:/etc/grafana/provisioning/datasources/logging.yaml:ro
+    depends_on: [loki]
+    restart: unless-stopped
+volumes:
+  loki: {}
+  grafana: {}
+%{ endif ~}
+%{ if backend == "openobserve" ~}
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v0.14.7
+    environment:
+      ZO_ROOT_USER_EMAIL: admin@localhost
+      ZO_ROOT_USER_PASSWORD: $${LOGGING_PASSWORD}
+      ZO_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8080:5080"
+    volumes:
+      - openobserve:/data
+    restart: unless-stopped
+volumes:
+  openobserve: {}
+%{ endif ~}
+%{ if backend == "victorialogs" ~}
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.53.0
+    command: -storageDataPath=/data -retentionPeriod=30d
+    ports:
+      - "127.0.0.1:9428:9428"
+    volumes:
+      - victorialogs:/data
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana-oss:11.6.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: $${LOGGING_PASSWORD}
+      GF_INSTALL_PLUGINS: victoriametrics-logs-datasource
+    ports:
+      - "127.0.0.1:8080:3000"
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana-datasource.yaml:/etc/grafana/provisioning/datasources/logging.yaml:ro
+    depends_on: [victorialogs]
+    restart: unless-stopped
+volumes:
+  victorialogs: {}
+  grafana: {}
+%{ endif ~}
+%{ if backend == "quickwit" ~}
+  quickwit:
+    image: quickwit/quickwit:0.8.2
+    command: run
+    ports:
+      - "127.0.0.1:7280:7280"
+    volumes:
+      - quickwit:/quickwit/qwdata
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana-oss:11.6.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: $${LOGGING_PASSWORD}
+      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.5.0/quickwit-quickwit-datasource-0.5.0.zip;quickwit-quickwit-datasource
+    ports:
+      - "127.0.0.1:8080:3000"
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana-datasource.yaml:/etc/grafana/provisioning/datasources/logging.yaml:ro
+    depends_on: [quickwit]
+    restart: unless-stopped
+volumes:
+  quickwit: {}
+  grafana: {}
+%{ endif ~}
+%{ if backend == "graylog" ~}
+  mongodb:
+    image: mongo:7.0.16
+    volumes:
+      - mongodb:/data/db
+    restart: unless-stopped
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - opensearch:/usr/share/opensearch/data
+    restart: unless-stopped
+  graylog:
+    image: graylog/graylog:6.3.9
+    environment:
+      GRAYLOG_PASSWORD_SECRET: $${LOGGING_SECRET}
+      GRAYLOG_ROOT_PASSWORD_SHA2: $${LOGGING_PASSWORD_SHA2}
+      GRAYLOG_HTTP_BIND_ADDRESS: 0.0.0.0:9000
+      GRAYLOG_HTTP_EXTERNAL_URI: http://localhost:18080/
+      GRAYLOG_MONGODB_URI: mongodb://mongodb:27017/graylog
+      GRAYLOG_ELASTICSEARCH_HOSTS: http://opensearch:9200
+    ports:
+      - "127.0.0.1:8080:9000"
+      - "127.0.0.1:12201:12201/tcp"
+    depends_on: [mongodb, opensearch]
+    volumes:
+      - graylog:/usr/share/graylog/data
+    restart: unless-stopped
+volumes:
+  mongodb: {}
+  opensearch: {}
+  graylog: {}
+%{ endif ~}

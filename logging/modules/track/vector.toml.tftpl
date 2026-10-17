@@ -1,0 +1,47 @@
+[sources.journal]
+type = "journald"
+
+[sources.open_webui]
+type = "docker_logs"
+include_containers = ["/${container_name}", "${container_name}"]
+
+[transforms.normalize]
+type = "remap"
+inputs = ["journal", "open_webui"]
+source = '''
+.event_id = uuid_v4!()
+.timestamp = to_string!(.timestamp)
+.epoch = to_unix_timestamp!(parse_timestamp!(.timestamp, format: "%+"), unit: "seconds")
+.host = get_hostname!()
+.message = to_string!(.message)
+.source = if exists(.container_name) { "open-webui" } else { "ubuntu-host" }
+'''
+
+[sinks.archive]
+type = "aws_s3"
+inputs = ["normalize"]
+bucket = "${bucket}"
+region = "${aws_region}"
+key_prefix = "raw/${track}/date=%F/"
+compression = "gzip"
+encoding.codec = "json"
+batch.max_bytes = 10485760
+batch.timeout_secs = 60
+buffer.type = "disk"
+buffer.max_size = 1073741824
+buffer.when_full = "block"
+
+%{ if track != "wazuh" ~}
+[sinks.backend]
+type = "http"
+inputs = ["normalize"]
+uri = "https://${backend_ip}/events"
+method = "post"
+encoding.codec = "json"
+tls.verify_certificate = false
+batch.max_events = 100
+batch.timeout_secs = 5
+buffer.type = "disk"
+buffer.max_size = 268435456
+buffer.when_full = "block"
+%{ endif ~}

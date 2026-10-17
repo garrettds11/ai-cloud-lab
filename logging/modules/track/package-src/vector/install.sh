@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y ca-certificates curl
+curl --proto '=https' --tlsv1.2 -sSfL https://setup.vector.dev | bash
+apt-get update
+apt-get install -y vector
+
+token="$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')"
+region="$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/placement/region)"
+track="$(cat track.txt)"
+aws ssm get-parameter --name "/logging-bakeoff/$track/vector-config" --query Parameter.Value --output text --region "$region" >/etc/vector/vector.toml
+chown root:vector /etc/vector/vector.toml
+chmod 0640 /etc/vector/vector.toml
+usermod -aG docker,adm,systemd-journal vector
+
+install -d -m 0755 /etc/systemd/system/vector.service.d
+cat >/etc/systemd/system/vector.service.d/10-logging-bakeoff.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/vector --config /etc/vector/vector.toml
+EOF
+systemctl daemon-reload
+systemctl enable --now vector

@@ -1,0 +1,127 @@
+#!/bin/bash
+set -euo pipefail
+exec > >(tee -a /var/log/logging-bakeoff-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2 openssl curl git
+systemctl enable --now docker
+sysctl -w vm.max_map_count=262144
+echo 'vm.max_map_count=262144' >/etc/sysctl.d/99-logging-bakeoff.conf
+mkdir -p /opt/logging-bakeoff
+cd /opt/logging-bakeoff
+
+backend='${backend}'
+password="$(openssl rand -base64 27 | tr -d '/+=')"
+secret="$(openssl rand -hex 48)"
+hec_token="$(cat /proc/sys/kernel/random/uuid)"
+umask 077
+printf 'LOGGING_PASSWORD=%s\nLOGGING_PASSWORD_SHA2=%s\nLOGGING_SECRET=%s\nLOGGING_HEC_TOKEN=%s\n' \
+  "$password" "$(printf %s "$password" | sha256sum | cut -d' ' -f1)" "$secret" "$hec_token" >.env
+printf 'backend=%s\nusername=admin\npassword=%s\nhec_token=%s\n' "$backend" "$password" "$hec_token" >/root/logging-bakeoff-credentials
+
+echo '${compose_b64}' | base64 -d | gzip -d >compose.yaml
+echo '${gateway_b64}' | base64 -d | gzip -d >/opt/logging-bakeoff/gateway.py
+chmod 0600 .env /root/logging-bakeoff-credentials
+
+if [ "$backend" = wazuh ]; then
+  git clone --depth 1 --branch v4.14.8 https://github.com/wazuh/wazuh-docker.git wazuh-docker
+  cd wazuh-docker/single-node
+  sed -i 's#<logall_json>no</logall_json>#<logall_json>yes</logall_json>#' config/wazuh_cluster/wazuh_manager.conf
+  sed -i 's/443:5601/127.0.0.1:8080:5601/' docker-compose.yml
+  docker compose -f generate-indexer-certs.yml run --rm generator
+  docker compose up -d
+  for attempt in $(seq 1 60); do
+    if docker compose exec -T wazuh.manager sh -c 'test -s /etc/filebeat/filebeat.yml' 2>/dev/null; then break; fi
+    sleep 10
+  done
+  docker compose exec -T wazuh.manager sh -c "sed -i '/archives:/,/enabled:/s/enabled: false/enabled: true/' /etc/filebeat/filebeat.yml && (filebeat test output || true) && service filebeat restart"
+  docker compose exec -T wazuh.manager sh -c 'grep -q "archives:" /etc/filebeat/filebeat.yml && grep -A1 "archives:" /etc/filebeat/filebeat.yml'
+  cd /opt/logging-bakeoff
+elif [ "$backend" = loki ]; then
+  cat >grafana-datasource.yaml <<'EOF'
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: true
+EOF
+  docker compose up -d
+elif [ "$backend" = victorialogs ]; then
+  cat >grafana-datasource.yaml <<'EOF'
+apiVersion: 1
+datasources:
+  - name: VictoriaLogs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victorialogs:9428
+    isDefault: true
+EOF
+  docker compose up -d
+elif [ "$backend" = quickwit ]; then
+  cat >grafana-datasource.yaml <<'EOF'
+apiVersion: 1
+datasources:
+  - name: Quickwit
+    type: quickwit-quickwit-datasource
+    access: proxy
+    url: http://quickwit:7280/api/v1
+    jsonData:
+      index: webui-logs
+      logMessageField: message
+    isDefault: true
+EOF
+  docker compose up -d
+elif [ "$backend" = graylog ]; then
+  docker compose up -d
+elif [ "$backend" = elastic ]; then
+  cat >logstash.conf <<'EOF'
+input {
+  http {
+    port => 8080
+    codec => json
+    ecs_compatibility => "disabled"
+  }
+}
+filter {
+  json {
+    source => "payload"
+    remove_field => ["payload", "headers"]
+  }
+  date {
+    match => ["timestamp", "ISO8601"]
+    target => "@timestamp"
+  }
+}
+output {
+  elasticsearch {
+    hosts => ["http://elasticsearch:9200"]
+    index => "webui-logs"
+    document_id => "%%{event_id}"
+  }
+}
+EOF
+  docker compose up -d
+else
+  docker compose up -d
+fi
+
+cat >/etc/systemd/system/logging-bakeoff-gateway.service <<'EOF'
+[Unit]
+Description=Logging bake-off ingestion gateway
+After=network-online.target docker.service
+Wants=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=/opt/logging-bakeoff
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/logging-bakeoff/gateway.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now logging-bakeoff-gateway.service

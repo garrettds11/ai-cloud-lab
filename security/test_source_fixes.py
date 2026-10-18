@@ -12,7 +12,8 @@ import source_fixes
 
 class SourceFixTests(unittest.TestCase):
     def setUp(self):
-        self.review = source_fixes.load(Path(__file__).with_name("source-fixes.json"))
+        # The SQLite source build was retired (#82); its last record is kept as a fixture.
+        self.review = source_fixes.load(Path(__file__).parent / "testdata" / "source-fixes-sample.json")
         fix = self.review["fixes"][0]
         self.fix = fix
         self.receipt = {"version": fix["upstream_version"], "package_version": fix["installed_version"],
@@ -43,7 +44,7 @@ class SourceFixTests(unittest.TestCase):
         self.assertNotIn("suppressions", result)
         self.assertEqual(result["level"], "error")
         self.assertEqual(result["partialFingerprints"], plain["partialFingerprints"])
-        self.assertIn("still counted as blocking", result["message"]["text"])
+        self.assertIn("verified upstream source fix 3.54.0", result["message"]["text"])
         self.assertNotIn("source_fix", self.item)
 
     def test_all_three_reviewed_ids_match_and_nothing_else(self):
@@ -110,7 +111,7 @@ class SourceFixTests(unittest.TestCase):
             markdown, csv_path = cve_report.write_report(root, inventory,
                                                          {"complete": True, "policy_passed": False})
             self.assertIn("**1 HIGH/CRITICAL instances**", markdown.read_text())
-            self.assertIn("**1 instances have a verified upstream source fix**", markdown.read_text())
+            self.assertIn("Verified upstream source fixes (informational): 1 instances.", markdown.read_text())
             self.assertIn("Verified upstream source fix 3.54.0", csv_path.read_text())
 
 

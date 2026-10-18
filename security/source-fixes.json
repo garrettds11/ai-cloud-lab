@@ -2,44 +2,5 @@
   "schema_version": 1,
   "reviewed": "2026-10-16",
   "expires": "2026-11-15",
-  "fixes": [
-    {
-      "receipt": "sqlite_runtime",
-      "package": "libsqlite3-0",
-      "installed_version": "3.54.0-0ai.cloud.lab1",
-      "upstream_version": "3.54.0",
-      "source_url": "https://sqlite.org/2026/sqlite-src-3540000.zip",
-      "archive_sha3_256": "a5c29342ca185abcda332448fbb27c536661245be27e20199b46c49099b0e15e",
-      "source_id": "2026-10-09 15:46:58 be8d059e9a49089ab2dce5ed26dd87aaf598fdc5fbe0b107c0dd758464bcd5e3",
-      "justification": "Candidate system SQLite is rebuilt from checksum-pinned canonical upstream 3.54.0; the loaded library identity is verified in the assessed image. Debian Bookworm records no fixed version, so Trivy reports these advisories without version comparison. Covers only the system libsqlite3-0 package, not SQLite copies bundled inside other binaries.",
-      "findings": [
-        {
-          "id": "CVE-2025-7458",
-          "first_fixed_upstream": "3.42.0",
-          "evidence": [
-            "https://security-tracker.debian.org/tracker/CVE-2025-7458",
-            "https://sqlite.org/src/info/12ad822d9b827777"
-          ]
-        },
-        {
-          "id": "CVE-2026-11822",
-          "first_fixed_upstream": "3.53.2",
-          "evidence": [
-            "https://security-tracker.debian.org/tracker/CVE-2026-11822",
-            "https://sqlite.org/src/info/061febcf41ca",
-            "https://sqlite.org/src/info/4a5ad516ea93"
-          ]
-        },
-        {
-          "id": "CVE-2026-11824",
-          "first_fixed_upstream": "3.53.2",
-          "evidence": [
-            "https://security-tracker.debian.org/tracker/CVE-2026-11824",
-            "https://sqlite.org/src/info/061febcf41ca",
-            "https://sqlite.org/src/info/4a5ad516ea93"
-          ]
-        }
-      ]
-    }
-  ]
+  "fixes": []
 }

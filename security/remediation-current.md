@@ -88,6 +88,13 @@ summary counts them separately. Counting them as closed would be a separate,
 explicitly approved policy change. No CVE exclusions, VEX suppression or gate
 changes were added.
 
+**Superseded (#82, 2026-10-18).** Under the owner's vendor-patch policy the lab no
+longer builds SQLite from source. The candidate now keeps Debian's own `libsqlite3-0`,
+and the source-fix record was removed from `source-fixes.json`. Debian publishes no
+fixed version for these three CVEs, so they are accepted risk with basis
+`no_vendor_fix`: still reported in findings and SARIF, counted apart from blocking
+findings, and gated again as soon as Debian ships a fix.
+
 Primary fix evidence: [CVE-2025-7458](https://security-tracker.debian.org/tracker/CVE-2025-7458),
 [CVE-2026-11822](https://security-tracker.debian.org/tracker/CVE-2026-11822),
 [CVE-2026-11824](https://security-tracker.debian.org/tracker/CVE-2026-11824),

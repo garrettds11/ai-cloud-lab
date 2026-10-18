@@ -29,13 +29,16 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(items[0]["line"], 4)
         self.assertEqual(scan.gate(items), 1)
 
-    def test_policy_includes_unfixed_cves_and_all_secrets(self):
+    def test_policy_counts_unaccepted_cves_and_all_secrets(self):
+        # Before annotation every HIGH/CRITICAL vulnerability counts; acceptance is explicit.
         self.assertEqual(scan.gate([
             {"kind": "vulnerability", "severity": "HIGH", "FixedVersion": ""},
             {"kind": "vulnerability", "severity": "CRITICAL"},
             {"kind": "secret", "severity": "LOW"},
             {"kind": "misconfiguration", "severity": "CRITICAL"},
-            {"kind": "vulnerability", "severity": "MEDIUM"}]), 3)
+            {"kind": "vulnerability", "severity": "MEDIUM"},
+            {"kind": "vulnerability", "severity": "HIGH", "acceptance": {"basis": "no_vendor_fix"}},
+            {"kind": "secret", "severity": "HIGH", "acceptance": {"basis": "no_vendor_fix"}}]), 4)
 
     def test_image_findings_link_to_repository_declaration(self):
         target = {"id": "image-one", "kind": "image", "name": "registry/app:1",

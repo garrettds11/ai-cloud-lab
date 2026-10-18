@@ -34,15 +34,19 @@ def main():
         coverage.append({"id": target["id"], "complete": complete,
                          "blocking_findings": status.get("blocking_findings"),
                          "reviewed_false_positives": status.get("reviewed_false_positives", 0),
-                         # Informational; these rows remain inside blocking_findings.
-                         "verified_source_fixes": status.get("verified_source_fixes", 0)})
+                         "verified_source_fixes": status.get("verified_source_fixes", 0),
+                         # Accepted risk is counted apart from blocking findings, never inside them.
+                         "accepted_no_vendor_fix": status.get("accepted_no_vendor_fix", 0),
+                         "accepted_by_record": status.get("accepted_by_record", 0)})
     complete = all(item["complete"] for item in coverage)
     clean = complete and all(item["blocking_findings"] == 0 for item in coverage)
     manifest = {"commit": inventory["commit"], "run_id": os.environ.get("GITHUB_RUN_ID"),
                 "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
                 "complete": complete, "policy_passed": clean, "coverage": coverage,
-                "policy": "Block all secrets and HIGH/CRITICAL CVEs, including unfixed; "
-                          "except exact unexpired immutable-feed test-data false positives; "
+                "policy": "Block all secrets, except exact unexpired immutable-feed test-data false positives; "
+                          "block HIGH/CRITICAL CVEs that have a vendor fixed version, except exact-digest "
+                          "unexpired owner records in security/accepted-risk.json; CVEs with no vendor fix "
+                          "are accepted risk by owner policy and reported separately; "
                           "Trivy misconfiguration advisory; Checkov separate blocking gate"}
     (OUT / "coverage.json").write_text(json.dumps(manifest, indent=2) + "\n")
     evidence = [OUT / "inventory.json", OUT / "coverage.json"]
@@ -54,6 +58,9 @@ def main():
     fixes = OUT / "source-fixes.json"
     shutil.copyfile(ROOT / "security" / "source-fixes.json", fixes)
     evidence.append(fixes)
+    accepted = OUT / "accepted-risk.json"
+    shutil.copyfile(ROOT / "security" / "accepted-risk.json", accepted)
+    evidence.append(accepted)
     evidence += sorted((OUT / "reports").rglob("*.json"))
     evidence += sorted((OUT / "reports").rglob("*.sarif"))
     checksum = OUT / "SHA256SUMS"
@@ -64,9 +71,11 @@ def main():
         for path in evidence + [checksum]:
             archive.add(path, arcname=path.relative_to(OUT).as_posix())
     summary = f"## Trivy assessment\n\nCoverage complete: **{complete}**\n\nPolicy passed: **{clean}**\n\n"
-    summary += ("| Target | Complete | Blocking findings | Reviewed false positives | Verified source fixes (still blocking) |\n"
-                "|---|---|---|---|---|\n")
+    summary += ("| Target | Complete | Blocking findings | Accepted: no vendor fix | Accepted: owner record "
+                "| Reviewed false positives | Verified source fixes |\n"
+                "|---|---|---|---|---|---|---|\n")
     summary += "".join(f"| {item['id']} | {item['complete']} | {item['blocking_findings']} | "
+                       f"{item['accepted_no_vendor_fix']} | {item['accepted_by_record']} | "
                        f"{item['reviewed_false_positives']} | {item['verified_source_fixes']} |\n"
                        for item in coverage)
     summary += "\nAttestation proves report provenance; consult coverage and findings for assessment status.\n"

@@ -127,15 +127,6 @@ else:
 print("Backend health, signup, signin and token round-trip passed")
 '''
     try:
-        subprocess.run(["docker", "exec", container, "python3", "/opt/security-sqlite-smoke.py"],
-                       check=True, timeout=60)
-        sqlite_record = json.loads(subprocess.check_output([
-            "docker", "exec", container, "cat", "/opt/ai-cloud-lab/sqlite/security-build.json"],
-            text=True, timeout=60))
-        # Inventory only: bundled engines are not covered by the system library replacement.
-        embedded_sqlite = json.loads(subprocess.check_output([
-            "docker", "exec", container, "python3", "/opt/security-sqlite-smoke.py", "--embedded-copies"],
-            text=True, timeout=300))
         # Evidence only: records which Open WebUI paths reach Chroma's persisted
         # embedding-function builder (CVE-2026-45829/45833); fails if that changes.
         chroma_reachability = json.loads(subprocess.check_output([
@@ -146,7 +137,6 @@ print("Backend health, signup, signin and token round-trip passed")
         subprocess.run(["docker", "rm", "--force", "--volumes", container], check=True, timeout=60,
                        stdout=subprocess.DEVNULL)
     return {"dependency_checks": "passed", "backend_health": "passed", "signup_signin_token": "passed",
-            "sqlite_runtime": sqlite_record, "sqlite_embedded_copies": embedded_sqlite,
             "chroma_reachability": chroma_reachability,
             "network": "none", "storage": "disposable", "production_deployed": False}
 

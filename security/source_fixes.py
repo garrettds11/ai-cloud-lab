@@ -1,10 +1,11 @@
-"""Annotate verified local source fixes without removing, suppressing or ungating findings.
+"""Annotate verified local source fixes without removing or suppressing findings.
 
 A record documents that the exact assessed library was rebuilt from upstream
 source at or beyond the upstream fixed version, while the distro advisory has no
-fixed-version boundary that a scanner can compare. Findings stay in reports,
-SARIF and the policy count; any policy that relies on these records is a
-separate, explicitly approved change.
+fixed-version boundary that a scanner can compare. Findings stay in reports
+and SARIF. These records never change the policy count themselves; under the
+owner's vendor-patch policy (risk_acceptance.py) such rows are accepted because
+no vendor fixed version exists, not because of the source fix.
 """
 import datetime
 import json
@@ -87,7 +88,7 @@ def annotate(items, image_build, review, today=None):
             receipt = finding and receipt_matches(fix, image_build)
             if receipt:
                 item["source_fix"] = {
-                    "status": "verified_source_fix", "policy_effect": "none; still counted as blocking",
+                    "status": "verified_source_fix", "policy_effect": "none",
                     "upstream_version": fix["upstream_version"],
                     "first_fixed_upstream": finding["first_fixed_upstream"],
                     "source_id": fix["source_id"], "archive_sha3_256": fix["archive_sha3_256"],

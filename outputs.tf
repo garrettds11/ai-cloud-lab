@@ -18,6 +18,11 @@ output "instance_iam_role_name" {
   value       = aws_iam_role.ssm.name
 }
 
+output "addon_settings_parameter" {
+  description = "SSM parameter holding this lab's IDs and names for add-on stacks such as logging."
+  value       = aws_ssm_parameter.addon_settings.name
+}
+
 output "open_webui_container_name" {
   description = "Container name whose application logs are included by the logging track collector."
   value       = var.open_webui_container_name

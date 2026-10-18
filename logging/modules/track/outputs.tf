@@ -7,6 +7,10 @@ output "ui_tunnel_command" {
 }
 output "agent_association_ids" { value = { for name, assoc in aws_ssm_association.agent : name => assoc.association_id } }
 output "uninstall_agent_commands" {
-  value = { for name, package in aws_ssm_document.agent : name => "aws ssm send-command --document-name AWS-ConfigureAWSPackage --instance-ids ${var.lab_instance_id} --parameters action=Uninstall,name=${package.name} --region ${var.aws_region}${var.aws_profile == null ? "" : " --profile ${var.aws_profile}"}" }
+  value = local.lab == null ? {} : { for name, package in aws_ssm_document.agent : name => "aws ssm send-command --document-name AWS-ConfigureAWSPackage --instance-ids ${local.lab.instance_id} --parameters action=Uninstall,name=${package.name} --region ${var.aws_region}${var.aws_profile == null ? "" : " --profile ${var.aws_profile}"}" }
 }
 output "ui_port" { value = local.ui_port }
+output "lab_found" {
+  description = "Whether the lab's settings were found; false means the collector is not installed yet."
+  value       = local.lab != null
+}

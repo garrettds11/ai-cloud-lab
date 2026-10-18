@@ -1,33 +1,26 @@
 # Logging: VictoriaLogs log store
 
-This folder adds a log store to the lab so MCP tools in Open WebUI have real logs to query. The current track is VictoriaLogs. Other logging tools are kept in [issue #92](https://github.com/garrettds11/ai-cloud-lab/issues/92) and come back one at a time as their own tracks; Splunk is planned as the final one.
+This folder adds a log store to the lab so MCP tools in Open WebUI have real logs to query. The current track is VictoriaLogs. Other logging tools each have an issue ([#94](https://github.com/garrettds11/ai-cloud-lab/issues/94) to [#101](https://github.com/garrettds11/ai-cloud-lab/issues/101)) and come back one at a time as their own tracks; Splunk is planned as the final one.
 
-Each folder under this directory is a separate Terraform root and state. A track runs against the already deployed repository-root lab host. Its apply creates a backend instance, a private raw-event S3 archive, an SSM Distributor package, and an SSM State Manager association that installs Vector on the root Ubuntu host. The track receives the host ID, security group ID and IAM role name from root outputs; it does not read or own root state.
+Logging is an optional add-on. The deploy order is: control panel API, lab, scanner (optional), logging (optional). Destroy the add-ons before the lab.
+
+Each folder under this directory is a separate Terraform root and state. It does not read or own the lab's state. Instead the lab publishes its instance ID, security group, IAM role name and Open WebUI container name in the SSM parameter `/<project_name>/lab/settings` (`addon_settings.tf` at the repository root), and the track reads it using `lab_project_name`. Nothing is copied by hand.
+
+A track apply creates a backend instance, a private raw-event S3 archive and an SSM Distributor package. When the lab exists, it also installs Vector on the lab host with an SSM State Manager association, gives the lab's role write access to the archive, and allows the lab host to reach the backend's intake. When no lab is found, plan shows a warning and only the backend side is built; apply the track again after the lab is deployed. Apply it again after a lab rebuild too, because the rebuilt lab has new IDs.
 
 Vector collects the host journal and the Open WebUI container logs. It writes every event to the S3 archive and forwards the same events through the backend's private HTTPS intake to VictoriaLogs. The VictoriaLogs API and its built-in web UI (vmui) are reachable only through an SSM port-forwarding session.
 
 ## One-time preparation
 
-1. Deploy the repository-root lab and make sure its Ubuntu host is online in Systems Manager. Its instance profile already includes `AmazonSSMManagedInstanceCore`.
-2. Open a PowerShell window prepared as in Step 1 of [the Terraform smoke test plan](../docs/runbook/terraform-smoke-test-plan.md): `AWS_PROFILE` and `AWS_DEFAULT_REGION` set to the lab account, with the account check passing. The logging track uses only the AWS provider, so it runs plain `terraform`; the Cloudflare token wrapper is needed only for the repository-root lab.
-3. Read the root outputs and put their values in the track's git-ignored `terraform.tfvars`:
-
-```powershell
-Set-Location C:\GitHub\ai-cloud-lab
-terraform output -raw instance_id
-terraform output -raw instance_security_group_id
-terraform output -raw instance_iam_role_name
-terraform output -raw open_webui_container_name
-```
-
-Also set `aws_region` to the root deployment region, and `aws_profile` to the named AWS CLI profile of the root deployment when you use one. Do not commit a populated `terraform.tfvars`; it holds live resource IDs.
+1. Deploy the lab (Step 3 of [the Terraform smoke test plan](../docs/runbook/terraform-smoke-test-plan.md)) and make sure its Ubuntu host is online in Systems Manager. You can also deploy the track first; see above.
+2. Open a PowerShell window prepared as in Step 1 of the smoke test plan: `AWS_PROFILE` and `AWS_DEFAULT_REGION` set to the lab account, with the account check passing. The logging track uses only the AWS provider, so it runs plain `terraform`; the Cloudflare token wrapper is needed only for the repository-root lab.
+3. Check `terraform.tfvars.example` in the track folder. `lab_project_name` must equal the lab's `project_name` (`aiwebdemo` in this repository). Set `aws_profile` there only if you use a named profile that is not already in `AWS_PROFILE`.
 
 ## Apply
 
 ```powershell
 Set-Location C:\GitHub\ai-cloud-lab\logging\victorialogs
 Copy-Item terraform.tfvars.example terraform.tfvars
-# Fill in the root output values and region in terraform.tfvars.
 terraform init
 terraform fmt -check
 terraform validate
@@ -35,7 +28,10 @@ terraform plan -out=track.tfplan
 terraform show -no-color track.tfplan | Out-File track-plan.txt
 # Stop here and review track-plan.txt. Continue only after review.
 terraform apply track.tfplan
+terraform output lab_found
 ```
+
+`lab_found` is `true` when the collector was installed on the lab. If it is `false`, deploy the lab and run the plan and apply again.
 
 Wait for the `AWS-ConfigureAWSPackage` association to report success in Systems Manager State Manager.
 

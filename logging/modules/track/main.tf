@@ -17,7 +17,28 @@ data "aws_subnets" "default" {
   }
 }
 
+# The lab publishes its IDs in /<lab_project_name>/lab/settings (addon_settings.tf at the
+# repository root). Listing the path first makes a missing lab a warning, not a failed plan:
+# the backend and archive still deploy, and the collector install, its permissions and the
+# intake rule are added on the first apply after the lab exists.
 locals {
+  lab_settings_name = "/${var.lab_project_name}/lab/settings"
+}
+data "aws_ssm_parameters_by_path" "lab" {
+  path            = "/${var.lab_project_name}/lab"
+  with_decryption = false
+}
+data "aws_ssm_parameter" "lab" {
+  count           = contains(data.aws_ssm_parameters_by_path.lab.names, local.lab_settings_name) ? 1 : 0
+  name            = local.lab_settings_name
+  with_decryption = false
+}
+
+locals {
+  # IDs and names only, so the plain (insecure_value) form is used; the sensitive form could
+  # not drive count and for_each.
+  lab       = try(jsondecode(data.aws_ssm_parameter.lab[0].insecure_value), null)
+  lab_set   = local.lab == null ? {} : { lab = local.lab }
   subnet_id = sort(data.aws_subnets.default.ids)[0]
   ui_port   = 9428 # VictoriaLogs serves its API and built-in vmui UI on this port
   vector_config = templatefile("${path.module}/vector.toml.tftpl", {
@@ -25,9 +46,16 @@ locals {
     backend_ip     = aws_instance.backend.private_ip
     bucket         = aws_s3_bucket.archive.bucket
     aws_region     = var.aws_region
-    container_name = var.open_webui_container_name
+    container_name = try(local.lab.open_webui_container_name, "open-webui")
   })
   selected_packages = toset(["vector"])
+}
+
+check "lab_settings_found" {
+  assert {
+    condition     = local.lab != null
+    error_message = "No lab found at ${local.lab_settings_name}. The backend and archive deploy now; apply this track again after the lab is deployed (with project_name = \"${var.lab_project_name}\") to install the collector on it."
+  }
 }
 
 check "track_name_matches_root" {
@@ -94,8 +122,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "archive" {
 }
 
 resource "aws_iam_role_policy" "lab_archive" {
-  name = "${var.project_name}-raw-archive"
-  role = var.lab_iam_role_name
+  for_each = local.lab_set
+  name     = "${var.project_name}-raw-archive"
+  role     = each.value.iam_role_name
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -139,12 +168,15 @@ resource "aws_security_group" "backend" {
   name_prefix = "${var.project_name}-backend-"
   description = "${var.track} backend; intake only from the root lab host"
   vpc_id      = data.aws_vpc.default.id
-  ingress {
-    description     = "${var.track} collector intake from root lab host"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [var.lab_security_group_id]
+  dynamic "ingress" {
+    for_each = local.lab_set
+    content {
+      description     = "${var.track} collector intake from root lab host"
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      security_groups = [ingress.value.security_group_id]
+    }
   }
   egress {
     description = "HTTPS for package and container downloads"
@@ -252,7 +284,7 @@ resource "aws_ssm_document" "agent" {
 }
 
 resource "aws_ssm_association" "agent" {
-  for_each         = local.selected_packages
+  for_each         = local.lab == null ? toset([]) : local.selected_packages
   name             = "AWS-ConfigureAWSPackage"
   association_name = "${var.project_name}-${each.key}-install"
   parameters = {
@@ -263,7 +295,7 @@ resource "aws_ssm_association" "agent" {
   }
   targets {
     key    = "InstanceIds"
-    values = [var.lab_instance_id]
+    values = [local.lab.instance_id]
   }
   depends_on = [aws_iam_role_policy.lab_archive]
 }

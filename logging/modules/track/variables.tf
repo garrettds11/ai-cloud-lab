@@ -5,12 +5,9 @@ variable "aws_profile" {
   default = null
 }
 variable "project_name" { type = string }
-variable "lab_instance_id" { type = string }
-variable "lab_security_group_id" { type = string }
-variable "lab_iam_role_name" { type = string }
-variable "open_webui_container_name" {
-  type    = string
-  default = "open-webui"
+variable "lab_project_name" {
+  description = "project_name of the lab this track collects from. The lab publishes its IDs in /<lab_project_name>/lab/settings."
+  type        = string
 }
 variable "backend_instance_type" { type = string }
 variable "archive_retention_days" {

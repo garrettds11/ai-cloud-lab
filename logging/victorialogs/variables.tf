@@ -10,9 +10,11 @@ variable "project_name" {
   type    = string
   default = "ai-cloud-lab-victorialogs"
 }
-variable "lab_instance_id" { type = string }
-variable "lab_security_group_id" { type = string }
-variable "lab_iam_role_name" { type = string }
+variable "lab_project_name" {
+  description = "project_name of the lab to collect from; the lab publishes its IDs in /<lab_project_name>/lab/settings."
+  type        = string
+  default     = "aiwebdemo"
+}
 variable "backend_instance_type" {
   type    = string
   default = "t3.large"
@@ -20,11 +22,6 @@ variable "backend_instance_type" {
 variable "archive_retention_days" {
   type    = number
   default = 30
-}
-
-variable "open_webui_container_name" {
-  type    = string
-  default = "open-webui"
 }
 
 variable "tags" {

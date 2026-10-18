@@ -59,6 +59,8 @@ HIGH/CRITICAL vulnerability instance, assessed artifact identity, package,
 installed/fixed versions and advisory link. These files are checksummed and enter
 the same trusted-run attestation bundle. They distinguish repeated instances
 from distinct IDs; mitigation status is explicitly unassessed, not accepted.
+Findings the owner has accepted are listed in [accepted-risk.md](accepted-risk.md); they
+stay in these files and in the blocking count.
 Per-target `findings.json` and SARIF also include lower severities and secrets.
 
 The archive additionally contains

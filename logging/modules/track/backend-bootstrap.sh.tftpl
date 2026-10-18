@@ -1,0 +1,38 @@
+#!/bin/bash
+set -euo pipefail
+exec > >(tee -a /var/log/logging-bakeoff-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2 openssl curl
+systemctl enable --now docker
+mkdir -p /opt/logging-bakeoff
+cd /opt/logging-bakeoff
+
+backend='${backend}'
+umask 077
+# The gateway reads the backend name here; VictoriaLogs needs no credentials.
+printf 'backend=%s\n' "$backend" >/root/logging-bakeoff-credentials
+
+echo '${compose_b64}' | base64 -d | gzip -d >compose.yaml
+echo '${gateway_b64}' | base64 -d | gzip -d >/opt/logging-bakeoff/gateway.py
+chmod 0600 /root/logging-bakeoff-credentials
+docker compose up -d
+
+cat >/etc/systemd/system/logging-bakeoff-gateway.service <<'EOF'
+[Unit]
+Description=Logging bake-off ingestion gateway
+After=network-online.target docker.service
+Wants=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=/opt/logging-bakeoff
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/logging-bakeoff/gateway.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now logging-bakeoff-gateway.service

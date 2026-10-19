@@ -1,5 +1,7 @@
 # Open WebUI vulnerability scanner
 
+Test docs: [Deploy and smoke test](../docs/runbook/terraform-smoke-test-plan.md) · [Access and network](../docs/runbook/smoke-tests/access-and-network.md) · [Control panel](../docs/runbook/smoke-tests/control-panel.md) · [Lab features](../docs/runbook/smoke-tests/lab-features.md) · [Vulnerability MCP](../docs/vuln-mcp-acceptance-tests.md) · **Scanner** · [Logging](../logging/README.md) · [Logging end-to-end](../logging/END-TO-END-TEST.md)
+
 Start with the [container catalogue](CONTAINERS.md) for component names,
 purposes, image/container distinctions and SBOM locations.
 

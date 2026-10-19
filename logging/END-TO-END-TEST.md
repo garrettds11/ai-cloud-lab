@@ -1,16 +1,34 @@
 # End-to-end test
 
-Run this after the VictoriaLogs track has been applied and its Distributor association has succeeded. The root lab host stays running throughout.
+Test docs: [Deploy and smoke test](../docs/runbook/terraform-smoke-test-plan.md) · [Access and network](../docs/runbook/smoke-tests/access-and-network.md) · [Control panel](../docs/runbook/smoke-tests/control-panel.md) · [Lab features](../docs/runbook/smoke-tests/lab-features.md) · [Vulnerability MCP](../docs/vuln-mcp-acceptance-tests.md) · [Scanner](../scanner/README.md) · [Logging](README.md) · **Logging end-to-end**
+
+Run this after the VictoriaLogs track has been applied and both Distributor associations (`vector` and `mcp`) have succeeded. The root lab host stays running throughout.
+
+Commands are **Local Windows PowerShell** unless marked **Linux (SSM shell on the lab instance)**. The SSM shell is a plain `sh` shell: paste **one command at a time**, as in Step 4 of the [smoke test plan](../docs/runbook/terraform-smoke-test-plan.md). Use a PowerShell window prepared as in its Step 1, with `$env:instance_id` set (Step 3). The vmui tunnel runs in its own window ([README](README.md#open-vmui)).
 
 ## Send test events
 
-Open an SSM shell session to the root lab instance and run:
+Open a shell on the root lab instance:
+
+```powershell
+aws ssm start-session --target $env:instance_id
+```
+
+**Linux (SSM shell on the lab instance).** Paste these one at a time:
 
 ```bash
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+```
+
+```bash
 logger -p authpriv.notice "bakeoff-host-$RUN_ID"
-docker exec open-webui python -c "import logging; logging.error('bakeoff-openwebui-$RUN_ID')"
-printf '%s\n' "$RUN_ID" >/tmp/logging-bakeoff-run-id
+```
+
+```bash
+sudo docker exec open-webui python -c "import logging; logging.error('bakeoff-openwebui-$RUN_ID')"
+```
+
+```bash
 echo "$RUN_ID"
 ```
 
@@ -18,7 +36,7 @@ The first event is a host syslog message. The second goes to the Open WebUI cont
 
 ## Check vmui
 
-Allow a minute for buffering, then in vmui (`http://localhost:18080/select/vmui/`, see the [README](README.md)) run:
+Allow a minute for buffering, then in vmui at [http://localhost:18080/select/vmui/](http://localhost:18080/select/vmui/) (the tunnel from the [README](README.md#open-vmui) must be running) run:
 
 ```
 _time:15m "<RUN_ID>"
@@ -34,10 +52,13 @@ Invoke-RestMethod -Method Post -Uri http://localhost:18080/select/logsql/query -
 
 ## Check Lab Logs in Open WebUI
 
-On the root lab host, confirm the MCP server is running and registered:
+**Linux (SSM shell on the lab instance).** Confirm the MCP server is running and registered, one command at a time:
 
 ```bash
 systemctl is-active ai-lab-logs-mcp
+```
+
+```bash
 sudo ai-lab-register-logs-mcp
 ```
 
@@ -51,7 +72,7 @@ Confirm the answer shows both test events and says it used `search_logs`. Then a
 
 ## Check the S3 archive
 
-In the track folder:
+In the track folder (`C:\GitHub\ai-cloud-lab\logging\victorialogs`):
 
 ```powershell
 $bucket = terraform output -raw archive_bucket
@@ -62,7 +83,9 @@ The objects are gzip-compressed NDJSON. Download one and confirm it holds both m
 
 ## Uninstall and destroy
 
-Before destroying, uninstall both packages (`mcp`, then `vector`) with the commands from `terraform output -json uninstall_agent_commands`, wait for each SSM command to succeed, and check on the root host:
+Before destroying, uninstall both packages (`mcp`, then `vector`) with the commands from `terraform output -json uninstall_agent_commands`, wait for each SSM command to succeed, and check on the root host.
+
+**Linux (SSM shell on the lab instance):**
 
 ```bash
 systemctl is-active ai-lab-logs-mcp vector || true

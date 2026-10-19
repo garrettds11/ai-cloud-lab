@@ -296,7 +296,10 @@ def scan(target_id):
         status["source_fix_review_sha256"] = hashlib.sha256(fixes_path.read_bytes()).hexdigest()
         status["verified_source_fixes"] = sum(bool(item.get("source_fix")) for item in items)
         risk_path = ROOT / "security" / "accepted-risk.json"
-        items = risk_acceptance.annotate(items, status.get("resolved_image"), risk_acceptance.load(risk_path))
+        # Pulled images bind by registry digest; local builds by their recorded image ID.
+        assessed = status.get("resolved_image") or (status.get("image_build") or {}).get("image_id")
+        status["accepted_risk_identity"] = assessed
+        items = risk_acceptance.annotate(items, assessed, risk_acceptance.load(risk_path))
         status["accepted_risk_sha256"] = hashlib.sha256(risk_path.read_bytes()).hexdigest()
         status.update(risk_acceptance.counts(items))
         # Preserve DB timestamps/version after the scan, not just before first download.

@@ -44,6 +44,13 @@ class RiskAcceptanceTests(unittest.TestCase):
         self.assertEqual(scan.gate(self.annotate([finding()], image=None)), 1)
         self.assertEqual(scan.gate(self.annotate([finding(cve="CVE-2026-0003")])), 1)
 
+    def test_record_can_bind_a_local_build_image_id(self):
+        policy = copy.deepcopy(self.policy)
+        local = "sha256:" + "c" * 64
+        policy["records"][0]["image"] = local
+        self.assertEqual(scan.gate(self.annotate([finding()], image=local, policy=policy)), 0)
+        self.assertEqual(scan.gate(self.annotate([finding()], image="sha256:" + "d" * 64, policy=policy)), 1)
+
     def test_all_covers_every_fixable_finding_of_that_digest(self):
         policy = copy.deepcopy(self.policy)
         policy["records"][0]["findings"] = "all"
@@ -71,6 +78,7 @@ class RiskAcceptanceTests(unittest.TestCase):
 
     def test_invalid_records_are_rejected(self):
         for mutate in (lambda r: r.update(image="registry/app:1"),
+                       lambda r: r.update(image="sha256:short"),
                        lambda r: r.update(expires="2026-12-31"),
                        lambda r: r.update(accepted_by="someone"),
                        lambda r: r.update(reason=""),

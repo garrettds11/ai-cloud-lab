@@ -6,8 +6,10 @@ only while a vendor fix exists that has not been taken:
 * No vendor fixed version (Trivy reports an empty FixedVersion): accepted risk, by policy.
 * A fixed version exists, but the vendor of the pinned image has not shipped a release
   containing it: accepted only through an owner record in security/accepted-risk.json,
-  bound to the exact image digest and expiring within 31 days. Re-pinning the image to a
-  new digest ends the record, so every new vendor release is assessed again.
+  bound to the exact assessed artifact and expiring within 31 days: a registry digest
+  (repo@sha256:...) for pulled images, or the local image ID (sha256:...) for managed
+  rebuilds and candidates. Re-pinning or rebuilding produces a new identity and ends the
+  record, so every new artifact is assessed again.
 * Otherwise the finding blocks until the image or package is upgraded.
 
 Accepted findings are annotated, never removed: they stay in findings.json, in SARIF (with
@@ -21,7 +23,7 @@ import re
 POLICY = "security/accepted-risk.json"
 NO_VENDOR_FIX = "no_vendor_fix"
 OWNER_RECORD = "owner_record"
-_IMAGE = re.compile(r"[a-z0-9][a-z0-9._/:-]*@sha256:[a-f0-9]{64}")
+_IMAGE = re.compile(r"([a-z0-9][a-z0-9._/:-]*@)?sha256:[a-f0-9]{64}")
 _CVE = re.compile(r"(CVE-[0-9]{4}-[0-9]{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})")
 
 
@@ -34,7 +36,7 @@ def validate(policy):
             raise ValueError("Accepted-risk records need a unique lowercase id")
         seen.add(record["id"])
         if not _IMAGE.fullmatch(record["image"]):
-            raise ValueError("Accepted-risk records must name an exact image digest: " + record["id"])
+            raise ValueError("Accepted-risk records must name an exact image digest or image ID: " + record["id"])
         accepted = datetime.date.fromisoformat(record["accepted_on"])
         expires = datetime.date.fromisoformat(record["expires"])
         if expires <= accepted or (expires - accepted).days > 31:

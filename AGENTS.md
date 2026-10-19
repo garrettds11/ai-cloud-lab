@@ -61,7 +61,7 @@ the profile set above.
   must not change the blocking count.
 - The lab does not patch downstream software. A HIGH/CRITICAL CVE with no vendor fixed
   version is accepted by owner policy. One whose fix the vendor has not shipped needs an
-  exact-digest, expiring owner record in `security/accepted-risk.json`; add one only with
+  exact-artifact, expiring owner record in `security/accepted-risk.json`; add one only with
   the owner's approval. Do not build patched packages from source to clear findings.
 - Keep asset counts, finding occurrences, distinct IDs, verified source fixes and accepted
   risk separate in reports and docs. Do not claim a fix from a package upgrade alone.

@@ -3,7 +3,7 @@
 Owner policy (issue #82): the lab does not patch downstream software. A HIGH or CRITICAL vulnerability blocks the assessment gate only while a vendor fix exists that has not been taken.
 
 - **No vendor fix:** findings with no published fixed version are accepted by policy. They need no entry here and are counted as "accepted, no vendor fix".
-- **Fix exists, vendor hasn't shipped it:** accepted only by an owner record in [accepted-risk.json](accepted-risk.json). A record names the exact image digest, the advisory IDs (or `all`), a reason and an expiry no more than 31 days after acceptance. Re-pinning the image to a new digest ends the record, so each new vendor release is assessed again. Each record is explained below.
+- **Fix exists, vendor hasn't shipped it:** accepted only by an owner record in [accepted-risk.json](accepted-risk.json). A record names the exact assessed artifact, the advisory IDs (or `all`), a reason and an expiry no more than 31 days after acceptance. The artifact is the registry digest (`repo@sha256:…`) for a pulled image, or the local image ID (`sha256:…`, shown as `accepted_risk_identity` in the target's `status.json`) for a managed rebuild or candidate. Re-pinning or rebuilding produces a new identity and ends the record, so each new artifact is assessed again. Each record is explained below.
 - **Everything else blocks** until the image or package is upgraded.
 
 Accepted findings stay visible in `findings.json`, SARIF (with no suppression) and the evidence reports, and are counted apart from blocking findings. Keep accepted risk separate from verified source fixes (`source-fixes.json`) and from secret reviews (`feed-secret-review.json`).

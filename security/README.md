@@ -38,7 +38,8 @@ so one matrix upload cannot replace another target's results.
   - No vendor fixed version (empty `FixedVersion`): accepted risk by policy.
   - A fixed version exists but the image vendor has not shipped it: accepted only by
     an owner record in [accepted-risk.json](accepted-risk.json), bound to the exact
-    image digest and expiring within 31 days. Re-pinning the image ends the record.
+    assessed artifact (registry digest, or local image ID for managed rebuilds and
+    candidates) and expiring within 31 days. Re-pinning or rebuilding ends the record.
   - Otherwise the finding blocks until the image or package is upgraded.
   Accepted findings are annotated, not removed or suppressed: they stay in
   `findings.json`, SARIF and the evidence reports, and are counted apart from

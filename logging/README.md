@@ -45,13 +45,19 @@ The associations run again by themselves when their settings change, for example
 
 ## Open vmui
 
-Start the tunnel in its own PowerShell window and leave it running:
+The tunnel holds its window until you stop it, so open a **new** PowerShell window for it and leave it running. A new window has none of the settings from your Terraform window, and without them the AWS CLI would use your **default** profile, which is a different account. Set them first (Step 1 of the [smoke test plan](../docs/runbook/terraform-smoke-test-plan.md)):
 
 ```powershell
+$env:AWS_PROFILE = "ai-cloud-lab"
+$env:AWS_DEFAULT_REGION = "us-east-1"
+aws sts get-caller-identity --query Account --output text
+Set-Location C:\GitHub\ai-cloud-lab\logging\victorialogs
 Invoke-Expression (terraform output -raw ui_tunnel_command)
 ```
 
-Then browse to `http://localhost:18080/select/vmui/`. VictoriaLogs has no sign-in; only the tunnel reaches it. The same address serves the query API (`http://localhost:18080/select/logsql/query`) that an MCP tool uses.
+The account number must be the lab account (`394566733278` for the demo); if not, stop and fix the profile. Stop the tunnel with Ctrl+C when you are done.
+
+Then open [http://localhost:18080/select/vmui/](http://localhost:18080/select/vmui/) in your browser. VictoriaLogs has no sign-in; only the tunnel reaches it. The same address serves the query API (`http://localhost:18080/select/logsql/query`) that an MCP tool uses.
 
 Follow [END-TO-END-TEST.md](END-TO-END-TEST.md) to send test events and check vmui and the S3 archive.
 

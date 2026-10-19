@@ -302,8 +302,24 @@ Every deploy. Each takes a minute or two.
    ai-lab-status
    ```
 
-   Wait for `READY`. On `FAILED`, read the bootstrap log before retrying. Type `exit` to leave the
-   shell.
+   Wait for `READY`. On `FAILED`, read the bootstrap log before retrying.
+
+   If the [logging add-on](../../logging/README.md) is deployed, also check that its log shipper
+   and the Lab Logs MCP server are running. Each prints `active`:
+
+   ```bash
+   systemctl is-active vector
+   ```
+
+   ```bash
+   systemctl is-active ai-lab-logs-mcp
+   ```
+
+   `inactive` or `could not be found` means the logging install has not reached this instance
+   yet (for example, it was stopped during the logging apply). See
+   [END-TO-END-TEST.md](../../logging/END-TO-END-TEST.md) for the association check.
+
+   Type `exit` to leave the shell.
 
 2. **The load balancer sees a healthy instance** (with `enable_domain_access = true`):
 

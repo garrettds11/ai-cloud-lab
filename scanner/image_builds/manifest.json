@@ -16,7 +16,7 @@
     },
     {
       "reference": "registry.community.greenbone.net/community/nginx:latest",
-      "base": "registry.community.greenbone.net/community/nginx@sha256:2218c3a09dde107ef999cac1f47e5c39b9a87fd2728fe7db3c930ff354392958",
+      "base": "registry.community.greenbone.net/community/nginx@sha256:ff0b45ddfd82375397105ef100f3b2d80b88cd4c7da8601e71b45f006b68c45b",
       "context": "nginx",
       "tag": "ai-cloud-lab/nginx:patched"
     },

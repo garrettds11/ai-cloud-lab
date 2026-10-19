@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "policy": "A HIGH or CRITICAL vulnerability blocks only while a vendor fix exists that has not been taken. Findings with no vendor fixed version are accepted by owner policy (2026-10-18). A finding whose fix exists upstream, but whose vendor has not shipped it in a release, is accepted only by a record below: owner-approved, bound to the exact image digest and expiring within 31 days. See security/accepted-risk.md.",
+  "records": [
+    {
+      "id": "victorialogs-v1.53.0-go-stdlib",
+      "image": "victoriametrics/victoria-logs@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d",
+      "accepted_by": "owner",
+      "accepted_on": "2026-10-17",
+      "expires": "2026-11-16",
+      "reason": "Go standard library 1.27.1 compiled into VictoriaLogs v1.53.0, the latest release; fixed in Go 1.26.9 and 1.27.2, not yet shipped by VictoriaMetrics. Tracked in #93.",
+      "findings": ["CVE-2026-97031", "CVE-2026-78667", "CVE-2026-78669"]
+    }
+  ]
+}

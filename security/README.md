@@ -33,7 +33,17 @@ so one matrix upload cannot replace another target's results.
 
 ## Policy and publication
 
-- HIGH and CRITICAL CVEs block, including findings without fixes.
+- HIGH and CRITICAL CVEs block only while a vendor fix exists that has not been
+  taken (owner policy, issue #82). The lab does not patch downstream software:
+  - No vendor fixed version (empty `FixedVersion`): accepted risk by policy.
+  - A fixed version exists but the image vendor has not shipped it: accepted only by
+    an owner record in [accepted-risk.json](accepted-risk.json), bound to the exact
+    assessed artifact (registry digest, or local image ID for managed rebuilds and
+    candidates) and expiring within 31 days. Re-pinning or rebuilding ends the record.
+  - Otherwise the finding blocks until the image or package is upgraded.
+  Accepted findings are annotated, not removed or suppressed: they stay in
+  `findings.json`, SARIF and the evidence reports, and are counted apart from
+  blocking findings. The rule lives in `risk_acceptance.py`.
 - Detected secrets block except the exact, expiring immutable-feed test-data
   false positives documented in [the feed secret review](feed-secret-review.md).
   Reviewed findings remain in JSON/SARIF with rationale and expiry; the review
@@ -58,9 +68,9 @@ days (subject to the repository's retention cap). The evidence archive contains
 HIGH/CRITICAL vulnerability instance, assessed artifact identity, package,
 installed/fixed versions and advisory link. These files are checksummed and enter
 the same trusted-run attestation bundle. They distinguish repeated instances
-from distinct IDs; mitigation status is explicitly unassessed, not accepted.
-Findings the owner has accepted are listed in [accepted-risk.md](accepted-risk.md); they
-stay in these files and in the blocking count.
+from distinct IDs; mitigation status is explicitly unassessed. Each row's `policy` column says whether it
+blocks or is accepted, and on what basis. Owner records are explained in
+[accepted-risk.md](accepted-risk.md).
 Per-target `findings.json` and SARIF also include lower severities and secrets.
 
 The archive additionally contains

@@ -97,7 +97,11 @@ class ManagedImageTests(unittest.TestCase):
             calls.append(command)
             if command[:2] == ["docker", "exec"]:
                 raise subprocess.CalledProcessError(1, command)
-        with patch("managed_images.subprocess.check_output", return_value=container), \
+        def check_output(command, **kwargs):
+            if command[:2] == ["docker", "exec"]:
+                raise subprocess.CalledProcessError(1, command)
+            return container
+        with patch("managed_images.subprocess.check_output", side_effect=check_output), \
                 patch("managed_images.subprocess.run", side_effect=run):
             with self.assertRaises(subprocess.CalledProcessError):
                 managed_images.candidate_smoke("sha256:" + "1" * 64)

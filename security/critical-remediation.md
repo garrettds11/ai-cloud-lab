@@ -1,5 +1,12 @@
 # Critical finding remediation plan — 16 October 2026
 
+> **Superseded (#82, 2026-10-18).** The owner's vendor-patch policy replaced this plan: the
+> lab does not patch downstream software or build libraries from source. The SQLite source
+> build, its smoke checks and its source-fix record were removed; the candidate keeps
+> Debian's `libsqlite3-0`. Findings with no vendor fix are accepted risk, and findings with
+> an untaken vendor fix block until upgraded (see [README](README.md) and
+> [accepted-risk.md](accepted-risk.md)). The text below is kept as a historical record only.
+
 ## Verified baseline and scope
 
 [Complete assessment 38617707801](https://github.com/garrettds11/ai-cloud-lab/actions/runs/38617707801)

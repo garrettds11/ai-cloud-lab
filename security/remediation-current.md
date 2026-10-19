@@ -88,6 +88,13 @@ summary counts them separately. Counting them as closed would be a separate,
 explicitly approved policy change. No CVE exclusions, VEX suppression or gate
 changes were added.
 
+**Superseded (#82, 2026-10-18).** Under the owner's vendor-patch policy the lab no
+longer builds SQLite from source. The candidate now keeps Debian's own `libsqlite3-0`,
+and the source-fix record was removed from `source-fixes.json`. Debian publishes no
+fixed version for these three CVEs, so they are accepted risk with basis
+`no_vendor_fix`: still reported in findings and SARIF, counted apart from blocking
+findings, and gated again as soon as Debian ships a fix.
+
 Primary fix evidence: [CVE-2025-7458](https://security-tracker.debian.org/tracker/CVE-2025-7458),
 [CVE-2026-11822](https://security-tracker.debian.org/tracker/CVE-2026-11822),
 [CVE-2026-11824](https://security-tracker.debian.org/tracker/CVE-2026-11824),
@@ -115,12 +122,11 @@ scanner-tool reuse requirements were added to [issue #90](https://github.com/gar
 
 ## Remaining merge work
 
-The [critical remediation plan](critical-remediation.md) accounts for all 37
-critical rows. Chroma needs a complete patch or replacement; reachability evidence now
-runs in candidate acceptance (see the critical plan). Libxml2 is the broadest shared critical component and
-remains affected in both Bookworm and Trixie. Mbed TLS, AOM, GLib, LMDB, OpenSSH
-and zlib need their recorded package/applicability reviews. Supported component
-replacement or audited source backports must retain application functionality.
+Superseded by the vendor-patch policy (#82): the lab no longer patches downstream
+software or backports fixes from source. Findings with no vendor fixed version are
+accepted risk; findings with an untaken vendor fix block until the image or package is
+upgraded, or an owner record accepts them. The [critical remediation plan](critical-remediation.md)
+is kept as a historical record.
 
 The feed resolved to immutable digest
 `registry.community.greenbone.net/community/vulnerability-tests@sha256:e0f85aca0d448653cb8da8e1065c374cb7239bd8d902b988f2b3d4b924eae583`,

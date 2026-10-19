@@ -15,12 +15,14 @@ linked from [step 5](#step-5-test-what-changed) and [Troubleshooting](troublesho
 
 ## Which steps to run
 
-There are two Terraform stacks, each with its own state:
+There are two required Terraform stacks and two optional add-ons, each with its own state:
 
 | Stack | Folder | Holds | Runs with |
 |---|---|---|---|
 | **Control panel API** | `dashboards\api\terraform` | The panel's API, sign-in authorizer, routes, functions, tables, the Open WebUI admin document | plain `terraform` |
 | **Lab** | repository root | The instance, Open WebUI, Ollama, load balancer, Cloudflare, Cognito, auto-stop | the wrapper from step 1 |
+| **Scanner** (optional add-on) | `scanner` | The Greenbone vulnerability scanner; see [scanner/README.md](../../scanner/README.md) | plain `terraform` |
+| **Logging** (optional add-on) | `logging\victorialogs` | The VictoriaLogs log store and its collector on the lab host; see [logging/README.md](../../logging/README.md) | plain `terraform` |
 
 | What you are doing | Steps |
 |---|---|
@@ -29,9 +31,10 @@ There are two Terraform stacks, each with its own state:
 | Only the panel pages changed (files in `dashboards`, not `dashboards\api`) | 1, then [Deploy the pages](#deploy-the-pages) |
 | First deploy to a new account or domain | 0, 1, 2, 3, 4 |
 | After the API stack was destroyed | 1, 2, 3, 4 |
-| Taking it down | 1, 6 |
+| Adding or rebuilding an add-on | 1, then the add-on's README, after 3 and 4 |
+| Taking it down | 1, destroy the add-ons (their READMEs), then 6 |
 
-Build the API stack before the lab; destroy the lab before the API stack.
+Deploy in this order: API stack, lab, scanner, logging. Destroy in reverse: the add-ons, then the lab, then the API stack. The lab publishes its IDs in the SSM parameter `/<project_name>/lab/settings`. Logging reads it, so apply logging again after the lab is rebuilt; the scanner still takes lab values from its tfvars ([#102](https://github.com/garrettds11/ai-cloud-lab/issues/102)).
 
 ## Step 0. New account or domain (first deploy only)
 

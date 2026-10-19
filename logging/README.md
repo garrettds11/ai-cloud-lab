@@ -10,6 +10,8 @@ A track apply creates a backend instance, a private raw-event S3 archive and an 
 
 Vector collects the host journal and the Open WebUI container logs. It writes every event to the S3 archive and forwards the same events through the backend's private HTTPS intake to VictoriaLogs. The VictoriaLogs API and its built-in web UI (vmui) are reachable only through an SSM port-forwarding session.
 
+The track also installs the **Lab Logs** MCP server on the lab host (a second Distributor package, `mcp`) and registers it in Open WebUI, so chat models can search these logs. See [Lab Logs in Open WebUI](#lab-logs-in-open-webui).
+
 ## One-time preparation
 
 1. Deploy the lab (Step 3 of [the Terraform smoke test plan](../docs/runbook/terraform-smoke-test-plan.md)) and make sure its Ubuntu host is online in Systems Manager. You can also deploy the track first; see above.
@@ -33,7 +35,9 @@ terraform output lab_found
 
 `lab_found` is `true` when the collector was installed on the lab. If it is `false`, deploy the lab and run the plan and apply again.
 
-Wait for the `AWS-ConfigureAWSPackage` association to report success in Systems Manager State Manager.
+Wait for both `AWS-ConfigureAWSPackage` associations (`vector` and `mcp`) to report success in Systems Manager State Manager.
+
+The associations run again by themselves when their settings change, for example when an apply replaces the backend instance and it gets a new private IP.
 
 ## Open vmui
 
@@ -47,9 +51,25 @@ Then browse to `http://localhost:18080/select/vmui/`. VictoriaLogs has no sign-i
 
 Follow [END-TO-END-TEST.md](END-TO-END-TEST.md) to send test events and check vmui and the S3 archive.
 
+## Lab Logs in Open WebUI
+
+The `mcp` package runs a small read-only MCP server on the lab host at `http://127.0.0.1:8766/mcp` (systemd unit `ai-lab-logs-mcp`). It answers only on the lab host itself, which is where Open WebUI runs, so it has no token. It queries VictoriaLogs through the backend gateway, which passes only two read endpoints (`/select/logsql/query` and `/select/logsql/hits`) and only from the lab host's security group. The model never writes a query: each tool takes a few checked fields and the server builds the LogsQL. Lines are scrubbed of tokens, passwords and email addresses, and every result says that log text is untrusted.
+
+| Tool | Use |
+|---|---|
+| `list_log_sources` | The two sources: `services` (host journal) and `containers` (Open WebUI) |
+| `search_logs` | Recent lines, optionally with a text, a level, a systemd unit or a container |
+| `count_log_events` | Counts per time bucket, for "how many" and "since when" |
+| `summarize_log_errors` | The most frequent error messages in each source |
+| `get_signin_events` | Open WebUI password and single sign-on results |
+
+The install registers the server in Open WebUI as the tool server **Lab Logs**, using the lab's admin sign-in. If the lab has local password login turned off, the install cannot sign in; add it yourself in **Admin Settings > External Tools**: type **MCP (Streamable HTTP)**, URL `http://127.0.0.1:8766/mcp`, authentication **None**. To register it again later, open an SSM shell on the lab host and run `sudo ai-lab-register-logs-mcp`.
+
+In a chat, turn on **Lab Logs** in the tools menu, then ask, for example, "Are there any errors in the lab logs in the last hour?". [END-TO-END-TEST.md](END-TO-END-TEST.md) has the check.
+
 ## Destroy
 
-First uninstall Vector from the root host with the command from `terraform output -json uninstall_agent_commands`, and wait for it to finish. Then review and apply a destroy plan:
+First uninstall both packages (`mcp`, then `vector`) from the root host with the commands from `terraform output -json uninstall_agent_commands`, and wait for each to finish. Uninstalling `mcp` also removes the Lab Logs connection from Open WebUI. Then review and apply a destroy plan:
 
 ```powershell
 terraform plan -destroy -out=destroy.tfplan

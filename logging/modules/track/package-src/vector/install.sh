@@ -19,8 +19,12 @@ chmod 0640 /etc/vector/vector.toml
 usermod -aG docker,adm,systemd-journal vector
 
 install -d -m 0755 /etc/systemd/system/vector.service.d
+# The packaged unit validates /etc/vector/vector.yaml before each start, so point the check at our
+# file too. Skip sink health checks there so a stopped backend does not keep Vector from starting.
 cat >/etc/systemd/system/vector.service.d/10-logging-bakeoff.conf <<'EOF'
 [Service]
+ExecStartPre=
+ExecStartPre=/usr/bin/vector validate --skip-healthchecks /etc/vector/vector.toml
 ExecStart=
 ExecStart=/usr/bin/vector --config /etc/vector/vector.toml
 EOF

@@ -7,6 +7,10 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Changed
+- Open WebUI moves from v0.12.0 to v0.12.3 (`open_webui_container_image`), and the candidate image is rebuilt
+  from the v0.12.3 digest. This takes the vendor's latest release for the 76 HIGH/CRITICAL v0.12.0
+  findings that had a vendor fix (#82); the security assessment reports which remain. Applying the
+  lab replaces the instance.
 - Open WebUI skills can now be imported in bulk from the panel: "Import several at once (JSON)" takes
   a JSON array of up to 25 small text skills and imports them one by one through the existing checked
   `import-skill` path, with one confirmation and a per-skill Imported/Failed result. Multi-file and

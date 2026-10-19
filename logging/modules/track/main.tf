@@ -158,8 +158,8 @@ resource "aws_ssm_parameter" "vector_config" {
 
 resource "aws_ssm_parameter" "mcp_config" {
   #checkov:skip=CKV2_AWS_34:Holds the Lab Logs MCP server settings only (backend private address, local port); no secret
-  name  = "/logging-bakeoff/${var.track}/mcp-config"
-  type  = "String"
+  name = "/logging-bakeoff/${var.track}/mcp-config"
+  type = "String"
   value = jsonencode({
     backend_url = "https://${aws_instance.backend.private_ip}"
     port        = local.mcp_port

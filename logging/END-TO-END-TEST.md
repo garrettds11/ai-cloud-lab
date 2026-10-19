@@ -4,15 +4,46 @@ Test docs: [Deploy and smoke test](../docs/runbook/terraform-smoke-test-plan.md)
 
 Run this after the VictoriaLogs track has been applied and both Distributor associations (`vector` and `mcp`) have succeeded. The root lab host stays running throughout.
 
-Commands are **Local Windows PowerShell** unless marked **Linux (SSM shell on the lab instance)**. The SSM shell is a plain `sh` shell: paste **one command at a time**, as in Step 4 of the [smoke test plan](../docs/runbook/terraform-smoke-test-plan.md). Use a PowerShell window prepared as in its Step 1, with `$env:instance_id` set (Step 3). The vmui tunnel runs in its own window ([README](README.md#open-vmui)).
+Commands are **Local Windows PowerShell** unless marked **Linux (SSM shell on the lab instance)**. The SSM shell is a plain `sh` shell: paste **one command at a time**. The vmui tunnel runs in its own window ([README](README.md#open-vmui)).
 
-## Send test events
+## Before you start
 
-Open a shell on the root lab instance:
+In a PowerShell window (not the tunnel window), use the lab account and look up the lab instance:
+
+```powershell
+$env:AWS_PROFILE = "ai-cloud-lab"
+$env:AWS_DEFAULT_REGION = "us-east-1"
+$env:instance_id = terraform -chdir=C:\GitHub\ai-cloud-lab output -raw instance_id
+$env:instance_id
+```
+
+The last line prints an instance ID such as `i-0123456789abcdef0`. Check that both installs succeeded:
+
+```powershell
+aws ssm list-associations --query "Associations[?contains(AssociationName,'-install')].[AssociationName,Overview.Status]" --output text
+```
+
+Both lines must say `Success`. `Pending` means the lab instance is stopped or the install is still running; start the instance and wait a few minutes. `Failed` means read the install output (see [Troubleshooting](#troubleshooting)).
+
+Open a shell on the lab instance:
 
 ```powershell
 aws ssm start-session --target $env:instance_id
 ```
+
+**Linux (SSM shell on the lab instance).** Check that the log shipper and the Lab Logs MCP server are running. Each prints `active`:
+
+```bash
+systemctl is-active vector
+```
+
+```bash
+systemctl is-active ai-lab-logs-mcp
+```
+
+If `vector` prints `failed`, read why with `sudo journalctl -u vector --no-pager | tail -30`. Stay in this shell for the next section.
+
+## Send test events
 
 **Linux (SSM shell on the lab instance).** Paste these one at a time:
 
@@ -80,6 +111,22 @@ aws s3 ls "s3://$bucket/raw/victorialogs/" --recursive
 ```
 
 The objects are gzip-compressed NDJSON. Download one and confirm it holds both markers with the same timestamps. The archive is the independent record; don't use the VictoriaLogs index as proof of it.
+
+## Troubleshooting
+
+**An install association says `Failed`.** Read the install output on the lab instance. Set `$name` to the failed association's name from the list above, then run:
+
+```powershell
+$name = "ai-cloud-lab-victorialogs-vector-install"
+$assoc = aws ssm list-associations --query "Associations[?AssociationName=='$name'].AssociationId" --output text
+$exec = aws ssm describe-association-executions --association-id $assoc --max-results 1 --query "AssociationExecutions[0].ExecutionId" --output text
+$cmd = aws ssm describe-association-execution-targets --association-id $assoc --execution-id $exec --query "AssociationExecutionTargets[0].OutputSource.OutputSourceId" --output text
+aws ssm list-command-invocations --command-id $cmd --details --query "CommandInvocations[0].CommandPlugins[].[Name,Status,Output]" --output text
+```
+
+After a fix in `modules/track/package-src`, rebuild the archives with `python C:\GitHub\ai-cloud-lab\logging\modules\track\package-src\build_packages.py`, then plan and apply this track again. The package version follows the archive's hash, so the association reinstalls the changed package.
+
+**vmui shows no logs.** Check the [Before you start](#before-you-start) items first: if `vector` is not `active`, nothing is shipped.
 
 ## Uninstall and destroy
 

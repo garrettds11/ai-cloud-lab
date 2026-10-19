@@ -59,6 +59,8 @@ secret() {
     raw="$(aws secretsmanager get-secret-value --secret-id "$1" --query SecretString --output text --region "$REGION")" || return 1
     if jq -e 'type == "object"' <<<"$raw" >/dev/null 2>&1; then
         jq -er 'if length == 1 and (.[] | type) == "string" then .[] else error("x") end' <<<"$raw"
+    elif jq -e 'type == "string"' <<<"$raw" >/dev/null 2>&1; then
+        jq -er . <<<"$raw" # a JSON string such as "password": drop the quotes
     else
         [[ -n "$raw" && "$raw" != None ]] && printf '%s' "$raw"
     fi

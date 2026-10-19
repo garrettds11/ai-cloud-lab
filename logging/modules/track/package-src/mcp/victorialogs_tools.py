@@ -74,7 +74,10 @@ def _parse_time(value):
 
 
 def build_query(source, contains=None, level="all", unit=None, container=None):
-    """LogsQL for one source and the optional filters. Raises ToolError for bad arguments."""
+    """LogsQL for one source and the optional filters. Raises ToolError for bad arguments.
+
+    Filters use the regexp form ~"..." on _msg and field:~"..." on fields (RE2 syntax), with every
+    user value escaped to match literally; space-separated filters are joined with AND."""
     if source not in SOURCES:
         raise ToolError(f"source must be one of: {', '.join(SOURCE_NAMES)}.")
     parts = ["{source=" + _quote(SOURCES[source][0]) + "}"]
@@ -82,15 +85,15 @@ def build_query(source, contains=None, level="all", unit=None, container=None):
         if value is not None:
             if not isinstance(value, str) or not _NAME.match(value):
                 raise ToolError(f"{label} may contain only letters, digits, dots, hyphens and underscores.")
-            parts.append(_quote(field) + ":re(" + _quote(prefix + _literal_regex(value)) + ")")
+            parts.append(_quote(field) + ":~" + _quote(prefix + _literal_regex(value)))
     if contains:
         if not isinstance(contains, str) or len(contains) > 100 or re.search(r"[\x00-\x1f\x7f]", contains):
             raise ToolError("contains must be plain text of at most 100 characters on one line.")
-        parts.append("re(" + _quote(_literal_regex(contains)) + ")")
+        parts.append("~" + _quote(_literal_regex(contains)))
     if level not in LEVELS:
         raise ToolError(f"level must be one of: {', '.join(LEVELS)}.")
     if LEVELS[level]:
-        parts.append("re(" + _quote(LEVELS[level]) + ")")
+        parts.append("~" + _quote(LEVELS[level]))
     return " ".join(parts)
 
 
@@ -222,7 +225,7 @@ class VictoriaLogTools:
     def get_signin_events(self, minutes=1440):
         minutes = _bounded(minutes, "minutes", 1, MAX_MINUTES, 1440)
         now = self._clock()
-        query = build_query("containers") + " " + "re(" + _quote("/api/v1/auths/signin|/oauth/") + ")"
+        query = build_query("containers") + " ~" + _quote("/api/v1/auths/signin|/oauth/")
         rows = self._backend.streams(query, now - minutes * 60, now, FETCH_FOR_SUMMARY)
         password = {"succeeded": 0, "failed": 0, "other": 0}
         sso = {"succeeded": 0, "failed": 0, "other": 0}

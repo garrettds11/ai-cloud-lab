@@ -59,13 +59,14 @@ class QueryBuildingTests(unittest.TestCase):
 
     def test_contains_is_matched_literally_and_quoted(self):
         query = vl.build_query("services", contains='a "b" (c)|d\\e')
-        self.assertEqual(query, '{source="ubuntu-host"} re("a \\"b\\" \\\\(c\\\\)\\\\|d\\\\\\\\e")')
+        self.assertEqual(query, '{source="ubuntu-host"} ~"a \\"b\\" \\\\(c\\\\)\\\\|d\\\\\\\\e"')
 
     def test_level_unit_and_container(self):
         query = vl.build_query("services", level="errors", unit="ollama")
-        self.assertIn('"_SYSTEMD_UNIT":re("^ollama")', query)
-        self.assertIn('re("(?i)error|fail', query)
-        self.assertIn('"container_name":re("open-webui")', vl.build_query("containers", container="open-webui"))
+        self.assertIn('"_SYSTEMD_UNIT":~"^ollama"', query)
+        self.assertIn('~"(?i)error|fail', query)
+        self.assertIn('"container_name":~"open-webui"', vl.build_query("containers", container="open-webui"))
+        self.assertNotIn("re(", query)
 
     def test_bad_arguments_are_refused(self):
         for kwargs in ({"source": "bootstrap"}, {"source": "services", "unit": 'x" OR *'},
@@ -125,7 +126,7 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(result["note"], vl.UNTRUSTED)
         _, query, start, end, limit = backend.calls[0]
         self.assertEqual((end - start, limit), (900, 5))
-        self.assertIn('re("login")', query)
+        self.assertIn('~"login"', query)
 
     def test_bounds(self):
         tools, _ = self.tools()

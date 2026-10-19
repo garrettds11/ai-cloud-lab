@@ -50,7 +50,10 @@ locals {
   })
   # vector collects the logs; mcp is the read-only Lab Logs MCP server for Open WebUI.
   selected_packages = toset(["vector", "mcp"])
-  mcp_port          = 8766
+  # Each package version carries a hash of its archive, so changed scripts publish a new document
+  # version (SSM refuses new content under an existing version name) and the association reinstalls.
+  package_versions = { for p in local.selected_packages : p => "${var.package_version}-${substr(filesha256("${path.module}/packages/${var.track}-${p}.zip"), 0, 12)}" }
+  mcp_port         = 8766
 }
 
 check "lab_settings_found" {
@@ -271,7 +274,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "packages" {
 resource "aws_s3_object" "agent" {
   for_each    = local.selected_packages
   bucket      = aws_s3_bucket.packages.id
-  key         = "${each.key}/${var.package_version}/package.zip"
+  key         = "${each.key}/${local.package_versions[each.key]}/package.zip"
   source      = "${path.module}/packages/${var.track}-${each.key}.zip"
   source_hash = filesha256("${path.module}/packages/${var.track}-${each.key}.zip")
 }
@@ -280,17 +283,17 @@ resource "aws_ssm_document" "agent" {
   for_each      = local.selected_packages
   name          = "${var.project_name}-${each.key}-agent"
   document_type = "Package"
-  version_name  = var.package_version
+  version_name  = local.package_versions[each.key]
   content = jsonencode({
     schemaVersion = "2.0",
-    version       = var.package_version,
+    version       = local.package_versions[each.key],
     publisher     = "ai-cloud-lab",
     packages      = { ubuntu = { _any = { x86_64 = { file = "package.zip" } } } },
     files         = { "package.zip" = { checksums = { sha256 = filesha256("${path.module}/packages/${var.track}-${each.key}.zip") } } }
   })
   attachments_source {
     key    = "SourceUrl"
-    values = ["s3://${aws_s3_bucket.packages.bucket}/${each.key}/${var.package_version}/"]
+    values = ["s3://${aws_s3_bucket.packages.bucket}/${each.key}/${local.package_versions[each.key]}/"]
   }
   depends_on = [aws_s3_object.agent]
 }
@@ -306,7 +309,7 @@ resource "aws_ssm_association" "agent" {
     action              = "Install"
     installationType    = "Uninstall and reinstall"
     name                = aws_ssm_document.agent[each.key].name
-    version             = var.package_version
+    version             = local.package_versions[each.key]
     additionalArguments = jsonencode({ SSM_settings_sha256 = sha256(each.key == "vector" ? aws_ssm_parameter.vector_config.value : aws_ssm_parameter.mcp_config.value) })
   }
   targets {

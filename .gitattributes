@@ -1,1 +1,5 @@
 scanner/image_builds/** text eol=lf
+# Distributor package sources run on Linux and are zipped byte for byte (security/inventory.py checks).
+logging/modules/track/package-src/** text eol=lf
+lambda/vuln_mcp/*.py text eol=lf
+logging/modules/track/packages/*.zip binary

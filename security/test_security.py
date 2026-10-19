@@ -253,5 +253,28 @@ class InventoryTests(unittest.TestCase):
             inventory.compose_images(" image: ${new_image}", "compose.yml", images)
 
 
+class PackageMemberTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        (self.root / "pkg/package-src/mcp").mkdir(parents=True)
+        (self.root / "lambda/vuln_mcp").mkdir(parents=True)
+        (self.root / "pkg/package-src/mcp/install.sh").write_bytes(b"#!/bin/bash\n")
+        (self.root / "lambda/vuln_mcp/mcp_protocol.py").write_bytes(b"x = 1\n")
+        self.builder = "pkg/package-src/build_packages.py"
+
+    def source(self, name, data):
+        return inventory.package_member_source(self.root, self.builder, "mcp", name, data)
+
+    def test_members_map_to_their_package_or_shared_source(self):
+        self.assertEqual(self.source("install.sh", b"#!/bin/bash\n"), "pkg/package-src/mcp/install.sh")
+        self.assertEqual(self.source("mcp_protocol.py", b"x = 1\n"), "lambda/vuln_mcp/mcp_protocol.py")
+
+    def test_unknown_changed_or_odd_members_are_refused(self):
+        for name, data in (("install.sh", b"changed"), ("other.py", b"x = 1\n"), ("../install.sh", b"#!/bin/bash\n"),
+                           ("payload.bin", b"")):
+            with self.assertRaises(ValueError, msg=name):
+                self.source(name, data)
+
+
 if __name__ == "__main__":
     unittest.main()

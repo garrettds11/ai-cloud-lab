@@ -35,9 +35,12 @@ def _log(**fields):
 
 class Toolset:
     """Several tool objects served as one server. Each part is (object, definitions); a tool is
-    found by name on the object that defines it, so the protocol layer needs no change per source."""
+    found by name on the object that defines it, so the protocol layer needs no change per source.
+    server_info and instructions override this module's defaults, for servers other than vuln-findings."""
 
-    def __init__(self, *parts):
+    def __init__(self, *parts, server_info=None, instructions=None):
+        self.server_info = server_info or SERVER_INFO
+        self.instructions = instructions or INSTRUCTIONS
         self._owner = {}
         self.definitions = []
         for owner, definitions in parts:
@@ -71,8 +74,8 @@ def handle_message(message, tools):
         return _result(request_id, {
             "protocolVersion": version,
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": SERVER_INFO,
-            "instructions": INSTRUCTIONS,
+            "serverInfo": getattr(tools, "server_info", SERVER_INFO),
+            "instructions": getattr(tools, "instructions", INSTRUCTIONS),
         })
     if method == "ping":
         return _result(request_id, {})

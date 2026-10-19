@@ -24,6 +24,24 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+# Distributor package members come from the package's own folder or, for the Lab Logs MCP
+# server, the shared MCP modules. Each member must be a plain script name and byte-identical
+# to its source, so findings map to the repository file that ships.
+PACKAGE_SHARED_SOURCES = ("lambda/vuln_mcp",)
+_PACKAGE_MEMBER = re.compile(r"[a-z0-9_]+\.(sh|py)")
+
+
+def package_member_source(snapshot, builder, package, name, data):
+    if not _PACKAGE_MEMBER.fullmatch(name):
+        raise ValueError(f"Unsupported Distributor package member: {name}")
+    candidates = [Path(builder).parent / package / name] + [Path(shared) / name for shared in PACKAGE_SHARED_SOURCES]
+    for candidate in candidates:
+        source = snapshot / candidate
+        if source.is_file() and source.read_bytes() == data:
+            return candidate.as_posix()
+    raise ValueError(f"Distributor package member {name} does not match a repository source")
+
+
 def identifier(kind, name):
     return kind + "-" + digest(name.encode())[:20]
 
@@ -215,16 +233,14 @@ def main():
                 directory = OUT / "inputs" / target_id
                 directory.mkdir(parents=True)
                 members = []
+                package = archive.stem.rsplit("-", 1)[1]
                 with zipfile.ZipFile(archive) as contents:
                     for item in contents.infolist():
-                        if item.filename not in {"track.txt", "install.sh", "uninstall.sh"}:
-                            raise ValueError(f"Unsupported Distributor package member: {item.filename}")
                         data = contents.read(item)
-                        (directory / item.filename).write_bytes(data)
                         member = {"member": item.filename, "sha256": digest(data)}
                         if item.filename != "track.txt":
-                            package = archive.stem.rsplit("-", 1)[1]
-                            member["source"] = str(Path(filename).parent / package / item.filename).replace("\\", "/")
+                            member["source"] = package_member_source(snapshot, filename, package, item.filename, data)
+                        (directory / item.filename).write_bytes(data)
                         members.append(member)
                 targets.append({"id": target_id, "kind": "package", "name": archive.name,
                                 "scan_ref": directory.relative_to(ROOT).as_posix(),

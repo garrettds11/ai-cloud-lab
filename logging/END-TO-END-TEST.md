@@ -32,6 +32,23 @@ The same query works against the API, which is what an MCP tool calls:
 Invoke-RestMethod -Method Post -Uri http://localhost:18080/select/logsql/query -Body @{ query = '_time:15m "<RUN_ID>"' }
 ```
 
+## Check Lab Logs in Open WebUI
+
+On the root lab host, confirm the MCP server is running and registered:
+
+```bash
+systemctl is-active ai-lab-logs-mcp
+sudo ai-lab-register-logs-mcp
+```
+
+The second command should report that the connection is already correct and list five tools. Then sign in to Open WebUI, open a new chat, turn on **Lab Logs** in the tools menu and ask:
+
+```
+Search the lab logs for <RUN_ID> in the last 15 minutes.
+```
+
+Confirm the answer shows both test events and says it used `search_logs`. Then ask "Are there any errors in the lab logs in the last hour?" and confirm it calls `summarize_log_errors`, and that the `bakeoff-openwebui-<RUN_ID>` line is among the errors.
+
 ## Check the S3 archive
 
 In the track folder:
@@ -45,10 +62,12 @@ The objects are gzip-compressed NDJSON. Download one and confirm it holds both m
 
 ## Uninstall and destroy
 
-Before destroying, uninstall Vector with the command from `terraform output -json uninstall_agent_commands`, wait for the SSM command to succeed, and check on the root host:
+Before destroying, uninstall both packages (`mcp`, then `vector`) with the commands from `terraform output -json uninstall_agent_commands`, wait for each SSM command to succeed, and check on the root host:
 
 ```bash
-systemctl is-active vector || true
+systemctl is-active ai-lab-logs-mcp vector || true
 ```
+
+Both should report `inactive`, and **Lab Logs** should no longer be listed in Open WebUI's **Admin Settings > External Tools**.
 
 Then destroy the track as described in the [README](README.md#destroy).

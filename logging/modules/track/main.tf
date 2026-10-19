@@ -48,7 +48,9 @@ locals {
     aws_region     = var.aws_region
     container_name = try(local.lab.open_webui_container_name, "open-webui")
   })
-  selected_packages = toset(["vector"])
+  # vector collects the logs; mcp is the read-only Lab Logs MCP server for Open WebUI.
+  selected_packages = toset(["vector", "mcp"])
+  mcp_port          = 8766
 }
 
 check "lab_settings_found" {
@@ -141,7 +143,7 @@ resource "aws_iam_role_policy" "lab_archive" {
       {
         Effect   = "Allow"
         Action   = ["ssm:GetParameter"]
-        Resource = [aws_ssm_parameter.vector_config.arn]
+        Resource = [aws_ssm_parameter.vector_config.arn, aws_ssm_parameter.mcp_config.arn]
       }
     ]
   })
@@ -152,6 +154,16 @@ resource "aws_ssm_parameter" "vector_config" {
   name  = "/logging-bakeoff/${var.track}/vector-config"
   type  = "String"
   value = local.vector_config
+}
+
+resource "aws_ssm_parameter" "mcp_config" {
+  #checkov:skip=CKV2_AWS_34:Holds the Lab Logs MCP server settings only (backend private address, local port); no secret
+  name = "/logging-bakeoff/${var.track}/mcp-config"
+  type = "String"
+  value = jsonencode({
+    backend_url = "https://${aws_instance.backend.private_ip}"
+    port        = local.mcp_port
+  })
 }
 
 resource "aws_iam_role" "backend" {
@@ -171,7 +183,7 @@ resource "aws_security_group" "backend" {
   dynamic "ingress" {
     for_each = local.lab_set
     content {
-      description     = "${var.track} collector intake from root lab host"
+      description     = "${var.track} collector intake and Lab Logs MCP queries from root lab host"
       from_port       = 443
       to_port         = 443
       protocol        = "tcp"
@@ -287,11 +299,15 @@ resource "aws_ssm_association" "agent" {
   for_each         = local.lab == null ? toset([]) : local.selected_packages
   name             = "AWS-ConfigureAWSPackage"
   association_name = "${var.project_name}-${each.key}-install"
+  # additionalArguments carries a hash of the package's settings. A settings change (such as a
+  # replaced backend's new IP) updates the association, which reinstalls the package so it reads
+  # the new settings. The install scripts ignore the value.
   parameters = {
-    action           = "Install"
-    installationType = "Uninstall and reinstall"
-    name             = aws_ssm_document.agent[each.key].name
-    version          = var.package_version
+    action              = "Install"
+    installationType    = "Uninstall and reinstall"
+    name                = aws_ssm_document.agent[each.key].name
+    version             = var.package_version
+    additionalArguments = jsonencode({ SSM_settings_sha256 = sha256(each.key == "vector" ? aws_ssm_parameter.vector_config.value : aws_ssm_parameter.mcp_config.value) })
   }
   targets {
     key    = "InstanceIds"

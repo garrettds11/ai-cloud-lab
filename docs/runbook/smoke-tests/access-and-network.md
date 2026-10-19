@@ -1,5 +1,7 @@
 # Smoke tests: access and network
 
+Test docs: [Deploy and smoke test](../terraform-smoke-test-plan.md) · **Access and network** · [Control panel](control-panel.md) · [Lab features](lab-features.md) · [Vulnerability MCP](../../vuln-mcp-acceptance-tests.md) · [Scanner](../../../scanner/README.md) · [Logging](../../../logging/README.md) · [Logging end-to-end](../../../logging/END-TO-END-TEST.md)
+
 Tests for how people reach the lab and what the network allows. Run the ones the change touched;
 [the deploy runbook](../terraform-smoke-test-plan.md#step-5-test-what-changed) says which.
 

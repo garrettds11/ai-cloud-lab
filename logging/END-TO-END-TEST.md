@@ -1,5 +1,7 @@
 # End-to-end test
 
+Test docs: [Deploy and smoke test](../docs/runbook/terraform-smoke-test-plan.md) · [Access and network](../docs/runbook/smoke-tests/access-and-network.md) · [Control panel](../docs/runbook/smoke-tests/control-panel.md) · [Lab features](../docs/runbook/smoke-tests/lab-features.md) · [Vulnerability MCP](../docs/vuln-mcp-acceptance-tests.md) · [Scanner](../scanner/README.md) · [Logging](README.md) · **Logging end-to-end**
+
 Run this after the VictoriaLogs track has been applied and its Distributor association has succeeded. The root lab host stays running throughout.
 
 ## Send test events

@@ -1,5 +1,7 @@
 # Logging: VictoriaLogs log store
 
+Test docs: [Deploy and smoke test](../docs/runbook/terraform-smoke-test-plan.md) · [Access and network](../docs/runbook/smoke-tests/access-and-network.md) · [Control panel](../docs/runbook/smoke-tests/control-panel.md) · [Lab features](../docs/runbook/smoke-tests/lab-features.md) · [Vulnerability MCP](../docs/vuln-mcp-acceptance-tests.md) · [Scanner](../scanner/README.md) · **Logging** · [Logging end-to-end](END-TO-END-TEST.md)
+
 This folder adds a log store to the lab so MCP tools in Open WebUI have real logs to query. The current track is VictoriaLogs. Other logging tools each have an issue ([#94](https://github.com/garrettds11/ai-cloud-lab/issues/94) to [#101](https://github.com/garrettds11/ai-cloud-lab/issues/101)) and come back one at a time as their own tracks; Splunk is planned as the final one.
 
 Logging is an optional add-on. The deploy order is: control panel API, lab, scanner (optional), logging (optional). Destroy the add-ons before the lab.
@@ -26,12 +28,14 @@ Copy-Item terraform.tfvars.example terraform.tfvars
 terraform init
 terraform fmt -check
 terraform validate
-terraform plan -out=track.tfplan
+terraform plan '-out=track.tfplan'
 terraform show -no-color track.tfplan | Out-File track-plan.txt
 # Stop here and review track-plan.txt. Continue only after review.
 terraform apply track.tfplan
 terraform output lab_found
 ```
+
+Keep the quotes around `'-out=track.tfplan'`: Windows PowerShell otherwise splits the argument at the dot, and the plan fails with "Too many command line arguments".
 
 `lab_found` is `true` when the collector was installed on the lab. If it is `false`, deploy the lab and run the plan and apply again.
 
@@ -72,7 +76,7 @@ In a chat, turn on **Lab Logs** in the tools menu, then ask, for example, "Are t
 First uninstall both packages (`mcp`, then `vector`) from the root host with the commands from `terraform output -json uninstall_agent_commands`, and wait for each to finish. Uninstalling `mcp` also removes the Lab Logs connection from Open WebUI. Then review and apply a destroy plan:
 
 ```powershell
-terraform plan -destroy -out=destroy.tfplan
+terraform plan -destroy '-out=destroy.tfplan'
 terraform show -no-color destroy.tfplan
 terraform apply destroy.tfplan
 ```

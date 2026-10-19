@@ -1,5 +1,7 @@
 # Deploy and Smoke Test
 
+Test docs: **Deploy and smoke test** · [Access and network](smoke-tests/access-and-network.md) · [Control panel](smoke-tests/control-panel.md) · [Lab features](smoke-tests/lab-features.md) · [Vulnerability MCP](../vuln-mcp-acceptance-tests.md) · [Scanner](../../scanner/README.md) · [Logging](../../logging/README.md) · [Logging end-to-end](../../logging/END-TO-END-TEST.md)
+
 How to deploy the AI Cloud Lab, check that it works, and take it down. Everything here is
 **Local Windows PowerShell** unless a block says **Linux (SSM shell on the lab instance)**.
 

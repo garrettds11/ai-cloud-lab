@@ -1,5 +1,7 @@
 # Vulnerability MCP: manual acceptance tests for Open WebUI
 
+Test docs: [Deploy and smoke test](runbook/terraform-smoke-test-plan.md) · [Access and network](runbook/smoke-tests/access-and-network.md) · [Control panel](runbook/smoke-tests/control-panel.md) · [Lab features](runbook/smoke-tests/lab-features.md) · **Vulnerability MCP** · [Scanner](../scanner/README.md) · [Logging](../logging/README.md) · [Logging end-to-end](../logging/END-TO-END-TEST.md)
+
 **Status: nothing in this document has been run.** Every test below is
 **PENDING MANUAL EXECUTION**. The offline automated tests (registration script, MCP server,
 this document's expected values) pass in CI; they do not show that a deployed Open WebUI and a

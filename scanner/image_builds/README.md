@@ -171,7 +171,7 @@ identity even when later assessments fail. ECR promotion remains tracked in #90.
 
 ## Open WebUI dependency candidate
 
-The `open-webui` context is a candidate build from the assessed v0.12.0 digest.
+The `open-webui` context is a candidate build from the assessed v0.12.3 digest.
 It pins the reported fixed versions for PyJWT, cryptography, fsspec,
 jaraco.context, MCP, PyArrow, pypdf, sentence-transformers, transformers,
 unstructured and wheel. Datasets is upgraded to 5.1.0 with PyArrow 24.0.0 because

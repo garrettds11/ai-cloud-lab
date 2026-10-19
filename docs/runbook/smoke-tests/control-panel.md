@@ -146,7 +146,7 @@ After the runbook's step 2 and a lab apply. From the repository root.
    aws ssm get-command-invocation --command-id $cmd --instance-id $env:instance_id --query "[Status, StandardOutputContent]" --output text
    ```
 
-   Expected: `Success` and one JSON line with `"ok":true`, `"healthy":true`, `"version":"0.12.0"`, `"versionMatches":true`. If `version` is `null` while `healthy` is `true`, Open WebUI v0.12.0 does not serve `/api/version` without sign-in; record that in #59.
+   Expected: `Success` and one JSON line with `"ok":true`, `"healthy":true`, `"version":"0.12.3"`, `"versionMatches":true`. If `version` is `null` while `healthy` is `true`, Open WebUI v0.12.0 does not serve `/api/version` without sign-in; record that in #59.
 
 2. **The document refuses anything else:**
 

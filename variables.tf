@@ -174,7 +174,7 @@ variable "open_webui_demo_user_password_secret_arn" {
 variable "open_webui_container_image" {
   description = "Pinned Docker image used to run Open WebUI. Override deliberately when upgrading."
   type        = string
-  default     = "ghcr.io/open-webui/open-webui:v0.12.0"
+  default     = "ghcr.io/open-webui/open-webui:v0.12.3"
 }
 
 variable "open_webui_container_name" {

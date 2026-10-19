@@ -1,4 +1,4 @@
-FROM ghcr.io/open-webui/open-webui@sha256:1565038903151ced924b5a3226f73f40f16963df4b910441f6391f10144afdaa
+FROM ghcr.io/open-webui/open-webui@sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def
 USER root
 # Vendor packages only: the lab does not build patched libraries from source (#82).
 COPY requirements.txt /tmp/security-requirements.txt

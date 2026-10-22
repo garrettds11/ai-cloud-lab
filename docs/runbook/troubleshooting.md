@@ -42,10 +42,22 @@ the fix for each. Commands are **Local Windows PowerShell**, in the runbook's wi
 
 ## After apply
 
-- **The panel answers 401 to everyone after the API stack was created or rebuilt:** the lab apply
-  did not replace `terraform_data.control_panel_authorizer`, so the authorizer is still on its
-  holding pool. Force the replacement from the repository root (Windows PowerShell 5.1 drops the
-  inner quotes unless they are escaped, PowerShell 7.3 and later passes them as written):
+- **The panel sign-in loops in the browser, or the panel answers 401 to everyone:** the API's
+  authorizer does not trust this lab's Cognito pool. It may still be on its holding pool after the
+  API stack was created or rebuilt, or another lab using the same API (since destroyed) changed
+  it. Check it as in step 4 of the runbook. The quickest fix points it at this lab directly; it
+  changes only that authorizer's issuer and audience:
+
+  ```powershell
+  $cfg = terraform output -json control_panel_config | ConvertFrom-Json
+  $panelApi = aws ssm get-parameter --name "/$projectName/control-panel-api/settings" --query Parameter.Value --output text | ConvertFrom-Json
+  aws apigatewayv2 update-authorizer --api-id $panelApi.api_id --authorizer-id $panelApi.authorizer_id --jwt-configuration "Issuer=https://cognito-idp.$($cfg.region).amazonaws.com/$($cfg.userPoolId),Audience=$($cfg.appClientId)"
+  ```
+
+  The next lab apply also fixes it (`terraform_data.control_panel_authorizer_check`). To redo the
+  lab's own authorizer step instead, force its replacement from the repository root (Windows
+  PowerShell 5.1 drops the inner quotes unless they are escaped, PowerShell 7.3 and later passes
+  them as written):
 
   ```powershell
   $authorizer = 'terraform_data.control_panel_authorizer["authorizer"]'

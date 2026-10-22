@@ -51,6 +51,13 @@ class RiskAcceptanceTests(unittest.TestCase):
         self.assertEqual(scan.gate(self.annotate([finding()], image=local, policy=policy)), 0)
         self.assertEqual(scan.gate(self.annotate([finding()], image="sha256:" + "d" * 64, policy=policy)), 1)
 
+    def test_managed_rebuild_matches_its_vendor_base_digest(self):
+        local = "sha256:" + "c" * 64
+        self.assertEqual(scan.gate(self.annotate([finding()], image=[local, DIGEST])), 0)
+        self.assertEqual(scan.gate(self.annotate([finding()], image=[local, OTHER])), 1)
+        self.assertEqual(scan.gate(self.annotate([finding()], image=[local, None])), 1)
+        self.assertEqual(scan.gate(self.annotate([finding()], image=[None, None])), 1)
+
     def test_all_covers_every_fixable_finding_of_that_digest(self):
         policy = copy.deepcopy(self.policy)
         policy["records"][0]["findings"] = "all"

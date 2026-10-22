@@ -299,7 +299,10 @@ def scan(target_id):
         # Pulled images bind by registry digest; local builds by their recorded image ID.
         assessed = status.get("resolved_image") or (status.get("image_build") or {}).get("image_id")
         status["accepted_risk_identity"] = assessed
-        items = risk_acceptance.annotate(items, assessed, risk_acceptance.load(risk_path))
+        # A managed rebuild only adds its base's OS updates, so records may name the vendor base.
+        base = (status.get("image_build") or {}).get("base")
+        status["accepted_risk_base_identity"] = base
+        items = risk_acceptance.annotate(items, [assessed, base], risk_acceptance.load(risk_path))
         status["accepted_risk_sha256"] = hashlib.sha256(risk_path.read_bytes()).hexdigest()
         status.update(risk_acceptance.counts(items))
         # Preserve DB timestamps/version after the scan, not just before first download.

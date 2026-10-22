@@ -1,4 +1,6 @@
 #!/bin/bash
+# SSM Distributor runs this as "sh <script>", and sh is dash on Ubuntu; switch to bash first.
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 # Removes the "Lab Logs" MCP server and its Open WebUI connection from the lab host.
 set -euo pipefail
 if [[ -x /usr/local/sbin/ai-lab-register-logs-mcp ]]; then

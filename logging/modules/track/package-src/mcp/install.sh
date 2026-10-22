@@ -1,4 +1,6 @@
 #!/bin/bash
+# SSM Distributor runs this as "sh <script>", and sh is dash on Ubuntu; switch to bash first.
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 # Installs the "Lab Logs" MCP server on the lab host and registers it in Open WebUI.
 # Run by SSM Distributor (AWS-ConfigureAWSPackage) from the unpacked package folder.
 set -euo pipefail

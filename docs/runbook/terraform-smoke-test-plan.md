@@ -316,8 +316,10 @@ Every deploy. Each takes a minute or two.
    ```
 
    `inactive` or `could not be found` means the logging install has not reached this instance
-   yet (for example, it was stopped during the logging apply). See
-   [END-TO-END-TEST.md](../../logging/END-TO-END-TEST.md) for the association check.
+   yet (for example, it was stopped during the logging apply). If this lab apply replaced the
+   instance, apply the logging track again (see the
+   [logging README](../../logging/README.md#apply)): its installs target the old instance ID.
+   See [END-TO-END-TEST.md](../../logging/END-TO-END-TEST.md) for the association check.
 
    Type `exit` to leave the shell.
 

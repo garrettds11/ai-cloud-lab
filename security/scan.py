@@ -172,6 +172,16 @@ def feed_file_hashes(reference, paths, platform="linux/amd64"):
     return hashes
 
 
+def risk_identities(status):
+    """Identities an owner record may name: the assessed artifact and, for a Greenbone
+    (compose) rebuild that only adds its base's Debian updates, the vendor base digest.
+    Candidate and tool builds change more than that and keep only their own image ID."""
+    build = status.get("image_build") or {}
+    assessed = status.get("resolved_image") or build.get("image_id")
+    base = build.get("base") if build and build.get("scope", "compose") == "compose" else None
+    return assessed, base
+
+
 def scanner_ref(inventory):
     record = inventory["scanner_build"]
     if record.get("reference") != TRIVY_IMAGE or record.get("scope") != "tool":
@@ -297,9 +307,9 @@ def scan(target_id):
         status["verified_source_fixes"] = sum(bool(item.get("source_fix")) for item in items)
         risk_path = ROOT / "security" / "accepted-risk.json"
         # Pulled images bind by registry digest; local builds by their recorded image ID.
-        assessed = status.get("resolved_image") or (status.get("image_build") or {}).get("image_id")
-        status["accepted_risk_identity"] = assessed
-        items = risk_acceptance.annotate(items, assessed, risk_acceptance.load(risk_path))
+        assessed, base = risk_identities(status)
+        status["accepted_risk_identity"], status["accepted_risk_base_identity"] = assessed, base
+        items = risk_acceptance.annotate(items, [assessed, base], risk_acceptance.load(risk_path))
         status["accepted_risk_sha256"] = hashlib.sha256(risk_path.read_bytes()).hexdigest()
         status.update(risk_acceptance.counts(items))
         # Preserve DB timestamps/version after the scan, not just before first download.

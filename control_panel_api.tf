@@ -8,10 +8,15 @@
 # new IDs. Any of the six values set in terraform.tfvars wins over the parameter.
 #
 # Until a lab exists the authorizer trusts an empty "holding" pool that can never issue a
-# token, so every route answers 401. The terraform_data resource below only changes the
+# token, so every route answers 401. The terraform_data resources below only change the
 # authorizer's issuer and audience: to the lab's pool on apply, back to the holding pool on
-# destroy. It never creates or deletes the authorizer, so the routes keep working across lab
+# destroy. They never create or delete the authorizer, so the routes keep working across lab
 # rebuilds.
+#
+# The authorizer is shared, and Terraform does not read it back, so something else (another
+# lab using the same API, for example) can change it unnoticed; the panel then loops on
+# sign-in. So every apply checks it and points it at this lab again if needed, and fails if
+# that does not hold. On destroy it is reset only while it still trusts this lab's pool.
 #
 # It runs the AWS CLI through PowerShell, with the same aws_profile Terraform uses (the
 # default credentials when aws_profile is null).
@@ -106,17 +111,62 @@ resource "terraform_data" "control_panel_authorizer" {
     }
   }
 
+  # Reset to the holding pool only while the authorizer still trusts this lab: if another lab
+  # has since pointed it at its own pool, destroying this one must not break that lab's panel.
   provisioner "local-exec" {
     when        = destroy
     on_failure  = continue
     interpreter = ["PowerShell", "-NoProfile", "-Command"]
-    command     = "$p = @(); if ($env:PANEL_PROFILE) { $p = @('--profile', $env:PANEL_PROFILE) }; aws apigatewayv2 update-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration \"Issuer=$env:PANEL_ISSUER,Audience=holding-unused\""
+    command     = <<-EOT
+      $p = @(); if ($env:PANEL_PROFILE) { $p = @('--profile', $env:PANEL_PROFILE) }
+      $current = aws apigatewayv2 get-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --query JwtConfiguration.Issuer --output text
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if ($current -ne $env:PANEL_LAB_ISSUER) { Write-Host "Control panel authorizer trusts $current, not this lab; left unchanged."; exit 0 }
+      aws apigatewayv2 update-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration "Issuer=$env:PANEL_ISSUER,Audience=holding-unused"
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    EOT
     environment = {
       PANEL_REGION        = self.input.region
       PANEL_PROFILE       = self.input.profile
       PANEL_API_ID        = self.input.api_id
       PANEL_AUTHORIZER_ID = self.input.authorizer_id
       PANEL_ISSUER        = self.input.holding
+      PANEL_LAB_ISSUER    = self.input.issuer
+    }
+  }
+}
+
+# Runs on every apply (plantimestamp changes each plan, so the plan always lists this one
+# resource as replaced): reads the authorizer back, points it at this lab again if anything
+# changed it, and fails the apply if it still does not trust this lab's pool and client.
+resource "terraform_data" "control_panel_authorizer_check" {
+  for_each = local.control_panel_authorizer
+
+  input            = terraform_data.control_panel_authorizer[each.key].input
+  triggers_replace = [plantimestamp()]
+
+  provisioner "local-exec" {
+    interpreter = ["PowerShell", "-NoProfile", "-Command"]
+    command     = <<-EOT
+      $p = @(); if ($env:PANEL_PROFILE) { $p = @('--profile', $env:PANEL_PROFILE) }
+      $want = "$env:PANEL_ISSUER`t$env:PANEL_AUDIENCE"
+      function Get-Trusted { aws apigatewayv2 get-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --query "[JwtConfiguration.Issuer, join(',', JwtConfiguration.Audience)]" --output text }
+      $current = Get-Trusted
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if ($current -eq $want) { Write-Host "Control panel authorizer trusts this lab."; exit 0 }
+      Write-Host "Control panel authorizer trusted '$current'; pointing it at this lab again."
+      aws apigatewayv2 update-authorizer @p --region $env:PANEL_REGION --api-id $env:PANEL_API_ID --authorizer-id $env:PANEL_AUTHORIZER_ID --jwt-configuration "Issuer=$env:PANEL_ISSUER,Audience=$env:PANEL_AUDIENCE" | Out-Null
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      $current = Get-Trusted
+      if ($current -ne $want) { Write-Error "Control panel authorizer trusts '$current', not this lab ('$want'). The panel sign-in will loop; see docs/runbook/troubleshooting.md."; exit 1 }
+    EOT
+    environment = {
+      PANEL_REGION        = self.input.region
+      PANEL_PROFILE       = self.input.profile
+      PANEL_API_ID        = self.input.api_id
+      PANEL_AUTHORIZER_ID = self.input.authorizer_id
+      PANEL_ISSUER        = self.input.issuer
+      PANEL_AUDIENCE      = self.input.audience
     }
   }
 }

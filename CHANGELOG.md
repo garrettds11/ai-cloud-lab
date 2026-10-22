@@ -7,6 +7,11 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Changed
+- The lab apply now checks the control panel API's sign-in authorizer on every apply, points it at
+  this lab again if something changed it, and fails if that does not hold. A lab destroy resets it
+  to the holding pool only while it still trusts that lab, so destroying one lab no longer breaks
+  another lab's panel sign-in (it looped in the browser). Runbook step 4 and troubleshooting
+  describe the symptom and the fix.
 - The lab no longer patches downstream software in its image builds (#113). The Trivy tool image is
   now the official Trivy 0.76.1 release (`sha256:790fd66d…`) with only Alpine's package updates,
   instead of a source rebuild with a pinned Go toolchain. The Open WebUI candidate image, which

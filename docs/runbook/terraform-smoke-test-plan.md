@@ -242,7 +242,10 @@ Invoke-TerraformWithCloudflareToken -Arguments @("plan", "-out=ai-lab.tfplan")
   missing, see [Troubleshooting](troubleshooting.md).
 - `aws_instance.ai_lab` **must be replaced** when the bootstrap or a script it embeds changed.
   Chats and pulled models on the instance are lost.
-- On a normal rebuild with nothing changed, the plan matches what the last apply created.
+- `terraform_data.control_panel_authorizer_check["authorizer"]` **must be replaced** on every
+  plan. That is expected: on each apply it checks that the API's sign-in trusts this lab, fixes it
+  if something changed it, and fails the apply if it still does not.
+- On a normal rebuild with nothing else changed, the plan matches what the last apply created.
 
 Apply and remove the plan file (it can contain sensitive values; never commit it):
 
@@ -372,6 +375,8 @@ Every deploy. Each takes a minute or two.
    - `config.js` starts with `// Written by Terraform` and has an `apiUrl`. A `null` `apiUrl` means
      the plan showed the `control_panel_api_settings_found` warning.
    - The authorizer's issuer ends with this lab's Cognito pool ID (`terraform output -raw cognito_user_pool_id`).
+     If it shows the holding pool (audience `holding-unused`) or another pool, the panel sign-in
+     loops in the browser. Fix it as in [Troubleshooting](troubleshooting.md#after-apply).
    - Open ==[https://cp.aiwebdemo.click]==, sign in, and the lab instance is listed.
 
    The full set of panel checks is in

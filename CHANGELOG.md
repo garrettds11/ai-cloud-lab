@@ -7,9 +7,14 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Changed
+- The lab no longer patches downstream software in its image builds (#113). The Trivy tool image is
+  now the official Trivy 0.76.1 release (`sha256:790fd66d…`) with only Alpine's package updates,
+  instead of a source rebuild with a pinned Go toolchain. The Open WebUI candidate image, which
+  upgraded Open WebUI's pinned Python libraries, and its compatibility job are removed; the deployed
+  upstream image is assessed as is, and unshipped vendor fixes are owner records.
 - Owner records accept vendor fixes not yet shipped, for 30 days (to 2026-11-21): Open WebUI v0.12.3
   (117 occurrences, 116 IDs), VictoriaLogs v1.53.0 and Greenbone ospd-openvas (Go CVE-2026-111943), and
-  Greenbone gvm-tools (certifi). Accepted rows stay in findings and SARIF. A record for a managed
+  Greenbone gvm-tools (certifi). Accepted rows stay in findings and SARIF. A record for a Greenbone managed
   rebuild may now name the vendor base digest, since the lab's rebuild adds only Debian updates; a
   base re-pin still ends it. See `security/accepted-risk.md`.
 - Open WebUI moves from v0.12.0 to v0.12.3 (`open_webui_container_image`), and the candidate image is rebuilt

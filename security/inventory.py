@@ -170,8 +170,7 @@ def main():
     known_files = set(files)
     targets, images, external = [], {}, []
     recipes = managed_images.definitions(ROOT / "scanner" / "image_builds")
-    managed = {image["reference"]: image for image in recipes if image.get("scope") != "candidate"}
-    candidates = [image for image in recipes if image.get("scope") == "candidate"]
+    managed = {image["reference"]: image for image in recipes}
     pins = {pin["reference"]: pin["image"] for pin in managed_images.pins(ROOT / "scanner" / "image_builds")}
     dockerfiles = {"scanner/image_builds/" + image["context"] + "/Dockerfile" for image in recipes}
     snapshot = OUT / "inputs" / "repository"
@@ -265,18 +264,6 @@ def main():
                 if "scanner/image_builds/" + entry["file"] not in known_files:
                     raise ValueError("Managed image contains ignored build input")
         targets.append(target)
-    for candidate in candidates:
-        if candidate["reference"] not in images:
-            raise ValueError("Candidate no longer matches a configured upstream asset")
-        for entry in candidate["recipe_files"]:
-            if "scanner/image_builds/" + entry["file"] not in known_files:
-                raise ValueError("Candidate contains ignored build input")
-        targets.append({"id": identifier("image", candidate["reference"] + ":patched-candidate"),
-                        "kind": "image", "name": "Candidate (not deployed): " + candidate["reference"],
-                        "scan_ref": candidate["reference"], "build": candidate, "platform": "linux/amd64",
-                        "deployment_status": "candidate",
-                        "build_root": (snapshot / "scanner/image_builds").relative_to(ROOT).as_posix(),
-                        "origins": [{"file": "scanner/image_builds/" + candidate["context"] + "/Dockerfile", "line": 1}]})
     if (set(managed) | set(pins)) - set(images):
         raise ValueError("Managed-image manifest no longer matches the deployable image inventory")
     if not images or not any(t["kind"] == "package" for t in targets):
@@ -293,9 +280,8 @@ def main():
                      "Host packages and plugins downloaded at boot require runtime assessment",
                      "Source CVE analysis requires supported dependency manifests or bundled packages",
                      "No network, authenticated web, or business authorization assessment in this workflow"]}
-    # Validate patch candidates/tool early while retaining every configured target.
-    targets.sort(key=lambda target: (target.get("deployment_status") != "candidate",
-                                     target.get("build", {}).get("scope") != "tool"))
+    # Validate the scanner tool early while retaining every configured target.
+    targets.sort(key=lambda target: target.get("build", {}).get("scope") != "tool")
     # Build the scanner once, then distribute the exact assessed artifact to jobs.
     # The host performs builds; the scanning container never gets a Docker socket.
     scanner = managed_images.build_tool(snapshot / "scanner" / "image_builds")

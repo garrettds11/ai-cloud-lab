@@ -3,9 +3,10 @@
 [`security-scan.yml`](../.github/workflows/security-scan.yml) runs on every PR,
 pushes to `dev`/`main`, Tuesday at 19:15 UTC on the default branch, and manual runs.
 It needs no AWS credentials or running scanner instance. All actions use verified
-commit pins; Trivy 0.75.0 is rebuilt from pinned source with patched Go
-dependencies using the same reviewed recipe as the runtime scanner. The exact
-CI tool image is checksummed, distributed to jobs and assessed independently.
+commit pins; Trivy is the official release image, pinned by digest, with only
+Alpine's package updates applied, using the same reviewed recipe as the runtime
+scanner. The exact CI tool image is checksummed, distributed to jobs and assessed
+independently.
 
 ## Coverage
 
@@ -38,8 +39,8 @@ so one matrix upload cannot replace another target's results.
   - No vendor fixed version (empty `FixedVersion`): accepted risk by policy.
   - A fixed version exists but the image vendor has not shipped it: accepted only by
     an owner record in [accepted-risk.json](accepted-risk.json), bound to the exact
-    assessed artifact (registry digest, or local image ID for managed rebuilds and
-    candidates) and expiring within 31 days. Re-pinning or rebuilding ends the record.
+    assessed artifact (registry digest, or local image ID for managed rebuilds)
+    and expiring within 31 days. Re-pinning or rebuilding ends the record.
   - Otherwise the finding blocks until the image or package is upgraded.
   Accepted findings are annotated, not removed or suppressed: they stay in
   `findings.json`, SARIF and the evidence reports, and are counted apart from

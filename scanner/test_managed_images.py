@@ -80,33 +80,6 @@ class ManagedImageTests(unittest.TestCase):
                     prune.main()
                 run.assert_not_called()
 
-    def test_candidate_pruning_refuses_removal_of_runtime_libraries(self):
-        path = Path(__file__).parent / "image_builds/open-webui/remove-build-deps.py"
-        spec = importlib.util.spec_from_file_location("prune_candidate", path)
-        prune = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(prune)
-        with self.assertRaisesRegex(RuntimeError, "libmariadb3"):
-            prune.planned_removals("Remv libmariadb-dev [10.11]\nRemv libmariadb3 [10.11]\n")
-        self.assertEqual(prune.planned_removals("Purg linux-libc-dev:amd64 [6.1]\n"),
-                         {"linux-libc-dev"})
-
-    def test_failed_candidate_check_removes_only_its_disposable_container(self):
-        container = "a" * 64
-        calls = []
-        def run(command, **kwargs):
-            calls.append(command)
-            if command[:2] == ["docker", "exec"]:
-                raise subprocess.CalledProcessError(1, command)
-        def check_output(command, **kwargs):
-            if command[:2] == ["docker", "exec"]:
-                raise subprocess.CalledProcessError(1, command)
-            return container
-        with patch("managed_images.subprocess.check_output", side_effect=check_output), \
-                patch("managed_images.subprocess.run", side_effect=run):
-            with self.assertRaises(subprocess.CalledProcessError):
-                managed_images.candidate_smoke("sha256:" + "1" * 64)
-        self.assertEqual(calls[-1], ["docker", "rm", "--force", "--volumes", container])
-
     def socket_config(self):
         mounts = {
             "pg-gvm": [("pg-data", "/var/lib/postgresql"), ("pg-socket", "/var/run/postgresql")],
@@ -146,7 +119,7 @@ class ManagedImageTests(unittest.TestCase):
     def test_recipe_matches_digest_pinned_base(self):
         images = managed_images.definitions(Path(__file__).parent / "image_builds")
         self.assertEqual({image["context"] for image in images},
-                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas", "openvas-scanner", "trivy", "open-webui", "gsad", "gvmd", "nginx"})
+                         {"pg-gvm", "pg-gvm-migrator", "redis-server", "gvm-tools", "ospd-openvas", "openvas-scanner", "trivy", "gsad", "gvmd", "nginx"})
         for image in images:
             self.assertTrue(image["recipe_files"])
 

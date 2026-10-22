@@ -140,72 +140,26 @@ These controls reduce access and escalation paths; they do not patch a CVE or
 automatically disposition a finding. They require deployment and a full scan to
 establish operational acceptance.
 
-## Patched Trivy tool
+## Trivy tool
 
-Trivy's Go standard library and `golang.org/x/net` vulnerabilities require a
-binary rebuild. The tool recipe retains release 0.75.0 at upstream commit
-`591e9799316a602e703f0b484f6c6d7b234ec8f3`, verifies the complete source archive
-SHA256, builds with Go 1.27.2 and x/net 0.60.0, verifies Go modules, and removes
-compiler/source/cache packages from the final image. Build metadata remains in
-`/usr/local/share/trivy-build.txt`. This is a custom patched build, not a new
-upstream release. Its final archive still must pass vulnerability assessment.
-
-Alpine package updates also address reported OS fixes. A linked-package list is
-recorded in `/usr/local/share/trivy-packages.txt`; the build rejects the
-unmaintained `golang.org/x/crypto/openpgp` package and its subpackages. Go advisory
-[GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932) affects those specific APIs,
-not every package in the x/crypto module. A module-level UNKNOWN finding may
-remain visible in Trivy's report; this guard does not suppress that finding.
+The tool recipe uses the official Trivy release image, pinned by digest, and applies
+only Alpine's own package updates (`apk upgrade`). The lab does not rebuild Trivy
+from source or change its Go toolchain (#113): a Go fix that Aqua has not shipped in
+a release is accepted risk, and an owner record in `security/accepted-risk.json`
+binds it to this tool's exact built image ID.
 
 CI builds the tool once in the inventory job and distributes a checksummed image
 archive with its inputs. Each job verifies the archive hash and loaded image ID
 before execution. The tool's own assessment uses that exact same archive without
 rebuilding it. The scanner container retains its non-root user, read-only source
 mount and absence of Docker socket/AWS credentials. A missing or altered tool
-artifact fails the scan; there is no fallback to the unpatched upstream binary.
+artifact fails the scan.
 
 The deployed runner builds the same recipe before any assessment, uses its
 immutable ID for all Trivy scans, and assesses the exact runtime tool archive
 alongside the other managed images. `scanner-tool-build.json` records the tool
 identity even when later assessments fail. ECR promotion remains tracked in #90.
 
-## Open WebUI dependency candidate
-
-The `open-webui` context is a candidate build from the assessed v0.12.3 digest.
-It pins the reported fixed versions for PyJWT, cryptography, fsspec,
-jaraco.context, MCP, PyArrow, pypdf, sentence-transformers, transformers,
-unstructured and wheel. Datasets is upgraded to 5.1.0 with PyArrow 24.0.0 because
-the existing datasets 4.x upper bound rejects the patched fsspec version.
-Transformers uses the non-yanked 5.10.1 fix instead of yanked 5.10.0.
-Setuptools 84.0.0 replaces its bundled vulnerable jaraco.context/wheel copies;
-updating only the separately installed packages leaves those copies unchanged.
-Binary-only package installation and `pip check` reject
-unavailable wheels or dependency conflicts. Offline smoke checks exercise JWT,
-crypto, in-memory storage, Arrow and PDF APIs and import the NLP/MCP APIs without
-model downloads or persistent account/database state.
-
-The candidate removes native compilers, selected build tools and development headers
-after wheel installation. An apt simulation rejects any removal outside the
-explicit build-package list; runtime shared libraries are retained and apt
-autoremove is disabled. CPU tensor execution, dependency imports, backend
-startup and authentication are checked again after removal. Compiling native
-extensions at runtime is outside this candidate's supported scope. Removing
-`linux-libc-dev` removes headers and their image findings; it does not patch or
-assess the host kernel. The image is reassessed without deleting package
-metadata or suppressing findings.
-Binutils and its shared libraries are retained because removing its common
-package also removes shared libraries outside the reviewed build-package list.
-
-After building, CI starts the candidate without networking or host mounts, with
-CPU/memory limits and disposable data. It checks backend health, signup, signin
-and authenticated token use with a public test-only identity/key. It then removes
-the container and its anonymous volumes, retaining only pass/fail metadata. The
-tested image itself is unchanged; no test database or credentials are baked in.
-
-CI assesses this candidate separately. It does **not** replace the original
-configured Open WebUI image in inventory, and the Greenbone runner never builds
-or deploys it. Reports label it `candidate` to prevent interpreting its results
-as remediation of an unchanged live deployment. Retrieval and MCP registration
-acceptance plus approved ECR publication in
-#90 are required before promotion. No candidate is automatically approved or
-exempted from the vulnerability policy.
+The Open WebUI candidate image that upgraded Open WebUI's pinned Python libraries
+was retired in #113: the lab does not maintain a vendor application's dependencies.
+The configured upstream Open WebUI image is assessed as deployed.

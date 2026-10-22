@@ -18,7 +18,7 @@ import risk_acceptance
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".security-scan"
-TRIVY_IMAGE = "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
+TRIVY_IMAGE = "ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
 sys.path.insert(0, str(ROOT / "scanner"))
 import managed_images
 

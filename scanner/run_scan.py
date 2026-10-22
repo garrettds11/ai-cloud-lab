@@ -16,7 +16,7 @@ from managed_images import prepare, harden, build_tool
 
 ROOT = pathlib.Path("/opt/ai-scanner")
 COMPOSE_URL = "https://greenbone.github.io/docs/latest/_static/compose.yaml"
-TRIVY_IMAGE = "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
+TRIVY_IMAGE = "ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
 
 
 def cmd(*args, check=True, input_text=None, timeout=None):

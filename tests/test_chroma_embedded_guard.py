@@ -1,10 +1,9 @@
 """Keeps the deployed Open WebUI on embedded Chroma with no Chroma HTTP server.
 
 Chroma CVE-2026-45829/45833 are reached through Chroma's HTTP API (create/update
-collection). The lab runs Open WebUI with its default embedded PersistentClient;
-the candidate acceptance check (scanner/image_builds/open-webui/chroma-reachability.py)
-records which embedded paths reach the vulnerable builder. That evidence only holds
-while the deployment never points Open WebUI at a Chroma server or starts one.
+collection). The lab runs Open WebUI with its default embedded PersistentClient,
+which never exposes those routes (reachability review in #82). That review only
+holds while the deployment never points Open WebUI at a Chroma server or starts one.
 This guard fails if user-data starts doing either, forcing a new review.
 """
 

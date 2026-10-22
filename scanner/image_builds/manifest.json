@@ -57,18 +57,11 @@
       "tag": "ai-cloud-lab/openvas-scanner:patched"
     },
     {
-      "reference": "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa",
-      "base": "ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa",
+      "reference": "ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c",
+      "base": "ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c",
       "context": "trivy",
       "tag": "ai-cloud-lab/trivy:patched",
       "scope": "tool"
-    },
-    {
-      "reference": "ghcr.io/open-webui/open-webui:v0.12.3",
-      "base": "ghcr.io/open-webui/open-webui@sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def",
-      "context": "open-webui",
-      "tag": "ai-cloud-lab/open-webui:patched",
-      "scope": "candidate"
     }
   ]
 }

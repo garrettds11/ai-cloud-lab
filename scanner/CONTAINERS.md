@@ -47,7 +47,7 @@ scanner, and feeds supplying detection/reference data.
 | Image | Job | Deployment status |
 |---|---|---|
 | **Trivy** | Inspects images and Lambda/source package inventories for known vulnerabilities and secrets; also assesses its own exact build. | Scanner tool, distinct from the Greenbone network scanner. |
-| **Open WebUI** | The application being assessed. | Its patched image is a separate tested candidate, not deployed or approved. |
+| **Open WebUI** | The application being assessed. | Assessed as the configured upstream image; the lab does not rebuild it. |
 
 The [managed-image manifest](image_builds/manifest.json) lists the exact bases
 and recipes for our rebuilt images. It is an image inventory, not an SBOM.
@@ -59,7 +59,7 @@ hardening. Rebuilding/scanning an image does not deploy it into AWS.
 Download `security-sboms` from an assessment run:
 
 - `sboms.md`: readable asset list, purpose-independent package counts and links.
-- `sbom-index.json`: target/image identity, candidate status and each SBOM hash.
+- `sbom-index.json`: target/image identity, deployment status and each SBOM hash.
 - `reports/<target-id>/sbom.cdx.json`: CycloneDX 1.6 detected-package SBOM.
 
 The same SBOMs are under `sboms/` in the checksummed `security-evidence`

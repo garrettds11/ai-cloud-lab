@@ -7,6 +7,11 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Changed
+- The lab no longer patches downstream software in its image builds (#113). The Trivy tool image is
+  now the official Trivy 0.76.1 release (`sha256:790fd66d…`) with only Alpine's package updates,
+  instead of a source rebuild with a pinned Go toolchain. The Open WebUI candidate image, which
+  upgraded Open WebUI's pinned Python libraries, and its compatibility job are removed; the deployed
+  upstream image is assessed as is, and unshipped vendor fixes are owner records.
 - Open WebUI moves from v0.12.0 to v0.12.3 (`open_webui_container_image`), and the candidate image is rebuilt
   from the v0.12.3 digest. This takes the vendor's latest release for the 76 HIGH/CRITICAL v0.12.0
   findings that had a vendor fix (#82); the security assessment reports which remain. Applying the

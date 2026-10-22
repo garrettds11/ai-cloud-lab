@@ -51,7 +51,6 @@ def write_report(root, inventory, coverage):
         writer.writerows({key: cell(value) for key, value in row.items()} for row in rows)
     unique = len({row["cve"] for row in rows})
     fixable = sum(bool(row["fixed_version"]) for row in rows)
-    candidate_count = sum(row["deployment_status"] == "candidate" for row in rows)
     source_fixed = sum(row["mitigation_review"].startswith("Verified upstream source fix") for row in rows)
     blocking_rows = [row for row in rows if row["policy"] == "blocking"]
     no_fix = sum(row["policy"] == "accepted: no_vendor_fix" for row in rows)
@@ -68,9 +67,6 @@ def write_report(root, inventory, coverage):
               f"- **Accepted by owner record: {by_record} instances.** A fix exists upstream but the vendor has not "
               "shipped it; an exact-digest, expiring record in security/accepted-risk.json accepts it.\n"
               f"- Verified upstream source fixes (informational): {source_fixed} instances.\n\n"
-              f"Configured assets: **{len(rows)-candidate_count} instances**. "
-              f"Candidates not deployed: **{candidate_count} instances**. A candidate does not replace "
-              "the assessment of the configured upstream image or imply deployment/approval.\n\n"
               "[Download the full sortable CVE list](remaining-cves.csv). Each row identifies the assessed artifact, "
               "package, installed/fixed versions and advisory. Repeated IDs across packages/images are separate instances.\n\n"
               "These are scanner findings, not proof of exploitability. Individual compensating controls and "

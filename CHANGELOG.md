@@ -7,6 +7,11 @@ version numbers yet, so everything is listed under Unreleased.
 ## [Unreleased]
 
 ### Changed
+- Owner records accept vendor fixes not yet shipped, for 30 days (to 2026-11-21): Open WebUI v0.12.3
+  (117 occurrences, 116 IDs), VictoriaLogs v1.53.0 and Greenbone ospd-openvas (Go CVE-2026-111943), and
+  Greenbone gvm-tools (certifi). Accepted rows stay in findings and SARIF. A record for a managed
+  rebuild may now name the vendor base digest, since the lab's rebuild adds only Debian updates; a
+  base re-pin still ends it. See `security/accepted-risk.md`.
 - Open WebUI moves from v0.12.0 to v0.12.3 (`open_webui_container_image`), and the candidate image is rebuilt
   from the v0.12.3 digest. This takes the vendor's latest release for the 76 HIGH/CRITICAL v0.12.0
   findings that had a vendor fix (#82); the security assessment reports which remain. Applying the

@@ -7,9 +7,11 @@ only while a vendor fix exists that has not been taken:
 * A fixed version exists, but the vendor of the pinned image has not shipped a release
   containing it: accepted only through an owner record in security/accepted-risk.json,
   bound to the exact assessed artifact and expiring within 31 days: a registry digest
-  (repo@sha256:...) for pulled images, or the local image ID (sha256:...) for managed
-  rebuilds and candidates. Re-pinning or rebuilding produces a new identity and ends the
-  record, so every new artifact is assessed again.
+  (repo@sha256:...) for pulled images. A Greenbone managed rebuild (scope "compose", which
+  only applies the base's own Debian updates) matches either its local image ID (sha256:...,
+  one build only) or the digest of its vendor base image, since the vendor's software in it
+  is unchanged by the rebuild. Candidate and tool builds match only their local image ID. Re-pinning produces a new identity and ends the record, so every new vendor
+  artifact is assessed again.
 * Otherwise the finding blocks until the image or package is upgraded.
 
 Accepted findings are annotated, never removed: they stay in findings.json, in SARIF (with
@@ -49,9 +51,9 @@ def validate(policy):
     return policy
 
 
-def _record_for(item, image, records, today):
+def _record_for(item, identities, records, today):
     for record in records:
-        if record["image"] != image:
+        if record["image"] not in identities:
             continue
         if not (datetime.date.fromisoformat(record["accepted_on"]) <= today
                 < datetime.date.fromisoformat(record["expires"])):
@@ -62,8 +64,12 @@ def _record_for(item, image, records, today):
 
 
 def annotate(items, image, policy, today=None):
-    """Return copies of items; accepted HIGH/CRITICAL vulnerabilities gain an acceptance."""
+    """Return copies of items; accepted HIGH/CRITICAL vulnerabilities gain an acceptance.
+
+    image is the assessed identity, or a list of identities (a managed rebuild's image ID
+    and its vendor base digest)."""
     validate(policy)
+    identities = {entry for entry in ([image] if isinstance(image, str) else image or []) if entry}
     today = today or datetime.datetime.now(datetime.timezone.utc).date()
     result = []
     for original in items:
@@ -74,7 +80,7 @@ def annotate(items, image, policy, today=None):
                 item["acceptance"] = {"basis": NO_VENDOR_FIX, "policy": POLICY,
                                       "reason": "No vendor fixed version is published; accepted by owner policy."}
             else:
-                record = image and _record_for(item, image, policy["records"], today)
+                record = identities and _record_for(item, identities, policy["records"], today)
                 if record:
                     item["acceptance"] = {"basis": OWNER_RECORD, "policy": POLICY, "record": record["id"],
                                           "reason": record["reason"], "expires": record["expires"]}

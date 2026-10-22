@@ -43,6 +43,8 @@ Wait for both `AWS-ConfigureAWSPackage` associations (`vector` and `mcp`) to rep
 
 The associations run again by themselves when their settings change, for example when an apply replaces the backend instance and it gets a new private IP.
 
+**After the lab instance is replaced** (a lab apply that rebuilds it), run the plan and apply here again. The associations target the lab instance by ID, so until this track is applied again nothing is installed on the new instance, and `systemctl is-active vector` prints `inactive`. Run it from the branch you last applied from: an older checkout with different package files fails with `DuplicateDocumentVersionName`.
+
 ## Open vmui
 
 The tunnel holds its window until you stop it, so open a **new** PowerShell window for it and leave it running. A new window has none of the settings from your Terraform window, and without them the AWS CLI would use your **default** profile, which is a different account. Set them first (Step 1 of the [smoke test plan](../docs/runbook/terraform-smoke-test-plan.md)):

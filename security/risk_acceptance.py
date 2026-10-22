@@ -7,10 +7,10 @@ only while a vendor fix exists that has not been taken:
 * A fixed version exists, but the vendor of the pinned image has not shipped a release
   containing it: accepted only through an owner record in security/accepted-risk.json,
   bound to the exact assessed artifact and expiring within 31 days: a registry digest
-  (repo@sha256:...) for pulled images. A managed rebuild (which only applies the base's own
-  OS package updates) matches either its local image ID (sha256:..., one build only) or the
-  digest of its vendor base image, since the vendor's software in it is unchanged by the
-  rebuild. Re-pinning produces a new identity and ends the record, so every new vendor
+  (repo@sha256:...) for pulled images. A Greenbone managed rebuild (scope "compose", which
+  only applies the base's own Debian updates) matches either its local image ID (sha256:...,
+  one build only) or the digest of its vendor base image, since the vendor's software in it
+  is unchanged by the rebuild. Candidate and tool builds match only their local image ID. Re-pinning produces a new identity and ends the record, so every new vendor
   artifact is assessed again.
 * Otherwise the finding blocks until the image or package is upgraded.
 

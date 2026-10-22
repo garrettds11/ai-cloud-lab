@@ -58,6 +58,14 @@ class RiskAcceptanceTests(unittest.TestCase):
         self.assertEqual(scan.gate(self.annotate([finding()], image=[local, None])), 1)
         self.assertEqual(scan.gate(self.annotate([finding()], image=[None, None])), 1)
 
+    def test_only_compose_rebuilds_offer_their_vendor_base(self):
+        build = {"image_id": "sha256:" + "c" * 64, "base": DIGEST}
+        self.assertEqual(scan.risk_identities({"image_build": build}), (build["image_id"], DIGEST))
+        for scope in ("candidate", "tool"):
+            self.assertEqual(scan.risk_identities({"image_build": dict(build, scope=scope)}),
+                             (build["image_id"], None))
+        self.assertEqual(scan.risk_identities({"resolved_image": OTHER}), (OTHER, None))
+
     def test_all_covers_every_fixable_finding_of_that_digest(self):
         policy = copy.deepcopy(self.policy)
         policy["records"][0]["findings"] = "all"

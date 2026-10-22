@@ -126,6 +126,10 @@
   const pendingStarts = new Map();
   // Instances whose timer reset is being sent, so a double click sends one request.
   const resetting = new Set();
+  // Instances whose start request is in flight (it can take seconds while AWS retries), and
+  // the reason the last start failed. The reason stays on the row until the next attempt.
+  const starting = new Set();
+  const startErrors = new Map();
 
   // ---- feedback: toasts, live region, dialog, focus -----------------------------------
 
@@ -312,16 +316,19 @@
     const can = inst.phase === 'stopped' || inst.phase === 'failed';
     const retry = inst.phase === 'failed';
     const budget = can && !!inst.budgetReached;
-    const ok = can && !budget;
+    const busy = starting.has(inst.id);
+    const ok = can && !budget && !busy;
     return h('button', {
       type: 'button',
       class: 'icon-btn start' + (budget ? ' has-note' : ''),
-      'aria-label': (retry ? 'Retry start ' : 'Start ') + inst.name + (budget ? ' (monthly budget reached)' : ''),
+      'aria-label': busy ? 'Starting ' + inst.name : (retry ? 'Retry start ' : 'Start ') + inst.name + (budget ? ' (monthly budget reached)' : ''),
       'aria-disabled': ok ? null : 'true',
-      title: budget ? 'Monthly budget reached. An administrator can raise the cap, or it resets next month.' : can ? (retry ? 'Retry start' : 'Start') : 'Only a stopped instance can be started',
+      'aria-busy': busy ? 'true' : null,
+      title: busy ? 'Starting' : budget ? 'Monthly budget reached. An administrator can raise the cap, or it resets next month.' : can ? (retry ? 'Retry start' : 'Start') : 'Only a stopped instance can be started',
       'data-key': 'start:' + inst.id,
       onClick: ok ? () => onStart(inst) : (e) => e.preventDefault(),
-    }, icon('play'), budget ? h('span', { class: 'budget-note', text: 'Monthly budget reached' }) : null);
+    }, busy ? icon('spinner', reduceMotion.matches ? null : 'spin') : icon('play'),
+    budget ? h('span', { class: 'budget-note', text: 'Monthly budget reached' }) : null);
   }
 
   // Restarts the hard-stop countdown without stopping or restarting the lab.
@@ -385,6 +392,10 @@
     const cell = h('td', null,
       h('span', { class: 'chip tone-' + info.tone }, icon(info.tone === 'green' ? 'check' : info.tone === 'red' ? 'error' : info.tone === 'amber' ? 'dot' : 'dot'), info.label));
     if (inst.phase === 'failed' && inst.message) cell.append(h('div', { class: 'sub tone-red', text: inst.message }));
+    const startError = startErrors.get(inst.id);
+    if (startError && (inst.phase === 'stopped' || inst.phase === 'failed')) {
+      cell.append(h('div', { class: 'sub tone-red', role: 'alert', text: 'Start failed: ' + startError }));
+    }
     if (inst.phase === 'initializing') {
       cell.append(h('div', { class: 'sub', text: 'Status checks ' + (inst.checks.ec2 ? 'passed' : 'pending') + '. Health check ' + (inst.checks.http ? 'passed' : 'pending') + '.' }));
     }
@@ -577,15 +588,25 @@
   }
 
   async function onStart(inst) {
+    if (starting.has(inst.id)) return;
+    starting.add(inst.id);
+    startErrors.delete(inst.id);
+    paintInstances();
     try {
       announce('Starting ' + inst.name);
       await API.startInstance(inst.id);
       pendingStarts.set(inst.id, Date.now());
-      await loadInstances();
     } catch (err) {
-      if (err.status === 409) { loadInstances(); return; } // already starting: the page was out of date
-      toast(err.message, 'error');
-      announce(err.message);
+      // "Not stopped" means the page was out of date (it is already starting); any other
+      // refusal, such as no AWS capacity or the monthly budget, stays on the row.
+      if (!(err.status === 409 && /not stopped/i.test(err.message))) {
+        startErrors.set(inst.id, err.message);
+        toast(err.message, 'error');
+        announce('Start failed: ' + err.message);
+      }
+    } finally {
+      starting.delete(inst.id);
+      await loadInstances();
     }
   }
 

@@ -4,11 +4,22 @@ Test docs: [Deploy and smoke test](../docs/runbook/terraform-smoke-test-plan.md)
 
 Run this after the VictoriaLogs track has been applied and both Distributor associations (`vector` and `mcp`) have succeeded. The root lab host stays running throughout.
 
-Commands are **Local Windows PowerShell** unless marked **Linux (SSM shell on the lab instance)**. The SSM shell is a plain `sh` shell: paste **one command at a time**. The vmui tunnel runs in its own window ([README](README.md#open-vmui)).
+Each step says where it runs:
+
+- **Local PowerShell:** your Windows PowerShell window, in `C:\GitHub\ai-cloud-lab\logging\victorialogs`.
+- **Linux (SSM shell on the lab instance):** a plain `sh` shell; paste **one command at a time**. To open it from any PowerShell window:
+
+  ```powershell
+  $env:instance_id = terraform -chdir=C:\GitHub\ai-cloud-lab output -raw instance_id
+  aws ssm start-session --target $env:instance_id
+  ```
+
+  Type `exit` to return to PowerShell.
+- **Browser (vmui):** searches typed into vmui's query box, with the tunnel running in its own window ([README](README.md#open-vmui)).
 
 ## Before you start
 
-In a PowerShell window (not the tunnel window), use the lab account and look up the lab instance:
+**Local PowerShell** (not the tunnel window). Use the lab account and look up the lab instance:
 
 ```powershell
 $env:AWS_PROFILE = "ai-cloud-lab"
@@ -23,9 +34,9 @@ The last line prints an instance ID such as `i-0123456789abcdef0`. Check that bo
 aws ssm list-associations --query "Associations[?contains(AssociationName,'-install')].[AssociationName,Overview.Status]" --output text
 ```
 
-Both lines must say `Success`. `Pending` means the lab instance is stopped or the install is still running; start the instance and wait a few minutes. `Failed` means read the install output (see [Troubleshooting](#troubleshooting)).
+**Local PowerShell.** Both lines must say `Success`. `Pending` means the lab instance is stopped or the install is still running; start the instance and wait a few minutes. `Failed` means read the install output (see [Troubleshooting](#troubleshooting)).
 
-Open a shell on the lab instance:
+**Local PowerShell.** Open a shell on the lab instance:
 
 ```powershell
 aws ssm start-session --target $env:instance_id
@@ -56,26 +67,28 @@ logger -p authpriv.notice "bakeoff-host-$RUN_ID"
 ```
 
 ```bash
-sudo docker exec open-webui python -c "import logging; logging.error('bakeoff-openwebui-$RUN_ID')"
+sudo docker exec open-webui sh -c "echo ERROR bakeoff-openwebui-$RUN_ID > /proc/1/fd/2"
 ```
 
 ```bash
 echo "$RUN_ID"
 ```
 
-The first event is a host syslog message. The second goes to the Open WebUI container's stderr and appears in its Docker log stream. Note the printed run ID.
+The first event is a host syslog message. The second is written to the Open WebUI container's main process output, so it appears in the container's Docker log stream. (Output of a separate `docker exec` command goes to your terminal, not to the container's log, so it would not test this path.) Note the printed run ID, then type `exit` to return to PowerShell.
 
 ## Check vmui
 
-Allow a minute for buffering, then in vmui at [http://localhost:18080/select/vmui/](http://localhost:18080/select/vmui/) (the tunnel from the [README](README.md#open-vmui) must be running) run:
+Allow a minute for buffering.
+
+**Browser (vmui).** With the tunnel from the [README](README.md#open-vmui) running, open [http://localhost:18080/select/vmui/](http://localhost:18080/select/vmui/) and type this into the query box, replacing `<RUN_ID>` with your run ID:
 
 ```
 _time:15m "<RUN_ID>"
 ```
 
-Confirm both events appear, from the `ubuntu-host` and `open-webui` sources, with the expected timestamps and host. Then run `_time:15m | stats by (source) count()` and confirm it counts both sources and changes when you change the time range.
+Confirm both events appear: `bakeoff-host-<RUN_ID>` from the `ubuntu-host` source and `bakeoff-openwebui-<RUN_ID>` from the `open-webui` source, with the expected timestamps and host. A third line, sudo's own record of your `docker exec` command, also contains the run ID; it comes from the host and does not count as the Open WebUI event. Then run `_time:15m | stats by (source) count()` and confirm it counts both sources and changes when you change the time range.
 
-The same query works against the API, which is what an MCP tool calls:
+**Local PowerShell.** The same query works against the API, which is what an MCP tool calls:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:18080/select/logsql/query -Body @{ query = '_time:15m "<RUN_ID>"' }
@@ -83,7 +96,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:18080/select/logsql/query -
 
 ## Check Lab Logs in Open WebUI
 
-**Linux (SSM shell on the lab instance).** Confirm the MCP server is running and registered, one command at a time:
+**Linux (SSM shell on the lab instance).** Open the shell again (see the top of this page), then confirm the MCP server is running and registered, one command at a time:
 
 ```bash
 systemctl is-active ai-lab-logs-mcp
@@ -93,7 +106,7 @@ systemctl is-active ai-lab-logs-mcp
 sudo ai-lab-register-logs-mcp
 ```
 
-The second command should report that the connection is already correct and list five tools. Then sign in to Open WebUI, open a new chat, turn on **Lab Logs** in the tools menu and ask:
+The second command should report that the connection is already correct and list five tools. Type `exit`. Then sign in to Open WebUI, open a new chat, turn on **Lab Logs** in the tools menu and ask:
 
 ```
 Search the lab logs for <RUN_ID> in the last 15 minutes.
@@ -103,14 +116,14 @@ Confirm the answer shows both test events and says it used `search_logs`. Then a
 
 ## Check the S3 archive
 
-In the track folder (`C:\GitHub\ai-cloud-lab\logging\victorialogs`):
+**Local PowerShell** (any folder):
 
 ```powershell
-$bucket = terraform output -raw archive_bucket
+$bucket = terraform -chdir=C:\GitHub\ai-cloud-lab\logging\victorialogs output -raw archive_bucket
 aws s3 ls "s3://$bucket/raw/victorialogs/" --recursive
 ```
 
-The objects are gzip-compressed NDJSON. Download one and confirm it holds both markers with the same timestamps. The archive is the independent record; don't use the VictoriaLogs index as proof of it.
+Pass: it lists one object about every minute while the lab was running, under `date=<UTC date>`. The objects are gzip-compressed NDJSON. Download one and confirm it holds both markers with the same timestamps. The archive is the independent record; don't use the VictoriaLogs index as proof of it.
 
 ## Troubleshooting
 

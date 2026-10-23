@@ -61,7 +61,33 @@ The account number must be the lab account (`394566733278` for the demo); if not
 
 Then open [http://localhost:18080/select/vmui/](http://localhost:18080/select/vmui/) in your browser. VictoriaLogs has no sign-in; only the tunnel reaches it. The same address serves the query API (`http://localhost:18080/select/logsql/query`) that an MCP tool uses.
 
+If vmui stops loading, the tunnel has usually ended: Session Manager closes an idle session after about 20 minutes, and closing the window ends it too. Run the last command again in the tunnel window. If the tunnel itself fails, check that the backend is running (see below).
+
 Follow [END-TO-END-TEST.md](END-TO-END-TEST.md) to send test events and check vmui and the S3 archive.
+
+## Stop and start the backend
+
+The backend has no auto-stop. Stop it when you are not using it to pay only for its storage (see [Cost and licence](#cost-and-licence)); its logs, settings and private IP are kept. From the track folder, with the lab profile set:
+
+```powershell
+Set-Location C:\GitHub\ai-cloud-lab\logging\victorialogs
+$backend = terraform output -raw backend_instance_id
+aws ec2 describe-instances --instance-ids $backend --query "Reservations[0].Instances[0].State.Name" --output text
+```
+
+Stop it:
+
+```powershell
+aws ec2 stop-instances --instance-ids $backend
+```
+
+Start it:
+
+```powershell
+aws ec2 start-instances --instance-ids $backend
+```
+
+While it is stopped, Vector on the lab keeps new events in its disk buffer and sends them when the backend is back, and vmui and the Lab Logs tool cannot answer. After a start, wait a minute or two before opening the tunnel.
 
 ## Lab Logs in Open WebUI
 
